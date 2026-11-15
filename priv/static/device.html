@@ -998,8 +998,8 @@ function renderTrial(trial) {
   const when = left == null ? "after the next restart"
     : `in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
   const mib = (size) => size === "default" ? "default" : `${size} MiB`;
-  const sizes = memory && `memory for video ${mib(memory.video)} and the NPU ${mib(memory.npu)}`;
-  const what = firmware && memory ? `This firmware and its ${sizes} are`
+  const sizes = memory && `memory sizes (video ${mib(memory.video)}, NPU ${mib(memory.npu)})`;
+  const what = firmware && memory ? `This firmware and the ${sizes} are`
     : firmware ? "This firmware is" : `The ${sizes} are`;
   $("trialtext").textContent = `${what} on trial: the NanoKVM goes back to the previous ${firmware && !memory ? "one" : "ones"} ${when} unless you keep ${firmware && !memory ? "it" : "them"}.`;
   $("keep").textContent = firmware && memory ? "Keep both" : firmware ? "Keep this firmware" : "Keep these sizes";
