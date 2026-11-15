@@ -1,0 +1,1077 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NanoKVM-Go</title>
+<style>
+  :root { --bar: 30px; }
+  html, body { margin: 0; height: 100%; background: #0e0f11; color: #c9ccd1;
+    font: 13px/1 system-ui, -apple-system, sans-serif; }
+  #bar { position: fixed; inset: 0 0 auto 0; height: var(--bar); display: flex;
+    align-items: center; gap: 14px; padding: 0 12px; background: #17191c;
+    border-bottom: 1px solid #262a2f; overflow-x: auto; scrollbar-width: none; }
+  /* One line: the hint gives way first, then the bar scrolls. */
+  #bar > * { flex: none; white-space: nowrap; }
+  #bar b { font-weight: 600; color: #e6e8eb; }
+  .state::before { content: ""; display: inline-block; width: 8px; height: 8px;
+    margin-right: 6px; border-radius: 50%; background: #b5443c; }
+  .state.on::before { background: #3fa45b; }
+  #mode, #size { color: #9aa0a8; }
+  #hint { margin-left: auto; color: #7d838b; flex: 0 1 auto; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; }
+  #system { display: inline-flex; align-items: center; gap: 5px; color: #9aa0a8; }
+  .meter { display: inline-block; width: 26px; height: 6px; background: #2a2e33;
+    border-radius: 3px; overflow: hidden; }
+  .meter i { display: block; height: 100%; width: 0; background: #3fa45b; transition: width 0.4s; }
+  .meter i.warm { background: #d6a83c; }
+  .meter i.hot { background: #d0584a; }
+  .screen { position: fixed; inset: var(--bar) 0 0 0; width: 100%;
+    height: calc(100% - var(--bar)); object-fit: contain; outline: none;
+    cursor: crosshair; }
+  .screen:focus { cursor: none; }
+  #notice { position: fixed; inset: var(--bar) 0 0 0; display: flex; align-items: center;
+    justify-content: center; background: rgba(14, 15, 17, 0.85); color: #9aa0a8;
+    font-size: 18px; pointer-events: none; }
+  #bar button, #bar select, #bar a.button { font: inherit; padding: 2px 10px; border-radius: 4px;
+    cursor: pointer; border: 1px solid #343941; background: #1f2226; color: #c9ccd1;
+    text-decoration: none; }
+  #bar button:hover, #bar select:hover, #bar a.button:hover { background: #2a2e33; }
+  #bar button.on { border-color: #3fa45b; color: #e6e8eb; }
+  #actions { width: 92px; }
+  #usbaudio { max-width: 150px; }
+  /* Narrower windows keep the controls and the numbers, not the extras. */
+  @media (max-width: 1440px) {
+    #bar { gap: 12px; }
+    #size, .meter { display: none; }
+  }
+  #bar button:disabled, #bar select:disabled { opacity: 0.5; cursor: default; }
+  [hidden] { display: none !important; }
+  dialog { background: #17191c; color: #c9ccd1; border: 1px solid #343941; border-radius: 8px;
+    padding: 16px 20px; width: min(600px, calc(100vw - 32px)); box-sizing: border-box; }
+  dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+  dialog h3 { margin: 0 0 10px; font-size: 15px; color: #e6e8eb; }
+  dialog fieldset { border: 1px solid #2c3036; border-radius: 6px; margin: 12px 0 0;
+    padding: 6px 12px 10px; }
+  dialog legend { padding: 0 4px; color: #e6e8eb; }
+  dialog label { display: inline-flex; align-items: center; gap: 6px; margin: 4px 14px 4px 0;
+    line-height: 1.4; }
+  dialog .rates { display: flex; flex-wrap: wrap; gap: 0 4px; }
+  dialog .note, dialog .inuse { color: #7d838b; font-size: 12px; line-height: 1.45; margin: 8px 0 0; }
+  dialog .inuse:empty { display: none; }
+  dialog .error { color: #e0786f; }
+  dialog select, dialog button { font: inherit; padding: 2px 10px; border-radius: 4px;
+    border: 1px solid #343941; background: #1f2226; color: #c9ccd1; cursor: pointer; }
+  dialog menu { display: flex; justify-content: flex-end; gap: 8px; margin: 14px 0 0; padding: 0; }
+  dialog button.primary { border-color: #3fa45b; color: #e6e8eb; }
+  dialog button:disabled { opacity: 0.5; cursor: default; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <b>NanoKVM-Go</b>
+  <span id="video" class="state">video</span>
+  <span id="input" class="state">input</span>
+  <span id="mode"></span>
+  <span id="size"></span>
+  <button id="system" title="The NanoKVM's own CPU, memory and network: click for the device page">
+    CPU <span class="meter"><i id="cpumeter"></i></span><span id="cpu">-</span>
+    MEM <span class="meter"><i id="memmeter"></i></span><span id="mem">-</span>
+    <span id="net"></span>
+  </button>
+  <span id="hint">click the picture to send keyboard and mouse</span>
+  <button id="mousemode" title="Absolute: the pointer goes where you point. Relative: the mouse moves by steps, for BIOS setups and games (Esc lets go)">Mouse: absolute</button>
+  <select id="actions" title="Keys the browser keeps for itself, and more">
+    <option value="">Keys…</option>
+    <optgroup label="Keys">
+      <option value="ControlLeft+AltLeft+Delete">Ctrl+Alt+Delete</option>
+      <option value="ControlLeft+AltLeft+Backspace">Ctrl+Alt+Backspace</option>
+      <option value="AltLeft+Tab">Alt+Tab</option>
+      <option value="AltLeft+F4">Alt+F4</option>
+      <option value="MetaLeft">Windows / Command</option>
+      <option value="MetaLeft+Space">Command+Space</option>
+      <option value="MetaLeft+Tab">Command+Tab</option>
+      <option value="ControlLeft+Escape">Ctrl+Esc</option>
+      <option value="PrintScreen">Print Screen</option>
+        <option value="ControlLeft+AltLeft+F1">Ctrl+Alt+F1</option>
+        <option value="ControlLeft+AltLeft+F2">Ctrl+Alt+F2</option>
+        <option value="ControlLeft+AltLeft+F3">Ctrl+Alt+F3</option>
+        <option value="ControlLeft+AltLeft+F4">Ctrl+Alt+F4</option>
+        <option value="ControlLeft+AltLeft+F5">Ctrl+Alt+F5</option>
+        <option value="ControlLeft+AltLeft+F6">Ctrl+Alt+F6</option>
+        <option value="ControlLeft+AltLeft+F7">Ctrl+Alt+F7</option>
+    </optgroup>
+    <optgroup label="More">
+      <option value="type">Type text…</option>
+      <option value="wake">Wake on LAN…</option>
+      <option value="screen">NanoKVM screen…</option>
+      <option value="device">NanoKVM status and hardware…</option>
+      <option value="password">Change password…</option>
+      <option value="logout">Log out</option>
+      <option value="restart">Restart the NanoKVM…</option>
+    </optgroup>
+  </select>
+  <button id="sound" title="Play the target's sound here">Sound</button>
+  <button id="mic" title="Talk into the target's USB microphone">Mic</button>
+  <select id="usbaudio" title="The USB sound card the target sees">
+    <option value="off">USB audio off</option>
+    <option value="mic">USB microphone</option>
+    <option value="duplex">USB microphone + speaker</option>
+  </select>
+  <button id="usb" title="The USB devices the target sees">USB…</button>
+  <a id="devicelink" class="button" href="/device" target="kuroneko-device"
+     title="The NanoKVM itself: its hardware, status, screen and firmware">Device</a>
+</div>
+<dialog id="usbdialog">
+  <form id="usbform" method="dialog">
+    <h3>USB devices the target sees</h3>
+    <label><input type="checkbox" name="hid"> Keyboard and mouse</label>
+    <label>Pointer
+      <select name="pointer">
+        <option value="absolute">Absolute mouse</option>
+        <option value="stylus">Pen (Android, iPad)</option>
+        <option value="touch">Touch screen</option>
+      </select>
+    </label>
+    <label><input type="checkbox" name="jiggler"> Mouse jiggler: a pixel and back each
+      minute, so that the target stays awake</label>
+    <label><input type="checkbox" name="storage"> Virtual disk</label>
+    <label>Sound card
+      <select name="audio">
+        <option value="off">Off</option>
+        <option value="mic">Microphone</option>
+        <option value="duplex">Microphone and speaker</option>
+      </select>
+    </label>
+    <fieldset data-direction="microphone">
+      <legend>Microphone: the browser's, to the target</legend>
+      <label>Channels <select name="channels">
+        <option value="1">Mono</option><option value="2">Stereo</option></select></label>
+      <label>Samples <select name="sample_bits">
+        <option value="16">16-bit</option><option value="24">24-bit</option>
+        <option value="32">32-bit</option></select></label>
+      <div class="rates"></div>
+      <label>Starts at <select name="start"></select></label>
+      <p class="inuse"></p>
+    </fieldset>
+    <fieldset data-direction="speaker">
+      <legend>Speaker: the target's, to the browser</legend>
+      <label>Channels <select name="channels">
+        <option value="1">Mono</option><option value="2">Stereo</option>
+        <option value="6">5.1</option><option value="8">7.1</option></select></label>
+      <label>Samples <select name="sample_bits">
+        <option value="16">16-bit</option><option value="24">24-bit</option>
+        <option value="32">32-bit</option></select></label>
+      <div class="rates"></div>
+      <label>Starts at <select name="start"></select></label>
+      <p class="inuse"></p>
+    </fieldset>
+    <p class="note">The target starts at the rate chosen here and can switch among the ones
+      ticked: a Mac in Audio MIDI Setup, Windows in the sound device's properties. Applying
+      reconnects the NanoKVM's USB devices on the target.</p>
+    <label><input type="checkbox" id="voice"> Echo cancellation, noise suppression and automatic
+      gain on this browser's microphone</label>
+    <p class="note error" id="usberror" hidden></p>
+    <menu>
+      <button type="button" id="usbcancel">Cancel</button>
+      <button type="button" id="usbapply" class="primary">Apply</button>
+    </menu>
+  </form>
+</dialog>
+<canvas id="canvas" class="screen" tabindex="0" hidden></canvas>
+<img id="mjpeg" class="screen" tabindex="0" alt="" hidden>
+<div id="notice" hidden></div>
+<script>
+  const canvas = document.getElementById("canvas");
+  const img = document.getElementById("mjpeg");
+  const notice = document.getElementById("notice");
+  const mark = (id, on) => document.getElementById(id).classList.toggle("on", on);
+  const text = (id, s) => { document.getElementById(id).textContent = s; };
+  const wsUrl = (path) => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}`;
+  let view = canvas;
+  let decoded = 0;
+  const naturalSize = () => view === canvas ? [canvas.width, canvas.height]
+                                            : [img.naturalWidth, img.naturalHeight];
+
+  // The video input as the device reports it: {width, height, fps}, "none",
+  // "unsupported", or null until known.
+  let input = null;
+  const sameInput = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  // While the device restarts, keep saying so instead of what it last said.
+  let restartingUntil = 0;
+  const restarting = () => Date.now() < restartingUntil;
+  function showInput(i) {
+    if (restarting()) return;
+    input = i;
+    const problem = i === "none" ? "No signal" : i === "unsupported" ? "Unsupported input" : "";
+    notice.textContent = problem;
+    notice.hidden = !problem;
+    text("size", i && typeof i === "object" ? `${i.width}×${i.height} ${i.fps} Hz` : "");
+  }
+  async function restart() {
+    if (!confirm("Restart the NanoKVM? Video, keyboard and mouse stop for about 30 seconds.")) return;
+    try {
+      const reply = await fetch("/api/reboot", { method: "POST",
+        headers: { "content-type": "application/json" }, body: "{}" });
+      if (!reply.ok) throw new Error(`HTTP ${reply.status}`);
+      restartingUntil = Date.now() + 10000;
+      notice.textContent = "Restarting…";
+      notice.hidden = false;
+    } catch (e) {
+      alert(`Restart failed: ${e.message}`);
+    }
+  }
+
+  // The NanoKVM's own CPU, memory and network.
+  const rate = (b) => b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB/s`
+                    : b >= 1e3 ? `${Math.round(b / 1e3)} kB/s` : `${Math.round(b)} B/s`;
+
+  // The device page, in a tab of its own that later clicks reuse.
+  const openDevice = (section) => window.open(`/device${section ? `#${section}` : ""}`, "kuroneko-device");
+  document.getElementById("system").onclick = () => openDevice();
+
+  function meter(id, percent) {
+    const bar = document.getElementById(id);
+    bar.style.width = `${Math.min(100, Math.max(0, percent))}%`;
+    bar.className = percent >= 85 ? "hot" : percent >= 60 ? "warm" : "";
+  }
+
+  function showSystem(s) {
+    if (!s) return;
+    meter("cpumeter", s.cpu.total);
+    text("cpu", `${Math.round(s.cpu.total)}%`);
+    meter("memmeter", s.memory.percent);
+    text("mem", `${Math.round(s.memory.percent)}%`);
+    const all = Object.values(s.network).reduce((t, n) => ({ down: t.down + n.down, up: t.up + n.up }),
+                                                { down: 0, up: 0 });
+    text("net", `↓${rate(all.down)} ↑${rate(all.up)}`);
+  }
+
+  async function pollStatus() {
+    try {
+      const reply = await fetch("/status");
+      // The session ended: the page becomes the login page.
+      if (reply.status === 401) return location.reload();
+      const status = await reply.json();
+      showInput(status.video.input);
+      showAudioMode(status.audio.mode);
+      showSystem(status.metrics);
+      const hid = status.usb.includes("keyboard") && status.usb.includes("mouse");
+      text("hint", !hid ? "keyboard and mouse are off, see USB…"
+                   : mouseMode === "relative" ? "click the picture to take the mouse, Esc to let go"
+                   : "click the picture to send keyboard and mouse");
+    } catch (_) {}
+  }
+  setInterval(pollStatus, 2000);
+  pollStatus();
+
+  setInterval(() => {
+    if (view === canvas) {
+      mark("video", decoded > 0);
+      text("mode", `H.264 ${decoded} fps`);
+      decoded = 0;
+    } else {
+      mark("video", img.naturalWidth > 0 && notice.hidden);
+    }
+  }, 1000);
+
+  // H.264 through WebCodecs when the browser can decode it, MJPEG otherwise.
+  async function start() {
+    if ("VideoDecoder" in window) {
+      const config = { codec: "avc1.42C033", codedWidth: 3840, codedHeight: 2160 };
+      const support = await VideoDecoder.isConfigSupported(config).catch(() => ({}));
+      if (support.supported) return startH264();
+    }
+    startMJPEG();
+  }
+
+  async function startMJPEG() {
+    view = img;
+    img.hidden = false;
+    text("mode", "MJPEG");
+    // The stream on its own port asks for the token of this boot.
+    const token = async () => (await (await fetch("/status")).json()).mjpeg_token || "";
+    const load = async () => {
+      img.src = `http://${location.hostname}:8088/stream.mjpg?token=${await token().catch(() => "")}&t=${Date.now()}`;
+    };
+    img.onerror = () => setTimeout(load, 2000);
+    load();
+    attachInput(img);
+  }
+
+  function startH264() {
+    view = canvas;
+    canvas.hidden = false;
+    const ctx = canvas.getContext("2d");
+    const config = { codec: "avc1.42C033", optimizeForLatency: true };
+    const open = () => {
+      const ws = new WebSocket(wsUrl("/h264"));
+      ws.binaryType = "arraybuffer";
+      let synced = false;
+      let streamInput;  // input of the stream this decoder gets
+      const decoder = new VideoDecoder({
+        output: (frame) => {
+          if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
+            canvas.width = frame.displayWidth;
+            canvas.height = frame.displayHeight;
+          }
+          ctx.drawImage(frame, 0, 0);
+          frame.close();
+          decoded++;
+        },
+        error: () => ws.close(),
+      });
+      decoder.configure(config);
+      ws.onmessage = (ev) => {
+        if (typeof ev.data === "string") {
+          const message = JSON.parse(ev.data);
+          if (!("input" in message)) return;
+          // A new input restarts the stream, at its size, from a keyframe.
+          if (streamInput !== undefined && !sameInput(message.input, streamInput) &&
+              decoder.state === "configured") {
+            decoder.reset();
+            decoder.configure(config);
+            synced = false;
+          }
+          streamInput = message.input;
+          return showInput(message.input);
+        }
+        const data = new Uint8Array(ev.data);
+        const key = data[0] === 2;
+        if (!key && !synced) return;
+        synced = true;
+        // Falling behind: reconnecting gets a fresh keyframe.
+        if (decoder.decodeQueueSize > 30) return ws.close();
+        decoder.decode(new EncodedVideoChunk({ type: key ? "key" : "delta",
+          timestamp: Math.round(performance.now() * 1000), data: data.subarray(1) }));
+      };
+      ws.onclose = () => {
+        if (decoder.state !== "closed") decoder.close();
+        setTimeout(open, 1000);
+      };
+    };
+    open();
+    attachInput(canvas);
+  }
+
+  let ws = null;
+  function connect() {
+    ws = new WebSocket(wsUrl("/ws"));
+    ws.onopen = () => mark("input", true);
+    ws.onclose = () => { mark("input", false); setTimeout(connect, 1000); };
+  }
+  connect();
+  const send = (event) => ws && ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify(event));
+
+  // Position inside the picture, which object-fit: contain may letterbox.
+  function position(e) {
+    const r = view.getBoundingClientRect();
+    const [nw, nh] = naturalSize();
+    const iw = nw || 16, ih = nh || 9;
+    const scale = Math.min(r.width / iw, r.height / ih), w = iw * scale, h = ih * scale;
+    const clamp = (v) => Math.min(1, Math.max(0, v));
+    return { x: clamp((e.clientX - r.left - (r.width - w) / 2) / w),
+             y: clamp((e.clientY - r.top - (r.height - h) / 2) / h) };
+  }
+  const mouse = (e, extra) => send({ type: "mouse", ...position(e), buttons: e.buttons, ...extra });
+
+  // Absolute: the pointer goes where the mouse points. Relative: the pointer
+  // is locked to the picture and the mouse moves by steps.
+  let mouseMode = "absolute";
+  const mouseModeButton = document.getElementById("mousemode");
+  function showMouseMode() {
+    mouseModeButton.textContent = `Mouse: ${mouseMode}`;
+    mouseModeButton.classList.toggle("on", mouseMode === "relative");
+  }
+  mouseModeButton.onclick = () => {
+    mouseMode = mouseMode === "relative" ? "absolute" : "relative";
+    prefs.set("mouseMode", mouseMode);
+    if (document.pointerLockElement) document.exitPointerLock();
+    showMouseMode();
+  };
+
+  // Wheel deltas, pixels or lines, in steps of about a notch.
+  let wheelY = 0, wheelX = 0;
+  function wheelSteps(e) {
+    const scale = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 800 : 1;
+    wheelY += e.deltaY * scale;
+    wheelX += e.deltaX * scale;
+    const wheel = Math.trunc(wheelY / 50), pan = Math.trunc(wheelX / 50);
+    wheelY -= wheel * 50;
+    wheelX -= pan * 50;
+    return { wheel, pan };
+  }
+
+  function attachInput(el) {
+    let lastMove = 0;
+    let dx = 0, dy = 0;
+    const locked = () => document.pointerLockElement === el;
+    const relative = (e, extra) => {
+      const x = Math.round(dx), y = Math.round(dy);
+      dx -= x;
+      dy -= y;
+      send({ type: "relative", dx: x, dy: y, buttons: e.buttons, ...extra });
+    };
+    el.addEventListener("mousemove", (e) => {
+      const now = performance.now();
+      if (mouseMode === "relative") {
+        if (!locked()) return;
+        dx += e.movementX;
+        dy += e.movementY;
+        if (now - lastMove >= 8) { lastMove = now; relative(e); }
+      } else if (now - lastMove >= 16) {
+        lastMove = now;
+        mouse(e);
+      }
+    });
+    el.addEventListener("mousedown", (e) => {
+      el.focus();
+      e.preventDefault();
+      if (mouseMode !== "relative") return mouse(e);
+      // The first click takes the mouse.
+      if (!locked()) return el.requestPointerLock();
+      relative(e);
+    });
+    el.addEventListener("mouseup", (e) => {
+      // The back and forward buttons would leave the page.
+      e.preventDefault();
+      if (mouseMode !== "relative") mouse(e);
+      else if (locked()) relative(e);
+    });
+    el.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const steps = wheelSteps(e);
+      if (!steps.wheel && !steps.pan) return;
+      if (mouseMode !== "relative") mouse(e, steps);
+      else if (locked()) relative(e, steps);
+    }, { passive: false });
+    // Touches as the device's touch screen, or the first as the mouse; up to
+    // ten, each in a slot of its own while it lasts.
+    const slots = new Map();
+    const touch = (e) => {
+      e.preventDefault();
+      el.focus();
+      const live = new Set([...e.touches].map((t) => t.identifier));
+      for (const id of [...slots.keys()]) if (!live.has(id)) slots.delete(id);
+      const used = new Set(slots.values());
+      const touches = [];
+      for (const t of e.touches) {
+        if (!slots.has(t.identifier)) {
+          const free = [...Array(10).keys()].find((slot) => !used.has(slot));
+          if (free === undefined) continue;
+          slots.set(t.identifier, free);
+          used.add(free);
+        }
+        const p = position(t);
+        touches.push([slots.get(t.identifier), p.x, p.y]);
+      }
+      send({ type: "touch", touches });
+    };
+    for (const type of ["touchstart", "touchmove", "touchend", "touchcancel"]) {
+      el.addEventListener(type, touch, { passive: false });
+    }
+    el.addEventListener("contextmenu", (e) => e.preventDefault());
+    el.addEventListener("dragstart", (e) => e.preventDefault());
+    el.addEventListener("keydown", (e) => {
+      e.preventDefault();
+      if (!e.repeat) send({ type: "key", code: e.code, down: true });
+    });
+    el.addEventListener("keyup", (e) => { e.preventDefault(); send({ type: "key", code: e.code, down: false }); });
+    el.addEventListener("blur", () => send({ type: "release" }));
+  }
+
+  // ---- Sound ----
+  const workletUrl = (code) => URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
+
+  // Samples waiting to be played, at the AudioContext's rate, interpolated
+  // from the source's. The AudioWorklet runs it on the audio thread; pages
+  // without a secure context have no AudioWorklet and run it in a
+  // ScriptProcessor.
+  class PcmQueue {
+    constructor(rate) { this.rate = rate; this.sourceRate = rate; this.step = 1; this.reset(); }
+    reset() { this.chunks = []; this.index = 0; this.frac = 0; this.queued = 0; this.playing = false; }
+    push(rate, channels) {
+      if (rate !== this.sourceRate) {
+        this.reset();
+        this.sourceRate = rate;
+        this.step = rate / this.rate;
+      }
+      this.chunks.push(channels);
+      this.queued += channels[0].length;
+      // More than 300 ms behind: drop the oldest, so the sound never lags.
+      while (this.queued > this.sourceRate * 0.3 && this.chunks.length > 1) {
+        this.queued -= this.chunks.shift()[0].length - this.index;
+        this.index = 0;
+      }
+    }
+    fill(out) {
+      // After running dry, wait for 60 ms of samples.
+      if (!this.playing && this.queued < this.sourceRate * 0.06) {
+        for (const o of out) o.fill(0);
+        return;
+      }
+      this.playing = true;
+      for (let i = 0; i < out[0].length; i++) {
+        const cur = this.chunks[0];
+        if (!cur) {
+          for (const o of out) o[i] = 0;
+          this.playing = false;
+          continue;
+        }
+        let next = cur, j = this.index + 1;
+        if (j >= cur[0].length) {
+          if (this.chunks.length > 1) { next = this.chunks[1]; j = 0; } else j = this.index;
+        }
+        for (let c = 0; c < out.length; c++) {
+          const a = cur[Math.min(c, cur.length - 1)][this.index];
+          const b = next[Math.min(c, next.length - 1)][j];
+          out[c][i] = a + (b - a) * this.frac;
+        }
+        this.frac += this.step;
+        while (this.frac >= 1 && this.chunks.length) {
+          this.frac -= 1;
+          this.queued--;
+          if (++this.index >= this.chunks[0][0].length) { this.chunks.shift(); this.index = 0; }
+        }
+      }
+    }
+  }
+
+  const PLAYER = `${PcmQueue.toString()}
+    class Player extends AudioWorkletProcessor {
+      constructor() {
+        super();
+        this.queue = new PcmQueue(sampleRate);
+        this.port.onmessage = ({ data }) =>
+          data === "reset" ? this.queue.reset() : this.queue.push(data.rate, data.channels);
+      }
+      process(_inputs, outputs) { this.queue.fill(outputs[0]); return true; }
+    }
+    registerProcessor("kuroneko-player", Player);`;
+
+  const soundButton = document.getElementById("sound");
+  let sound = null;
+  const BYTES = { s16_le: 2, s24_3le: 3, s24_le: 4, s32_le: 4 };
+
+  // Interleaved samples, one Float32Array per channel.
+  function decodePcm(buffer, f) {
+    const n = f.channels, format = f.sample_format || "s16_le", size = BYTES[format];
+    const frames = Math.floor(buffer.byteLength / (size * n));
+    const out = Array.from({ length: n }, () => new Float32Array(frames));
+    if (format === "s16_le" || format === "s32_le") {
+      const pcm = size === 2 ? new Int16Array(buffer, 0, frames * n) : new Int32Array(buffer, 0, frames * n);
+      const scale = size === 2 ? 32768 : 2147483648;
+      for (let i = 0, k = 0; i < frames; i++) for (let c = 0; c < n; c++) out[c][i] = pcm[k++] / scale;
+    } else {
+      // 24-bit samples in the low three bytes, sign-extended.
+      const bytes = new Uint8Array(buffer);
+      for (let i = 0, o = 0; i < frames; i++) {
+        for (let c = 0; c < n; c++, o += size) {
+          out[c][i] = ((bytes[o] | bytes[o + 1] << 8 | bytes[o + 2] << 16) << 8 >> 8) / 8388608;
+        }
+      }
+    }
+    return out;
+  }
+
+  // Surround to stereo, in the channel order of USB audio (front left and
+  // right, center, LFE, back, side): center, back and side at -3 dB, no LFE.
+  const H = Math.SQRT1_2;
+  const LAYOUTS = {
+    3: [[1, 0], [0, 1], [H, H]],
+    4: [[1, 0], [0, 1], [H, 0], [0, H]],
+    5: [[1, 0], [0, 1], [H, H], [H, 0], [0, H]],
+    6: [[1, 0], [0, 1], [H, H], [0, 0], [H, 0], [0, H]],
+    7: [[1, 0], [0, 1], [H, H], [0, 0], [H, 0], [0, H], [0.5, 0.5]],
+    8: [[1, 0], [0, 1], [H, H], [0, 0], [H, 0], [0, H], [H, 0], [0, H]],
+  };
+  function toStereo(channels) {
+    const gains = LAYOUTS[channels.length];
+    if (!gains) return channels.slice(0, 2);
+    const frames = channels[0].length, left = new Float32Array(frames), right = new Float32Array(frames);
+    channels.forEach((samples, c) => {
+      const [l, r] = gains[c];
+      for (let i = 0; i < frames; i++) { left[i] += l * samples[i]; right[i] += r * samples[i]; }
+    });
+    return [left, right];
+  }
+
+  const started = (ctx) =>
+    Promise.race([ctx.resume(), new Promise((done) => setTimeout(done, 1000))])
+      .then(() => ctx.state === "running");
+
+  async function makePlayer(rate) {
+    const ctx = new AudioContext(rate ? { latencyHint: "interactive", sampleRate: rate }
+                                      : { latencyHint: "interactive" });
+    const p = { ctx };
+    if (ctx.audioWorklet) {
+      await ctx.audioWorklet.addModule(workletUrl(PLAYER));
+      const node = new AudioWorkletNode(ctx, "kuroneko-player",
+                                        { numberOfInputs: 0, outputChannelCount: [2] });
+      node.connect(ctx.destination);
+      p.deliver = (rate, channels) =>
+        node.port.postMessage({ rate, channels }, channels.map((c) => c.buffer));
+      p.reset = () => node.port.postMessage("reset");
+    } else {
+      const queue = new PcmQueue(ctx.sampleRate);
+      const node = ctx.createScriptProcessor(2048, 0, 2);
+      node.onaudioprocess = (e) =>
+        queue.fill([e.outputBuffer.getChannelData(0), e.outputBuffer.getChannelData(1)]);
+      node.connect(ctx.destination);
+      p.deliver = (rate, channels) => queue.push(rate, channels);
+      p.reset = () => queue.reset();
+    }
+    if (!(await started(ctx))) {
+      ctx.close();
+      throw new Error("the browser does not let the sound start");
+    }
+    return p;
+  }
+
+  // At the source's rate the browser resamples for the speakers, better
+  // than the queue interpolates.
+  async function matchRate(s, rate) {
+    if (s.player.ctx.sampleRate === rate || s.failed.has(rate) || s.switching) return;
+    s.switching = true;
+    try {
+      const player = await makePlayer(rate);
+      if (sound !== s || player.ctx.sampleRate !== rate) return player.ctx.close();
+      const old = s.player;
+      s.player = player;
+      old.ctx.close();
+    } catch (_) {
+      s.failed.add(rate);
+    } finally {
+      s.switching = false;
+    }
+  }
+
+  async function startSound() {
+    const s = { player: null, ws: null, format: null, failed: new Set(), switching: false };
+    sound = s;
+    s.player = await makePlayer();
+    const open = () => {
+      if (sound !== s) return;
+      const ws = new WebSocket(wsUrl("/audio"));
+      ws.binaryType = "arraybuffer";
+      s.ws = ws;
+      ws.onmessage = (ev) => {
+        if (typeof ev.data === "string") {
+          const message = JSON.parse(ev.data);
+          if (!message.format) return;
+          s.format = message.format;
+          s.player.reset();
+          soundButton.textContent = `Sound: ${message.format.source.toUpperCase()}`;
+          soundButton.title = `${describe(message.format)} from ${message.format.source.toUpperCase()}`;
+          matchRate(s, message.format.rate);
+          return;
+        }
+        if (s.format) s.player.deliver(s.format.rate, toStereo(decodePcm(ev.data, s.format)));
+      };
+      ws.onclose = () => setTimeout(open, 1000);
+    };
+    soundButton.classList.add("on");
+    soundButton.textContent = "Sound: on";
+    open();
+  }
+
+  function stopSound() {
+    if (!sound) return;
+    const s = sound;
+    sound = null;
+    if (s.ws) s.ws.close();
+    if (s.player) s.player.ctx.close();
+    soundButton.classList.remove("on");
+    soundButton.textContent = "Sound";
+    soundButton.title = "Play the target's sound here";
+  }
+
+  soundButton.onclick = async () => {
+    if (sound) return stopSound();
+    try {
+      await startSound();
+    } catch (e) {
+      stopSound();
+      alert(`Sound: ${e.message}`);
+    }
+  };
+
+  // ---- Microphone: the browser's, as the target's USB microphone ----
+  // In the format the device asks for: its rate, channels and sample size,
+  // in messages of 20 ms, interpolated from the AudioContext's rate where
+  // the two differ.
+  const RECORDER = `
+    const BYTES = ${JSON.stringify(BYTES)};
+    class Recorder extends AudioWorkletProcessor {
+      constructor() {
+        super();
+        this.port.onmessage = ({ data }) => this.configure(data);
+      }
+      configure(f) {
+        this.f = f;
+        this.n = f.channels;
+        this.size = BYTES[f.sample_format];
+        this.step = sampleRate / f.rate;
+        this.t = 0;
+        this.prev = new Float32Array(this.n);
+        this.cur = new Float32Array(this.n);
+        this.frames = Math.max(1, Math.round(f.rate / 50));
+        this.begin();
+      }
+      begin() {
+        this.out = new ArrayBuffer(this.frames * this.n * this.size);
+        this.view = new DataView(this.out);
+        this.o = 0;
+      }
+      put(v) {
+        const view = this.view, o = this.o;
+        if (this.size === 2) {
+          view.setInt16(o, Math.max(-32768, Math.min(32767, Math.round(v * 32768))), true);
+        } else if (this.f.sample_format === "s32_le") {
+          view.setInt32(o, Math.max(-2147483648, Math.min(2147483647, Math.round(v * 2147483648))), true);
+        } else {
+          const x = Math.max(-8388608, Math.min(8388607, Math.round(v * 8388608)));
+          view.setUint8(o, x & 255);
+          view.setUint8(o + 1, (x >> 8) & 255);
+          view.setUint8(o + 2, (x >> 16) & 255);
+          if (this.size === 4) view.setUint8(o + 3, x < 0 ? 255 : 0);
+        }
+        this.o += this.size;
+        if (this.o === this.out.byteLength) {
+          this.port.postMessage(this.out, [this.out]);
+          this.begin();
+        }
+      }
+      process(inputs) {
+        const input = inputs[0];
+        if (!this.f || !input || !input.length) return true;
+        const k = input.length, n = this.n, cur = this.cur, prev = this.prev;
+        for (let i = 0; i < input[0].length; i++) {
+          // The browser's channels onto the device's: a mono microphone on
+          // both sides, a stereo one averaged for mono.
+          if (n === 1) {
+            let sum = 0;
+            for (const channel of input) sum += channel[i];
+            cur[0] = sum / k;
+          } else {
+            for (let c = 0; c < n; c++) cur[c] = c < 2 ? input[Math.min(c, k - 1)][i] : 0;
+          }
+          for (; this.t < 1; this.t += this.step) {
+            for (let c = 0; c < n; c++) this.put(prev[c] + (cur[c] - prev[c]) * this.t);
+          }
+          this.t -= 1;
+          prev.set(cur);
+        }
+        return true;
+      }
+    }
+    registerProcessor("kuroneko-recorder", Recorder);`;
+
+  const micButton = document.getElementById("mic");
+  const usbaudio = document.getElementById("usbaudio");
+  let audioMode = "off";
+  let mic = null;
+
+  const prefs = {
+    get(key, fallback) {
+      try { const v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v); }
+      catch (_) { return fallback; }
+    },
+    set(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) {} },
+  };
+
+  async function startMic() {
+    // Made in the click, before the permission prompt ends the user gesture.
+    const m = { stream: null, ctx: new AudioContext(), node: null, ws: null, limit: 0 };
+    mic = m;
+    const voice = prefs.get("voice", true);
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: { ideal: 2 }, echoCancellation: voice, noiseSuppression: voice,
+               autoGainControl: voice },
+    });
+    m.stream = stream;
+    if (mic !== m) return stream.getTracks().forEach((track) => track.stop());
+    await started(m.ctx);
+    const ws = new WebSocket(wsUrl("/microphone"));
+    ws.binaryType = "arraybuffer";
+    m.ws = ws;
+    ws.onmessage = (ev) => {
+      if (typeof ev.data !== "string") return;
+      const message = JSON.parse(ev.data);
+      if (!message.format) return;
+      useFormat(m, message.format).catch((e) => {
+        if (mic !== m) return;
+        stopMic();
+        alert(`Microphone: ${e.message}`);
+      });
+    };
+    ws.onclose = (e) => {
+      if (mic !== m) return;
+      stopMic();
+      if (e.reason) alert(`Microphone: ${e.reason}`);
+    };
+    micButton.classList.add("on");
+    micButton.textContent = "Mic: on";
+  }
+
+  // The first format builds the recording, in an AudioContext at the
+  // device's rate where the browser resamples the microphone itself; later
+  // ones, when the target chooses another rate, go to the recorder.
+  async function useFormat(m, f) {
+    // A slow network drops samples rather than delay them past 100 ms.
+    m.limit = (f.rate * f.channels * BYTES[f.sample_format]) / 10;
+    if (!m.node) {
+      let ctx = null;
+      try {
+        ctx = new AudioContext({ sampleRate: f.rate });
+        await record(m, ctx);
+        m.ctx.close();
+        m.ctx = ctx;
+      } catch (_) {
+        if (ctx) ctx.close();
+        await record(m, m.ctx);
+      }
+    }
+    m.node.port.postMessage(f);
+    micButton.title = `The target hears ${describe(f)}`;
+  }
+
+  async function record(m, ctx) {
+    await ctx.audioWorklet.addModule(workletUrl(RECORDER));
+    const source = ctx.createMediaStreamSource(m.stream);
+    const node = new AudioWorkletNode(ctx, "kuroneko-recorder");
+    // Through a muted gain to the output, so that every browser runs it.
+    const mute = ctx.createGain();
+    mute.gain.value = 0;
+    source.connect(node).connect(mute).connect(ctx.destination);
+    node.port.onmessage = ({ data }) => {
+      if (m.ws.readyState === WebSocket.OPEN && m.ws.bufferedAmount < m.limit) m.ws.send(data);
+    };
+    if (!(await started(ctx))) throw new Error("the browser does not let the microphone start");
+    m.node = node;
+  }
+
+  function stopMic() {
+    if (!mic) return;
+    const m = mic;
+    mic = null;
+    if (m.stream) m.stream.getTracks().forEach((track) => track.stop());
+    if (m.ws) m.ws.close();
+    m.ctx.close();
+    micButton.classList.remove("on");
+    micButton.textContent = "Mic";
+  }
+
+  function updateMicButton() {
+    const usable = audioMode !== "off";
+    micButton.disabled = !usable && !mic;
+    micButton.title = !usable ? "Turn the USB microphone on first"
+      : window.isSecureContext ? "Talk into the target's USB microphone"
+      : "The microphone needs the HTTPS page";
+  }
+
+  micButton.onclick = async () => {
+    if (mic) return stopMic();
+    if (!window.isSecureContext) {
+      if (confirm("Browsers give the microphone only to secure pages. Open the HTTPS page?")) {
+        location.href = `https://${location.hostname}/`;
+      }
+      return;
+    }
+    try {
+      await startMic();
+    } catch (e) {
+      stopMic();
+      alert(`Microphone: ${e.message}`);
+    }
+  };
+
+  function showAudioMode(mode) {
+    if (!mode || usbaudio.disabled) return;
+    audioMode = mode;
+    usbaudio.value = mode;
+    if (mode === "off") stopMic();
+    updateMicButton();
+  }
+
+  // ---- USB devices ----
+  const RATES = [8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200, 96000, 176400, 192000,
+                 352800, 384000];
+  const kHz = (rate) => `${+(rate / 1000).toFixed(3)} kHz`;
+  const CHANNEL_NAMES = { 1: "mono", 2: "stereo", 6: "5.1", 8: "7.1" };
+  function describe(f) {
+    const bits = { s16_le: 16, s24_3le: 24, s24_le: 24, s32_le: 32 }[f.sample_format] || 16;
+    return `${kHz(f.rate)} ${CHANNEL_NAMES[f.channels] || `${f.channels} channels`} ${bits}-bit`;
+  }
+  const USB_ERRORS = {
+    invalid_rates: (d) => `Tick 1 to 10 sample rates for the ${d}.`,
+    too_much_bandwidth: (d) =>
+      `The ${d} format is more than USB carries: fewer channels, a smaller sample size or lower rates.`,
+    invalid_channels: (d) => `The ${d} cannot have that many channels.`,
+    invalid_sample_bits: (d) => `The ${d} cannot have that sample size.`,
+  };
+
+  async function postUsb(changes) {
+    const reply = await fetch("/api/usb", { method: "POST",
+      headers: { "content-type": "application/json" }, body: JSON.stringify(changes) });
+    const body = await reply.json().catch(() => ({}));
+    if (!reply.ok) {
+      const explain = USB_ERRORS[body.error];
+      throw new Error(explain ? explain(body.direction) : body.error || `HTTP ${reply.status}`);
+    }
+    return body;
+  }
+
+  usbaudio.onchange = async () => {
+    const mode = usbaudio.value;
+    usbaudio.disabled = true;
+    try {
+      audioMode = (await postUsb({ audio: mode })).settings.audio;
+    } catch (e) {
+      alert(`USB audio: ${e.message}`);
+    } finally {
+      usbaudio.disabled = false;
+      showAudioMode(audioMode);
+    }
+  };
+
+  const usbDialog = document.getElementById("usbdialog");
+  const usbForm = document.getElementById("usbform");
+  const usbError = document.getElementById("usberror");
+  const usbApply = document.getElementById("usbapply");
+  const fieldsets = [...usbForm.querySelectorAll("fieldset")];
+  for (const fieldset of fieldsets) {
+    for (const rate of RATES) {
+      const label = document.createElement("label");
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.value = rate;
+      label.append(box, kHz(rate));
+      fieldset.querySelector(".rates").append(label);
+    }
+  }
+
+  // The ticked rates to start with.
+  function refreshStart(fieldset, preferred) {
+    const select = fieldset.querySelector("[name=start]");
+    const keep = preferred ?? +select.value;
+    const ticked = [...fieldset.querySelectorAll(".rates input:checked")].map((box) => +box.value);
+    select.replaceChildren(...ticked.map((rate) => new Option(kHz(rate), rate)));
+    if (ticked.includes(keep)) select.value = String(keep);
+    select.disabled = ticked.length < 2;
+  }
+  for (const fieldset of fieldsets) {
+    fieldset.querySelector(".rates").addEventListener("change", () => refreshStart(fieldset));
+  }
+
+  function setSelect(select, value) {
+    if (![...select.options].some((o) => +o.value === value)) select.add(new Option(value, value));
+    select.value = String(value);
+  }
+
+  document.getElementById("usb").onclick = async () => {
+    try {
+      const usb = await (await fetch("/api/usb")).json();
+      const s = usb.settings;
+      usbForm.hid.checked = s.hid;
+      usbForm.pointer.value = s.pointer;
+      usbForm.jiggler.checked = s.jiggler;
+      usbForm.storage.checked = s.storage;
+      usbForm.audio.value = s.audio;
+      for (const fieldset of fieldsets) {
+        const direction = fieldset.dataset.direction, f = s[direction];
+        setSelect(fieldset.querySelector("[name=channels]"), f.channels);
+        setSelect(fieldset.querySelector("[name=sample_bits]"), f.sample_bits);
+        for (const box of fieldset.querySelectorAll(".rates input")) box.checked = f.rates.includes(+box.value);
+        refreshStart(fieldset, f.rates[0]);
+        const using = usb.formats[direction];
+        fieldset.querySelector(".inuse").textContent = using ? `The target uses ${describe(using)}.` : "";
+      }
+      document.getElementById("voice").checked = prefs.get("voice", true);
+      usbError.hidden = true;
+      usbDialog.showModal();
+    } catch (e) {
+      alert(`USB: ${e.message}`);
+    }
+  };
+
+  document.getElementById("usbcancel").onclick = () => usbDialog.close();
+
+  usbApply.onclick = async () => {
+    const changes = { hid: usbForm.hid.checked, pointer: usbForm.pointer.value,
+                      jiggler: usbForm.jiggler.checked, storage: usbForm.storage.checked,
+                      audio: usbForm.audio.value };
+    for (const fieldset of fieldsets) {
+      changes[fieldset.dataset.direction] = {
+        channels: +fieldset.querySelector("[name=channels]").value,
+        sample_bits: +fieldset.querySelector("[name=sample_bits]").value,
+        rates: [...fieldset.querySelectorAll(".rates input:checked")].map((box) => +box.value),
+      };
+      const start = +fieldset.querySelector("[name=start]").value;
+      const rates = changes[fieldset.dataset.direction].rates;
+      if (rates.includes(start)) rates.sort((a, b) => (b === start) - (a === start));
+    }
+    prefs.set("voice", document.getElementById("voice").checked);
+    usbApply.disabled = true;
+    try {
+      audioMode = (await postUsb(changes)).settings.audio;
+      showAudioMode(audioMode);
+      usbDialog.close();
+    } catch (e) {
+      usbError.textContent = e.message;
+      usbError.hidden = false;
+    } finally {
+      usbApply.disabled = false;
+    }
+  };
+
+  // Keys the browser does not let the page take, typed text, Wake-on-LAN.
+  const actions = document.getElementById("actions");
+  actions.onchange = async () => {
+    const value = actions.value;
+    actions.value = "";
+    if (value === "type") {
+      const typed = prompt("Text to type on the target, as a US keyboard would:");
+      if (typed) send({ type: "text", text: typed });
+    } else if (value === "wake") {
+      const mac = prompt("MAC address of the computer to wake:", prefs.get("wakeMac", ""));
+      if (!mac) return;
+      prefs.set("wakeMac", mac);
+      const reply = await fetch("/api/wol", { method: "POST",
+        headers: { "content-type": "application/json" }, body: JSON.stringify({ mac }) });
+      const body = await reply.json().catch(() => ({}));
+      alert(reply.ok ? `Sent the magic packet to ${mac}.` : `Wake on LAN: ${body.error || reply.status}`);
+    } else if (value === "screen" || value === "device") {
+      return openDevice(value === "screen" ? "screen" : "");
+    } else if (value === "restart") {
+      return restart();
+    } else if (value === "password") {
+      const current = prompt("Current password:");
+      if (!current) return;
+      const password = prompt("New password, at least 8 characters:");
+      if (!password) return;
+      if (prompt("New password again:") !== password) return alert("The two passwords differ.");
+      const reply = await fetch("/api/auth/password", { method: "POST",
+        headers: { "content-type": "application/json" }, body: JSON.stringify({ current, password }) });
+      const body = await reply.json().catch(() => ({}));
+      alert(reply.ok ? "Password changed. Other sessions have ended." : `Password: ${body.error || reply.status}`);
+    } else if (value === "logout") {
+      await fetch("/api/auth/logout", { method: "POST",
+        headers: { "content-type": "application/json" }, body: "{}" });
+      location.reload();
+    } else if (value) {
+      const codes = value.split("+");
+      for (const code of codes) send({ type: "key", code, down: true });
+      for (const code of codes.reverse()) send({ type: "key", code, down: false });
+    }
+    view.focus();
+  };
+
+  updateMicButton();
+  mouseMode = prefs.get("mouseMode", "absolute") === "relative" ? "relative" : "absolute";
+  showMouseMode();
+
+  start();
+</script>
+</body>
+</html>

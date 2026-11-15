@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NanoKVM-Go</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #0e0f11; color: #c9ccd1;
+    font: 14px/1.4 system-ui, -apple-system, sans-serif; }
+  body { display: flex; align-items: center; justify-content: center; padding: 16px;
+    box-sizing: border-box; }
+  form { width: min(340px, 100%); background: #17191c; border: 1px solid #262a2f;
+    border-radius: 8px; padding: 20px 22px; box-sizing: border-box; }
+  h1 { margin: 0 0 4px; font-size: 18px; color: #e6e8eb; }
+  p { margin: 0 0 14px; color: #7d838b; font-size: 13px; }
+  label { display: block; margin: 10px 0 4px; }
+  input { width: 100%; box-sizing: border-box; font: inherit; padding: 6px 10px;
+    border-radius: 4px; border: 1px solid #343941; background: #1f2226; color: #e6e8eb; }
+  button { margin-top: 16px; width: 100%; font: inherit; padding: 7px; border-radius: 4px;
+    border: 1px solid #3fa45b; background: #1f2226; color: #e6e8eb; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .error { color: #e0786f; margin: 10px 0 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<form id="form">
+  <h1>NanoKVM-Go</h1>
+  <p id="intro">Log in to control the computer.</p>
+  <label for="password">Password</label>
+  <input id="password" type="password" autocomplete="current-password" required autofocus>
+  <div id="again-field" hidden>
+    <label for="again">Password again</label>
+    <input id="again" type="password" autocomplete="new-password">
+  </div>
+  <button id="submit">Log in</button>
+  <p class="error" id="error" hidden></p>
+</form>
+<script>
+  const form = document.getElementById("form");
+  const password = document.getElementById("password");
+  const again = document.getElementById("again");
+  const error = document.getElementById("error");
+  const submit = document.getElementById("submit");
+  let setup = false;
+
+  const show = (message) => { error.textContent = message; error.hidden = !message; };
+
+  async function post(path, body) {
+    const reply = await fetch(path, { method: "POST",
+      headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const data = await reply.json().catch(() => ({}));
+    if (!reply.ok) throw new Error(data.error || `HTTP ${reply.status}`);
+  }
+
+  (async () => {
+    const auth = await (await fetch("/api/auth")).json();
+    if (auth.logged_in) return location.reload();
+    setup = !auth.password_set;
+    if (setup) {
+      document.getElementById("intro").textContent =
+        "Choose the password that keeps others from this computer: at least 8 characters.";
+      document.getElementById("again-field").hidden = false;
+      again.required = true;
+      password.autocomplete = "new-password";
+      submit.textContent = "Set the password";
+    }
+  })();
+
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    show("");
+    if (setup && password.value !== again.value) return show("The two passwords differ.");
+    submit.disabled = true;
+    try {
+      await post(setup ? "/api/auth/setup" : "/api/auth/login", { password: password.value });
+      location.reload();
+    } catch (err) {
+      show(err.message);
+      password.select();
+    } finally {
+      submit.disabled = false;
+    }
+  };
+</script>
+</body>
+</html>

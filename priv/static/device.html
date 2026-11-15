@@ -1,0 +1,1647 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Device · NanoKVM-Go</title>
+<style>
+  :root {
+    --bg: #0b0d10;
+    --panel: #12161b;
+    --panel-2: #181d24;
+    --line: #20262e;
+    --line-2: #2b333d;
+    --text: #e8eaed;
+    --text-2: #a4acb7;
+    --text-3: #6c7581;
+    --accent: #6aa8ff;
+    --ok: #3ecf8e;
+    --warn: #f5b84b;
+    --bad: #ff6b6b;
+    --cpu: #6aa8ff;
+    --memory: #b18cff;
+    --temperature: #ff9f5a;
+    --down: #3ecf8e;
+    --up: #6aa8ff;
+    --radius: 14px;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body { margin: 0; min-height: 100vh; color: var(--text); font: 14px/1.5 var(--sans);
+    background: radial-gradient(1100px 520px at 0% -8%, rgba(106, 168, 255, 0.07), transparent 62%),
+                radial-gradient(900px 480px at 100% -12%, rgba(177, 140, 255, 0.06), transparent 60%),
+                var(--bg);
+    -webkit-font-smoothing: antialiased; }
+  [hidden] { display: none !important; }
+  a { color: var(--accent); }
+  .icon { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8;
+    stroke-linecap: round; stroke-linejoin: round; }
+  .num { font-variant-numeric: tabular-nums; }
+  .mono { font-family: var(--mono); font-size: 12.5px; }
+  .muted { color: var(--text-3); }
+
+  /* Header */
+  .top { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 18px;
+    height: 58px; padding: 0 24px; background: rgba(11, 13, 16, 0.75);
+    backdrop-filter: saturate(150%) blur(14px); -webkit-backdrop-filter: saturate(150%) blur(14px);
+    border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none;
+    font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; }
+  .mark { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px;
+    background: linear-gradient(140deg, #6aa8ff, #9a7bff); color: #0b0d10; }
+  .mark .icon { width: 18px; height: 18px; stroke-width: 2.2; }
+  .tabs { display: flex; gap: 2px; padding: 3px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; }
+  .tabs a { padding: 4px 12px; border-radius: 7px; color: var(--text-2); text-decoration: none;
+    font-weight: 550; }
+  .tabs a:hover { color: var(--text); }
+  .tabs a[aria-current="page"] { background: var(--line-2); color: var(--text); }
+  .spacer { flex: 1; }
+  .live { display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); font-weight: 500;
+    white-space: nowrap; }
+  .live::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+  .live.on::before { background: var(--ok); animation: pulse 2s ease-out infinite; }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(62, 207, 142, 0.55); }
+    80%, 100% { box-shadow: 0 0 0 7px rgba(62, 207, 142, 0); }
+  }
+
+  /* Buttons and fields */
+  .btn { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px;
+    border-radius: 9px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--text);
+    font: inherit; font-weight: 550; cursor: pointer; white-space: nowrap; }
+  .btn:hover { background: var(--line-2); }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #08111f; }
+  .btn.primary:hover { background: #82b7ff; }
+  .btn.danger { color: #ffb4b4; }
+  .btn.danger.solid { background: #d84a4a; border-color: #d84a4a; color: #fff; }
+  .btn.small { height: 28px; padding: 0 10px; border-radius: 8px; font-size: 13px; }
+  :is(.btn, select, input, .segmented button, .tabs a):focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px; }
+  select, input[type="number"], input[type="text"] { height: 34px; border-radius: 9px;
+    border: 1px solid var(--line-2); background-color: var(--panel-2); color: var(--text); font: inherit;
+    padding: 0 12px; }
+  input::placeholder { color: var(--text-3); }
+  select { appearance: none; -webkit-appearance: none; padding-right: 34px; cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a4acb7' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center; }
+  input[type="number"] { width: 130px; }
+  input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; margin: 0;
+    border-radius: 999px; cursor: pointer;
+    background: linear-gradient(to right, var(--accent) var(--fill, 50%), var(--line-2) var(--fill, 50%)); }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px;
+    border-radius: 50%; background: #fff; border: 0;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6), 0 0 0 4px rgba(106, 168, 255, 0.25); }
+  input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: #fff;
+    border: 0; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6), 0 0 0 4px rgba(106, 168, 255, 0.25); }
+  input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 6px; }
+  .segmented { display: inline-flex; padding: 3px; gap: 2px; border-radius: 10px; background: var(--panel-2);
+    border: 1px solid var(--line-2); }
+  .segmented button { height: 28px; padding: 0 12px; border: 0; border-radius: 7px; background: transparent;
+    color: var(--text-2); font: inherit; font-weight: 550; cursor: pointer; }
+  .segmented button[aria-pressed="true"] { background: var(--line-2); color: var(--text); }
+
+  /* Layout */
+  main { max-width: 1280px; margin: 0 auto; padding: 30px 24px 72px; }
+  .hero { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+    gap: 16px 24px; margin-bottom: 22px; }
+  .hero h1 { margin: 0; font-size: 30px; line-height: 1.15; font-weight: 680; letter-spacing: -0.025em; }
+  .hero p { margin: 6px 0 0; color: var(--text-2); }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 13px;
+    border-radius: 999px; background: var(--panel); border: 1px solid var(--line); color: var(--text-2);
+    font-weight: 520; white-space: nowrap; }
+  .chip .icon { width: 16px; height: 16px; color: var(--text-3); }
+  .chip b { color: var(--text); font-weight: 600; }
+  .chip.ok .icon { color: var(--ok); }
+  .chip.warn .icon { color: var(--warn); }
+  .chip.bad .icon { color: var(--bad); }
+  .banner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin: -6px 0 22px;
+    padding: 14px 16px; border-radius: var(--radius); border: 1px solid rgba(245, 184, 75, 0.35);
+    background: rgba(245, 184, 75, 0.08); color: #f8d9a0; }
+  .banner .icon { color: var(--warn); }
+  .banner p { margin: 0; flex: 1; min-width: 240px; }
+
+  .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
+  .tile { position: relative; padding: 16px 16px 12px; border-radius: var(--radius); background: var(--panel);
+    border: 1px solid var(--line); min-width: 0; }
+  .tile h2 { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--text-3); font-size: 12px;
+    font-weight: 650; letter-spacing: 0.07em; text-transform: uppercase; }
+  .tile h2 .icon { width: 16px; height: 16px; }
+  .tile .big { margin-top: 6px; font-size: 30px; line-height: 1.2; font-weight: 680; letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile .big small { margin-left: 2px; color: var(--text-2); font-size: 15px; font-weight: 550; letter-spacing: 0; }
+  .tile .sub { min-height: 20px; color: var(--text-2); font-size: 12.5px; font-variant-numeric: tabular-nums;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile .sub i { font-style: normal; color: var(--text-3); }
+  .chart { position: relative; margin-top: 10px; }
+  .chart canvas { display: block; width: 100%; height: 66px; cursor: crosshair; }
+  .chart .tip { position: absolute; top: -6px; transform: translate(-50%, -100%); padding: 4px 8px;
+    border-radius: 7px; background: #05070a; border: 1px solid var(--line-2); color: var(--text);
+    font-size: 12px; white-space: nowrap; pointer-events: none; font-variant-numeric: tabular-nums; }
+  .chart .tip i { font-style: normal; color: var(--text-3); }
+  .tile .scale { display: flex; justify-content: space-between; margin-top: 4px; color: var(--text-3);
+    font-size: 11px; }
+  .bars { display: flex; gap: 6px; margin-top: 8px; }
+  .bars span { flex: 1; height: 4px; border-radius: 2px; background: var(--line-2); overflow: hidden; }
+  .bars span i { display: block; height: 100%; width: 0; background: var(--cpu); transition: width 0.5s; }
+
+  .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
+  .column { grid-column: span 6; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .column > .card:last-child { flex: 1; }
+  .card { grid-column: span 6; min-width: 0; padding: 18px 20px 20px; border-radius: var(--radius);
+    background: var(--panel); border: 1px solid var(--line); scroll-margin-top: 76px; }
+  .card.wide { grid-column: span 12; }
+  .card > header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 8px 12px; margin-bottom: 14px; }
+  .card h2 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 15.5px; font-weight: 650;
+    letter-spacing: -0.01em; }
+  .card h2 .icon { color: var(--text-3); }
+  .badge { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; max-width: 100%;
+    padding: 2px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; line-height: 1.3;
+    background: var(--panel-2); color: var(--text-2); border: 1px solid var(--line-2); }
+  .badge::before { flex: none; }
+  .badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
+  .badge.ok { color: #9ee8c4; border-color: rgba(62, 207, 142, 0.3); background: rgba(62, 207, 142, 0.08); }
+  .badge.ok::before { background: var(--ok); }
+  .badge.warn { color: #f8d9a0; border-color: rgba(245, 184, 75, 0.3); background: rgba(245, 184, 75, 0.08); }
+  .badge.warn::before { background: var(--warn); }
+  .badge.bad { color: #ffc2c2; border-color: rgba(255, 107, 107, 0.3); background: rgba(255, 107, 107, 0.08); }
+  .badge.bad::before { background: var(--bad); }
+  .badge.plain::before { display: none; }
+  dl.facts { display: grid; grid-template-columns: minmax(110px, max-content) minmax(0, 1fr); gap: 9px 20px;
+    margin: 0; }
+  dl.facts dt { color: var(--text-3); }
+  dl.facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag { padding: 2px 9px; border-radius: 7px; background: var(--panel-2); border: 1px solid var(--line-2);
+    color: var(--text-2); font-size: 12.5px; }
+  .note { margin: 14px 0 0; color: var(--text-3); font-size: 12.5px; }
+
+  /* Screen settings */
+  .control { display: grid; grid-template-columns: 150px minmax(0, 1fr); align-items: center; gap: 8px 14px;
+    padding: 11px 0; border-top: 1px solid var(--line); }
+  .control:first-of-type { border-top: 0; padding-top: 2px; }
+  .control > label, .control > .label { color: var(--text-2); }
+  .control > select, .control > .segmented { justify-self: start; }
+  .control > select { min-width: 220px; max-width: 100%; }
+  .control .field { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-width: 0; }
+  .range { display: flex; align-items: center; gap: 14px; }
+  .range output { min-width: 44px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* Network */
+  .ifaces { display: grid; gap: 12px; }
+  .iface { padding: 14px; border-radius: 11px; background: var(--panel-2); border: 1px solid var(--line); }
+  .iface header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .iface header b { font-weight: 650; }
+  .iface header .spacer + .badge { margin-left: 0; }
+  .iface dl.facts { grid-template-columns: minmax(90px, max-content) minmax(0, 1fr); gap: 6px 16px; }
+  .signal { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; margin-right: 6px;
+    vertical-align: -1px; }
+  .signal i { width: 3px; border-radius: 1px; background: var(--line-2); }
+  .signal i.on { background: currentColor; }
+  .subsection { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .subsection > header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 8px 12px; margin-bottom: 10px; }
+  .subsection h3 { margin: 0; font-size: 13.5px; font-weight: 650; }
+  .address { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+  .tag.custom { color: #b9d5ff; border-color: rgba(106, 168, 255, 0.35); background: rgba(106, 168, 255, 0.08); }
+
+  /* Auxiliary port */
+  .xlines { display: grid; gap: 12px; margin-top: 12px; }
+  .xline { padding: 12px 14px; border-radius: 11px; background: var(--panel-2); border: 1px solid var(--line); }
+  .xline > header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 10px; }
+  .xline > header b { font-weight: 650; }
+  .xline > header small { color: var(--text-3); font-size: 12.5px; }
+  .xline > header .tag { margin-left: auto; }
+  .xline dl.facts { grid-template-columns: minmax(80px, max-content) minmax(0, 1fr); gap: 6px 16px; }
+  .xline .field { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+  .xline .field label { color: var(--text-3); font-size: 12.5px; }
+  .xline input[type="number"] { width: 104px; }
+  .xline p { margin: 0; color: var(--text-2); }
+
+  /* Storage */
+  .disk { display: flex; height: 38px; margin: 4px 0 14px; border-radius: 10px; overflow: hidden;
+    background: var(--panel-2); border: 1px solid var(--line); }
+  .disk > div { position: relative; display: flex; align-items: center; justify-content: center;
+    min-width: 0; overflow: hidden; border-right: 1px solid var(--bg); color: rgba(8, 10, 14, 0.9);
+    font-size: 12px; font-weight: 650; white-space: nowrap; container-type: inline-size; }
+  .disk > .part { min-width: 92px; }
+  .disk > .reserved { flex: 0 0 10px; background: var(--line-2); }
+  @container (max-width: 76px) { .disk span { display: none; } }
+  .disk > div:last-child { border-right: 0; }
+  .disk .used { position: absolute; inset: 0 auto 0 0; background: rgba(8, 10, 14, 0.28); }
+  .disk span { position: relative; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; }
+  .disk .free { background: repeating-linear-gradient(135deg, var(--panel-2) 0 7px, #1b2028 7px 14px);
+    color: var(--text-3); }
+  .legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px 20px; }
+  .legend > div { display: grid; grid-template-columns: 12px minmax(0, 1fr); gap: 2px 10px; align-items: center; }
+  .legend .swatch { width: 12px; height: 12px; border-radius: 4px; }
+  .legend b { font-weight: 600; }
+  .legend small { grid-column: 2; color: var(--text-3); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+
+  /* Firmware */
+  .slots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .slot { padding: 12px 14px; border-radius: 11px; background: var(--panel-2); border: 1px solid var(--line); }
+  .slot.active { border-color: rgba(106, 168, 255, 0.45); box-shadow: 0 0 0 3px rgba(106, 168, 255, 0.08); }
+  .slot header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+  .slot .version { font-size: 20px; font-weight: 680; letter-spacing: -0.02em; }
+  .slot p { margin: 0; color: var(--text-3); font-size: 12.5px; overflow-wrap: anywhere; }
+
+  /* Hardware */
+  .table { width: 100%; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th { padding: 0 12px 10px; color: var(--text-3); font-size: 12px; font-weight: 600; letter-spacing: 0.05em;
+    text-transform: uppercase; text-align: left; white-space: nowrap; }
+  td { padding: 10px 12px; border-top: 1px solid var(--line); vertical-align: middle; }
+  th:first-child, td:first-child { padding-left: 0; }
+  th:last-child, td:last-child { padding-right: 0; text-align: right; }
+  td .mono { color: var(--text-2); }
+  tbody tr:hover td { background: rgba(255, 255, 255, 0.015); }
+
+  /* Toast, dialog, overlay */
+  #toast { position: fixed; left: 50%; bottom: 24px; z-index: 30; transform: translate(-50%, 20px);
+    max-width: calc(100vw - 32px); padding: 10px 16px; border-radius: 11px; background: #1c222b;
+    border: 1px solid var(--line-2); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); opacity: 0;
+    pointer-events: none; transition: opacity 0.2s, transform 0.2s; }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  #toast.error { border-color: rgba(255, 107, 107, 0.5); color: #ffc2c2; }
+  dialog { width: min(440px, calc(100vw - 32px)); padding: 22px; border-radius: 16px; color: var(--text);
+    background: var(--panel); border: 1px solid var(--line-2); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55); }
+  dialog::backdrop { background: rgba(4, 6, 9, 0.65); backdrop-filter: blur(3px); }
+  dialog h3 { margin: 0 0 8px; font-size: 17px; }
+  dialog p { margin: 0; color: var(--text-2); }
+  dialog menu { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin: 20px 0 0;
+    padding: 0; }
+  dialog menu .start { margin-right: auto; }
+  .formfield { display: grid; gap: 6px; margin-top: 16px; }
+  .formfield > span { color: var(--text-2); font-weight: 550; }
+  .formfield > span i { font-style: normal; font-weight: 400; color: var(--text-3); }
+  .formfield input { width: 100%; font-family: var(--mono); font-size: 13.5px; }
+  .formfield small { min-height: 18px; color: var(--text-3); font-size: 12.5px; }
+  .formfield.invalid input { border-color: var(--bad); }
+  .formfield.invalid small { color: #ffc2c2; }
+  .callout { display: flex; gap: 10px; margin-top: 16px; padding: 12px 14px; border-radius: 11px;
+    border: 1px solid rgba(245, 184, 75, 0.3); background: rgba(245, 184, 75, 0.07); }
+  .callout .icon { margin-top: 1px; color: var(--warn); }
+  dialog .callout p { color: #f8d9a0; font-size: 13px; }
+  .formerror { margin: 12px 0 0 !important; color: #ffc2c2 !important; }
+  #overlay { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 24px;
+    background: rgba(8, 10, 13, 0.82); backdrop-filter: blur(6px); text-align: center; }
+  #overlay h3 { margin: 16px 0 6px; font-size: 20px; }
+  #overlay p { margin: 0; color: var(--text-2); }
+  .spinner { width: 34px; height: 34px; margin: 0 auto; border-radius: 50%; border: 3px solid var(--line-2);
+    border-top-color: var(--accent); animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .skeleton { color: transparent !important; background: var(--panel-2); border-radius: 6px; }
+
+  @media (max-width: 1100px) {
+    .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card { grid-column: span 12; }
+    /* One column, the cards in reading order. */
+    .column { display: contents; }
+    #screen { order: 1; } #video { order: 2; } #usb { order: 3; } #network { order: 4; }
+    #firmware { order: 5; } #software { order: 6; } #storage { order: 7; } #hardware { order: 8; }
+  }
+  @media (max-width: 620px) {
+    .top { gap: 12px; padding: 0 16px; }
+    .brand span, .live span { display: none; }
+    main { padding: 22px 16px 56px; }
+    .hero h1 { font-size: 25px; }
+    .tiles { grid-template-columns: minmax(0, 1fr); }
+    .control { grid-template-columns: minmax(0, 1fr); }
+    .slots { grid-template-columns: minmax(0, 1fr); }
+    .card { padding: 16px; }
+    .disk > .part { min-width: 36px; }
+    /* The parts as stacked rows: name and state, then chip and driver. */
+    thead { display: none; }
+    tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 10px 0;
+      border-top: 1px solid var(--line); }
+    tbody td { display: block; padding: 0; border: 0; text-align: left; }
+    tbody td:nth-child(1) { font-weight: 600; }
+    tbody td:nth-child(2), tbody td:nth-child(4) { grid-column: 1; color: var(--text-2); font-size: 12.5px; }
+    tbody td:nth-child(3) { display: none; }
+    tbody td:nth-child(5) { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .live.on::before, .spinner { animation: none; }
+    #toast, .bars span i { transition: none; }
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position: absolute" aria-hidden="true">
+  <symbol id="i-kvm" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2.5"/><path d="M9 20h6M12 16v4"/><path d="m9.5 8.5 2.5 2 2.5-2"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 2.5v3M15 2.5v3M9 18.5v3M15 18.5v3M2.5 9h3M2.5 15h3M18.5 9h3M18.5 15h3"/></symbol>
+  <symbol id="i-memory" viewBox="0 0 24 24"><path d="M4 7h16a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1Z"/><path d="M7 11v2M11 11v2M15 11v2M7 17v3M12 17v3M17 17v3"/></symbol>
+  <symbol id="i-temperature" viewBox="0 0 24 24"><path d="M14 14.76V4.5a2 2 0 0 0-4 0v10.26a4 4 0 1 0 4 0Z"/><path d="M12 9v6"/></symbol>
+  <symbol id="i-network" viewBox="0 0 24 24"><path d="M7 20V5M3 9l4-4 4 4M17 4v15M13 15l4 4 4-4"/></symbol>
+  <symbol id="i-video" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+  <symbol id="i-usb" viewBox="0 0 24 24"><path d="M12 21V4M9.5 6 12 3l2.5 3"/><path d="M12 14 7.5 11.5V9M12 16.5l4.5-2.5v-3"/><rect x="15" y="8.5" width="3" height="2.5" rx=".5"/><circle cx="7.5" cy="8" r="1.4"/><circle cx="12" cy="20" r="1.5"/></symbol>
+  <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M2 8.8a15 15 0 0 1 20 0M5 12.5a10.5 10.5 0 0 1 14 0M8.5 16.1a5.5 5.5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1"/></symbol>
+  <symbol id="i-storage" viewBox="0 0 24 24"><path d="M7 2.5h8l4.5 4.5v13a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 20V4A1.5 1.5 0 0 1 7 2.5Z"/><path d="M9.5 6v3M12.5 6v3M15.5 6.5V9"/></symbol>
+  <symbol id="i-firmware" viewBox="0 0 24 24"><path d="m21 8-9-5-9 5 9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8M12 13v8"/></symbol>
+  <symbol id="i-screen" viewBox="0 0 24 24"><rect x="6.5" y="2.5" width="11" height="19" rx="2"/><path d="M10.5 18.5h3"/></symbol>
+  <symbol id="i-board" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2.5"/><rect x="7" y="7" width="5" height="5" rx="1"/><path d="M15 7.5h2.5M15 11h2.5M7 16h10"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18.5A2 2 0 0 0 3.5 21.5h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-software" viewBox="0 0 24 24"><path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/></symbol>
+</svg>
+
+<header class="top">
+  <a class="brand" href="/"><span class="mark"><svg class="icon"><use href="#i-kvm"/></svg></span><span>NanoKVM-Go</span></a>
+  <nav class="tabs" aria-label="Pages">
+    <a href="/">Remote</a>
+    <a href="/device" aria-current="page">Device</a>
+  </nav>
+  <div class="spacer"></div>
+  <span class="live" id="live"><span>Connecting</span></span>
+  <button class="btn danger small" id="restart" type="button"><svg class="icon"><use href="#i-power"/></svg>Restart</button>
+</header>
+
+<main id="device">
+  <section class="hero">
+    <div>
+      <h1 id="hostname"><span class="skeleton">nerves-0000</span></h1>
+      <p id="subtitle"><span class="skeleton">Sipeed NanoKVM-Go · Axera AX620QE</span></p>
+    </div>
+    <div class="chips" id="chips" aria-live="polite"></div>
+  </section>
+
+  <div class="banner" id="trial" hidden>
+    <svg class="icon"><use href="#i-alert"/></svg>
+    <p id="trialtext">This firmware is on trial.</p>
+    <button class="btn primary small" id="keep" type="button">Keep this firmware</button>
+  </div>
+
+  <section class="tiles" aria-label="Live metrics">
+    <article class="tile">
+      <h2><svg class="icon"><use href="#i-cpu"/></svg>CPU</h2>
+      <div class="big" id="cpu">–</div>
+      <div class="sub" id="cpusub">&nbsp;</div>
+      <div class="chart"><canvas id="cpuchart" role="img" aria-label="CPU use, last five minutes"></canvas></div>
+      <div class="bars" id="cores"></div>
+    </article>
+    <article class="tile">
+      <h2><svg class="icon"><use href="#i-memory"/></svg>Memory</h2>
+      <div class="big" id="memory">–</div>
+      <div class="sub" id="memorysub">&nbsp;</div>
+      <div class="chart"><canvas id="memorychart" role="img" aria-label="Memory use, last five minutes"></canvas></div>
+      <div class="scale"><span>5 min</span><span>now</span></div>
+    </article>
+    <article class="tile">
+      <h2><svg class="icon"><use href="#i-temperature"/></svg>SoC temperature</h2>
+      <div class="big" id="temperature">–</div>
+      <div class="sub" id="temperaturesub">&nbsp;</div>
+      <div class="chart"><canvas id="temperaturechart" role="img" aria-label="SoC temperature, last five minutes"></canvas></div>
+      <div class="scale"><span>5 min</span><span>now</span></div>
+    </article>
+    <article class="tile">
+      <h2><svg class="icon"><use href="#i-network"/></svg>Network</h2>
+      <div class="big" id="traffic">–</div>
+      <div class="sub" id="trafficsub">&nbsp;</div>
+      <div class="chart"><canvas id="networkchart" role="img" aria-label="Network traffic, last five minutes"></canvas></div>
+      <div class="scale"><span>5 min</span><span>now</span></div>
+    </article>
+  </section>
+
+  <div class="grid">
+    <div class="column">
+    <section class="card" id="screen">
+      <header>
+        <h2><svg class="icon"><use href="#i-screen"/></svg>Screen</h2>
+        <span class="badge" id="lit">–</span>
+      </header>
+      <div id="screenform" hidden>
+        <div class="control">
+          <label for="brightness">Brightness</label>
+          <div class="range"><input type="range" id="brightness" min="5" max="100" step="1"><output id="brightnessvalue" for="brightness">–</output></div>
+        </div>
+        <div class="control">
+          <label for="pwm">Backlight PWM</label>
+          <div class="field">
+            <select id="pwm">
+              <option value="" id="pwmdefault">Default</option>
+              <option value="200">200 Hz</option>
+              <option value="500">500 Hz</option>
+              <option value="1000">1 kHz</option>
+              <option value="2160">2.16 kHz, as stock</option>
+              <option value="5000">5 kHz</option>
+              <option value="10000">10 kHz</option>
+              <option value="25000">25 kHz</option>
+              <option value="50000">50 kHz</option>
+              <option value="100000">100 kHz</option>
+              <option value="300000">300 kHz</option>
+              <option value="custom">Custom…</option>
+            </select>
+            <span id="pwmcustom" hidden>
+              <input type="number" id="pwmhz" min="1" max="1000000" step="1" placeholder="Hz" aria-label="Frequency in Hz">
+              <button class="btn small" id="pwmapply" type="button">Set</button>
+            </span>
+          </div>
+        </div>
+        <div class="control">
+          <span class="label" id="rotatelabel">Rotation</span>
+          <div class="segmented" role="group" aria-labelledby="rotatelabel" id="rotate">
+            <button type="button" data-value="0">Upright</button>
+            <button type="button" data-value="180">Upside down</button>
+          </div>
+        </div>
+        <div class="control">
+          <label for="sleep">Screen off</label>
+          <select id="sleep">
+            <option value="0">Never</option>
+            <option value="1">After a minute</option>
+            <option value="5">After 5 minutes</option>
+            <option value="15">After 15 minutes</option>
+            <option value="60">After an hour</option>
+          </select>
+        </div>
+        <div class="control">
+          <span class="label">Touch panel</span>
+          <div class="field"><span id="calibrated">–</span><button class="btn small" id="resetcalibration" type="button">Reset calibration</button></div>
+        </div>
+        <p class="note">Brightness follows the same curve at any PWM frequency. Below about 100 Hz the light
+          flickers; from about 100 kHz low brightness may come out brighter. Calibrate the touch panel on the
+          screen itself: Settings, Touch panel, Calibrate.</p>
+      </div>
+      <p class="note" id="noscreen" hidden>The screen is not running.</p>
+    </section>
+
+    <section class="card" id="usb">
+      <header>
+        <h2><svg class="icon"><use href="#i-usb"/></svg>USB to the target</h2>
+        <span class="badge" id="usbbadge">–</span>
+      </header>
+      <dl class="facts" id="usbfacts"></dl>
+    </section>
+
+    <section class="card" id="expansion">
+      <header>
+        <h2><svg class="icon"><use href="#i-usb"/></svg>Auxiliary port</h2>
+        <span class="badge" id="xbadge">–</span>
+      </header>
+      <div id="xform" hidden>
+        <div class="control">
+          <label for="xmode">Its two lines</label>
+          <select id="xmode"></select>
+        </div>
+        <div class="xlines" id="xlines"></div>
+        <p class="note">The USB-C port with the lightning icon carries two lines besides power. Off drives
+          nothing, and the choice stays after a restart. Which contacts carry the lines, and at what voltage
+          (most likely 3.3 V), is not confirmed yet: measure before connecting anything but the Finger
+          Robot.</p>
+      </div>
+      <p class="note" id="noxpansion" hidden>This system's kernel has no driver for the auxiliary port's
+        lines.</p>
+    </section>
+    </div>
+
+    <div class="column">
+    <section class="card" id="video">
+      <header>
+        <h2><svg class="icon"><use href="#i-video"/></svg>Video input</h2>
+        <span class="badge" id="videobadge">–</span>
+      </header>
+      <dl class="facts" id="videofacts"></dl>
+    </section>
+
+    <section class="card" id="network">
+      <header>
+        <h2><svg class="icon"><use href="#i-wifi"/></svg>Network</h2>
+      </header>
+      <div class="ifaces" id="ifaces"></div>
+      <div class="subsection" id="usbnet">
+        <header>
+          <h3>USB network MAC addresses</h3>
+          <button class="btn small" id="usbnetedit" type="button" disabled>Change…</button>
+        </header>
+        <dl class="facts" id="usbnetfacts"></dl>
+        <p class="note">The target computer keeps one network adapter for the NanoKVM as long as these stay the
+          same, restart after restart.</p>
+      </div>
+    </section>
+    </div>
+
+    <section class="card wide" id="storage">
+      <header>
+        <h2><svg class="icon"><use href="#i-storage"/></svg>Storage</h2>
+        <span class="badge plain" id="card">–</span>
+      </header>
+      <div class="disk" id="disk"></div>
+      <div class="legend" id="legend"></div>
+      <p class="note" id="storagenote" hidden></p>
+    </section>
+
+    <section class="card" id="firmware">
+      <header>
+        <h2><svg class="icon"><use href="#i-firmware"/></svg>Firmware</h2>
+        <span class="badge" id="validated">–</span>
+      </header>
+      <div class="slots" id="slots"></div>
+      <dl class="facts" id="firmwarefacts"></dl>
+    </section>
+
+    <section class="card" id="software">
+      <header>
+        <h2><svg class="icon"><use href="#i-software"/></svg>Software</h2>
+      </header>
+      <dl class="facts" id="softwarefacts"></dl>
+    </section>
+
+    <section class="card wide" id="hardware">
+      <header>
+        <h2><svg class="icon"><use href="#i-board"/></svg>Hardware</h2>
+        <span class="badge" id="hardwarebadge">–</span>
+      </header>
+      <div class="table">
+        <table>
+          <thead><tr><th>Part</th><th>Chip</th><th>Linux device</th><th>Driver</th><th>State</th></tr></thead>
+          <tbody id="components"></tbody>
+        </table>
+      </div>
+      <p class="note">Each part as the kernel sees it. Without a device the kernel made nothing of it: its driver is
+        not built or its device tree node is off. A device without a driver failed to probe.</p>
+    </section>
+  </div>
+</main>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<dialog id="restartdialog">
+  <h3>Restart the NanoKVM?</h3>
+  <p>Video, keyboard and mouse stop for about 30 seconds. This page reconnects by itself.</p>
+  <menu>
+    <button class="btn" type="button" id="restartcancel">Cancel</button>
+    <button class="btn danger solid" type="button" id="restartconfirm">Restart</button>
+  </menu>
+</dialog>
+
+<dialog id="macdialog" aria-labelledby="mactitle">
+  <form id="macform" novalidate>
+    <h3 id="mactitle">USB network MAC addresses</h3>
+    <p>Leave a field empty for the default, which comes from the NanoKVM's serial number.</p>
+    <label class="formfield" id="devicefield">
+      <span>NanoKVM <i>· its end, usb0</i></span>
+      <input type="text" id="devicemac" spellcheck="false" autocomplete="off" autocapitalize="off" maxlength="17">
+      <small id="devicehint"></small>
+    </label>
+    <label class="formfield" id="hostfield">
+      <span>Target computer <i>· the network adapter it sees</i></span>
+      <input type="text" id="hostmac" spellcheck="false" autocomplete="off" autocapitalize="off" maxlength="17">
+      <small id="hosthint"></small>
+    </label>
+    <div class="callout"><svg class="icon"><use href="#i-alert"/></svg><p id="macwarning"></p></div>
+    <p class="formerror" id="macerror" hidden></p>
+    <menu>
+      <button class="btn start" type="button" id="macdefaults">Use defaults</button>
+      <button class="btn" type="button" id="maccancel">Cancel</button>
+      <button class="btn primary" type="submit" id="macapply">Apply</button>
+    </menu>
+  </form>
+</dialog>
+
+<div id="overlay" hidden>
+  <div>
+    <div class="spinner"></div>
+    <h3>Restarting…</h3>
+    <p>The page comes back when the NanoKVM does.</p>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+// ---- Helpers
+
+const $ = (id) => document.getElementById(id);
+const SVG = "http://www.w3.org/2000/svg";
+
+function h(tag, props, ...children) {
+  const el = document.createElement(tag);
+  for (const [key, value] of Object.entries(props || {})) {
+    if (value == null || value === false) continue;
+    if (key === "class") el.className = value;
+    else if (key === "style") el.style.cssText = value;
+    else el.setAttribute(key, value === true ? "" : value);
+  }
+  el.append(...children.flat().filter((child) => child != null && child !== false));
+  return el;
+}
+
+function icon(name) {
+  const svg = document.createElementNS(SVG, "svg");
+  svg.setAttribute("class", "icon");
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS(SVG, "use");
+  use.setAttribute("href", `#i-${name}`);
+  svg.append(use);
+  return svg;
+}
+
+// Definition list rows: [term, description] pairs; empty descriptions left out.
+function facts(dl, rows) {
+  dl.replaceChildren(...rows.filter(([, value]) => value != null && value !== "")
+    .flatMap(([term, value]) => [h("dt", null, term), h("dd", null, value)]));
+}
+
+function badge(el, text, kind) {
+  el.textContent = text;
+  el.className = `badge ${kind || ""}`;
+}
+
+const fmt = {
+  bytes(n) {
+    if (n == null) return "–";
+    if (n >= 1e12) return `${(n / 1e12).toFixed(1)} TB`;
+    if (n >= 1e9) return `${(n / 1e9).toFixed(n >= 1e11 ? 0 : 1)} GB`;
+    if (n >= 1e6) return `${(n / 1e6).toFixed(n >= 1e8 ? 0 : 1)} MB`;
+    if (n >= 1e3) return `${Math.round(n / 1e3)} kB`;
+    return `${n} B`;
+  },
+  rate(n) {
+    if (n >= 1e6) return `${(n / 1e6).toFixed(1)} MB/s`;
+    if (n >= 1e3) return `${Math.round(n / 1e3)} kB/s`;
+    return `${Math.round(n)} B/s`;
+  },
+  duration(seconds) {
+    if (seconds == null) return "–";
+    const d = Math.floor(seconds / 86400), hr = Math.floor(seconds / 3600) % 24;
+    const min = Math.floor(seconds / 60) % 60;
+    if (d) return `${d} d ${hr} h`;
+    if (hr) return `${hr} h ${min} min`;
+    return min ? `${min} min` : `${Math.floor(seconds)} s`;
+  },
+  // 25000 as "25 kHz", 2160 as "2.16 kHz".
+  hertz: (hz) => (hz >= 1000 ? `${+(hz / 1000).toFixed(2)} kHz` : `${Math.round(hz)} Hz`),
+  ago(seconds) {
+    if (seconds < 1) return "now";
+    if (seconds < 60) return `${seconds} s ago`;
+    return `${Math.floor(seconds / 60)} min${seconds % 60 ? ` ${seconds % 60} s` : ""} ago`;
+  },
+  month(date) {
+    if (!date) return null;
+    const [year, month] = date.split("-").map(Number);
+    return new Date(year, month - 1).toLocaleDateString(undefined, { year: "numeric", month: "long" });
+  },
+};
+
+let toastTimer;
+function toast(text, error) {
+  const el = $("toast");
+  el.textContent = text;
+  el.className = error ? "show error" : "show";
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = el.className.replace("show", "").trim(); }, error ? 5000 : 2500);
+}
+
+async function post(path, body) {
+  const reply = await fetch(path, { method: "POST", headers: { "content-type": "application/json" },
+                                    body: JSON.stringify(body) });
+  if (reply.status === 401) return location.reload();
+  const data = await reply.json().catch(() => ({}));
+  if (!reply.ok) throw Object.assign(new Error(data.error || `HTTP ${reply.status}`), { data });
+  return data;
+}
+
+// ---- Charts: the last five minutes, a point a second, the newest on the right.
+
+const HISTORY = 300;
+
+class Chart {
+  constructor(canvas, { min, max, format }) {
+    this.canvas = canvas;
+    this.min = min;
+    this.max = max;
+    this.format = format;
+    this.series = [];
+    this.hover = null;
+    this.tip = h("div", { class: "tip", hidden: true });
+    canvas.parentElement.append(this.tip);
+    canvas.addEventListener("pointermove", (e) => { this.hover = e.offsetX; this.draw(); });
+    canvas.addEventListener("pointerleave", () => { this.hover = null; this.draw(); });
+    new ResizeObserver(() => this.draw()).observe(canvas);
+  }
+
+  // [{values, color, fill}]; values oldest first, null for a gap.
+  set(series) {
+    this.series = series;
+    this.draw();
+  }
+
+  range() {
+    const values = this.series.flatMap((s) => s.values).filter((v) => v != null);
+    const min = typeof this.min === "function" ? this.min(values) : this.min;
+    const max = typeof this.max === "function" ? this.max(values) : this.max;
+    return [min, Math.max(max, min + 1)];
+  }
+
+  draw() {
+    const canvas = this.canvas, dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, ht = canvas.clientHeight;
+    if (!w || !ht) return;
+    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(ht * dpr)) {
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(ht * dpr);
+    }
+    const g = canvas.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, ht);
+    const [min, max] = this.range();
+    const step = w / (HISTORY - 1);
+    const x = (i, length) => w - (length - 1 - i) * step;
+    const y = (v) => ht - 3 - ((Math.min(Math.max(v, min), max) - min) / (max - min)) * (ht - 8);
+
+    g.strokeStyle = "rgba(255, 255, 255, 0.05)";
+    g.lineWidth = 1;
+    for (const f of [0.5, 1]) {
+      const gy = Math.round(ht - 3 - f * (ht - 8)) + 0.5;
+      g.beginPath(); g.moveTo(0, gy); g.lineTo(w, gy); g.stroke();
+    }
+
+    for (const { values, color, fill } of this.series) {
+      const points = values.map((v, i) => (v == null ? null : [x(i, values.length), y(v)]));
+      const runs = [];
+      for (const p of points) {
+        if (!p) runs.push([]);
+        else (runs.length ? runs[runs.length - 1] : runs[runs.push([]) - 1]).push(p);
+      }
+      for (const run of runs.filter((r) => r.length)) {
+        if (fill) {
+          const gradient = g.createLinearGradient(0, 0, 0, ht);
+          gradient.addColorStop(0, `${color}55`);
+          gradient.addColorStop(1, `${color}00`);
+          g.fillStyle = gradient;
+          g.beginPath();
+          g.moveTo(run[0][0], ht);
+          for (const [px, py] of run) g.lineTo(px, py);
+          g.lineTo(run[run.length - 1][0], ht);
+          g.closePath();
+          g.fill();
+        }
+        g.strokeStyle = color;
+        g.lineWidth = 1.7;
+        g.lineJoin = "round";
+        g.beginPath();
+        run.forEach(([px, py], i) => (i ? g.lineTo(px, py) : g.moveTo(px, py)));
+        g.stroke();
+      }
+      const last = points[points.length - 1];
+      if (last) {
+        g.fillStyle = color;
+        g.beginPath(); g.arc(last[0], last[1], 2.6, 0, Math.PI * 2); g.fill();
+      }
+    }
+    this.drawHover(g, w, ht, x, y, step);
+  }
+
+  drawHover(g, w, ht, x, y, step) {
+    const longest = Math.max(0, ...this.series.map((s) => s.values.length));
+    if (this.hover == null || !longest) { this.tip.hidden = true; return; }
+    const back = Math.round((w - this.hover) / step);
+    if (back >= longest) { this.tip.hidden = true; return; }
+    const px = w - back * step;
+    g.strokeStyle = "rgba(255, 255, 255, 0.25)";
+    g.beginPath(); g.moveTo(px + 0.5, 0); g.lineTo(px + 0.5, ht); g.stroke();
+    const parts = [];
+    for (const { values, color, label } of this.series) {
+      const v = values[values.length - 1 - back];
+      if (v == null) continue;
+      g.fillStyle = color;
+      g.beginPath(); g.arc(px, y(v), 3, 0, Math.PI * 2); g.fill();
+      parts.push(`${label ? `${label} ` : ""}${this.format(v)}`);
+    }
+    this.tip.replaceChildren(parts.join(" · "), " ", h("i", null, fmt.ago(back)));
+    this.tip.hidden = false;
+    const half = this.tip.offsetWidth / 2;
+    this.tip.style.left = `${Math.min(Math.max(px, half), w - half)}px`;
+  }
+}
+
+// 1, 2 or 5 times a power of ten, at least the largest value.
+function niceMax(values, least) {
+  const top = Math.max(least, ...values);
+  const power = 10 ** Math.floor(Math.log10(top));
+  return [1, 2, 5, 10].map((m) => m * power).find((m) => m >= top);
+}
+
+const charts = {
+  cpu: new Chart($("cpuchart"), { min: 0, max: 100, format: (v) => `${Math.round(v)}%` }),
+  memory: new Chart($("memorychart"), { min: 0, max: 100, format: (v) => `${Math.round(v)}%` }),
+  temperature: new Chart($("temperaturechart"), {
+    min: (vs) => Math.min(30, Math.floor((Math.min(...vs) - 5) / 10) * 10),
+    max: (vs) => Math.max(90, Math.ceil((Math.max(...vs) + 5) / 10) * 10),
+    format: (v) => `${v.toFixed(1)} °C`,
+  }),
+  network: new Chart($("networkchart"), { min: 0, max: (vs) => niceMax(vs, 10e3), format: fmt.rate }),
+};
+
+const COLORS = (() => {
+  const style = getComputedStyle(document.documentElement);
+  const read = (name) => style.getPropertyValue(`--${name}`).trim();
+  return Object.fromEntries(["cpu", "memory", "temperature", "down", "up", "ok", "warn", "bad", "text-3"]
+    .map((name) => [name, read(name)]));
+})();
+
+// ---- State: what the page opened with, then what the socket sends.
+
+const state = {
+  overview: null,
+  status: null,
+  metrics: null,
+  history: { cpu: [], memory: [], temperature: [], network: {} },
+  storage: null,
+};
+
+const keep = (list, value) => { list.push(value); if (list.length > HISTORY) list.splice(0, list.length - HISTORY); };
+
+function remember(sample) {
+  const history = state.history;
+  keep(history.cpu, sample.cpu.total);
+  keep(history.memory, sample.memory.percent);
+  keep(history.temperature, sample.temperature);
+  for (const [name, n] of Object.entries(sample.network)) {
+    history.network[name] = history.network[name] || { down: [], up: [] };
+    keep(history.network[name].down, n.down);
+    keep(history.network[name].up, n.up);
+  }
+  for (const name of Object.keys(history.network)) if (!(name in sample.network)) delete history.network[name];
+}
+
+// The interfaces' traffic summed, aligned on the newest sample.
+function totalTraffic(direction) {
+  const lists = Object.values(state.history.network).map((n) => n[direction]);
+  const length = Math.max(0, ...lists.map((l) => l.length));
+  return Array.from({ length }, (_, i) => lists.reduce((sum, l) => {
+    const v = l[l.length - length + i];
+    return sum + (v == null ? 0 : v);
+  }, 0));
+}
+
+// ---- Rendering
+
+const IFACES = { wifi: "Wi-Fi", usb: "USB network", ethernet: "Ethernet" };
+const ROLES = {
+  boot: { name: "Boot", color: "#8a94a6" },
+  rootfs_a: { name: "Firmware A", color: "#6aa8ff" },
+  rootfs_b: { name: "Firmware B", color: "#4d7fd1" },
+  data: { name: "Data", color: "#3ecf8e" },
+};
+const USB_STATES = {
+  configured: ["Connected", "ok"],
+  suspended: ["Target asleep", "warn"],
+  not_attached: ["Not connected", ""],
+  attached: ["Connecting", ""],
+  powered: ["Connecting", ""],
+  default: ["Connecting", ""],
+  addressed: ["Connecting", ""],
+};
+const SPEEDS = {
+  low_speed: "USB 1.1 Low Speed, 1.5 Mb/s",
+  full_speed: "USB 1.1 Full Speed, 12 Mb/s",
+  high_speed: "USB 2.0 High Speed, 480 Mb/s",
+  super_speed: "USB 3 SuperSpeed, 5 Gb/s",
+  super_speed_plus: "USB 3 SuperSpeed+, 10 Gb/s",
+};
+const FUNCTIONS = {
+  keyboard: "Keyboard", mouse: "Mouse", relative_mouse: "Relative mouse", storage: "Virtual disk",
+  microphone: "Microphone", speaker: "Speaker",
+};
+
+function render() {
+  const o = state.overview;
+  if (o) renderIdentity(o);
+  if (state.status) renderStatus(state.status);
+  if (state.metrics) renderMetrics(state.metrics);
+  if (o || state.storage) renderStorage(state.storage || o.storage);
+  if (o) renderStatic(o);
+}
+
+function renderIdentity(o) {
+  const hw = o.hardware;
+  $("hostname").textContent = o.hostname;
+  document.title = `${o.hostname} · NanoKVM-Go`;
+  const cores = hw.cpu.cores ? `${hw.cpu.cores} × ${hw.cpu.model || "CPU"}` : null;
+  $("subtitle").textContent = [hw.model, hw.soc, cores, hw.memory && `${fmt.bytes(hw.memory)} memory`]
+    .filter(Boolean).join(" · ") || "NanoKVM-Go";
+}
+
+function chip(iconName, kind, ...content) {
+  return h("span", { class: `chip ${kind || ""}` }, icon(iconName), ...content);
+}
+
+function inputText(input) {
+  if (input && typeof input === "object") return `${input.width} × ${input.height} at ${input.fps} Hz`;
+  return { none: "No signal", unsupported: "Unsupported signal" }[input] || "Starting";
+}
+
+function wifiOf(network) {
+  return Object.values(network || {}).find((i) => i.kind === "wifi");
+}
+
+function signalKind(dbm) {
+  return dbm >= -67 ? "ok" : dbm >= -75 ? "warn" : "bad";
+}
+
+function signalBars(percent) {
+  const on = Math.max(1, Math.ceil(percent / 25));
+  return h("span", { class: "signal", "aria-hidden": "true" },
+    [4, 7, 10, 13].map((height, i) => h("i", { class: i < on ? "on" : "", style: `height:${height}px` })));
+}
+
+function renderStatus(s) {
+  const o = state.overview;
+  const chips = [];
+  const input = s.video.input;
+  chips.push(chip("video", input && typeof input === "object" ? "ok" : input === "unsupported" ? "bad" : "",
+    "HDMI ", h("b", null, inputText(input))));
+  const connection = s.usb.connection;
+  const [usbText, usbKind] = connection ? (USB_STATES[connection.state] || ["Unknown", ""]) : ["No controller", "bad"];
+  chips.push(chip("usb", usbKind, "Target ", h("b", null, usbText)));
+  const wifi = wifiOf(s.network);
+  if (wifi && wifi.wifi) {
+    chips.push(chip("wifi", signalKind(wifi.wifi.signal_dbm), "Wi-Fi ",
+      h("b", { class: "num" }, `${wifi.wifi.signal_dbm} dBm`)));
+  } else if (wifi) {
+    const up = wifi.connection === "internet" || wifi.connection === "lan";
+    chips.push(chip("wifi", up ? "ok" : "warn", "Wi-Fi ", h("b", null, up ? "connected" : "not connected")));
+  }
+  if (state.metrics) chips.push(chip("clock", "", "Up ", h("b", { class: "num" }, fmt.duration(state.metrics.uptime))));
+  if (o) {
+    const running = o.firmware.slots.find((slot) => slot.active);
+    if (running) chips.push(chip("firmware", s.trial.validated ? "" : "warn", "Firmware ", h("b", null, running.version || "?")));
+  }
+  $("chips").replaceChildren(...chips);
+
+  renderTrial(s.trial);
+  renderScreen(s.screen);
+  renderVideo(s.video);
+  renderUsb(s.usb);
+  renderExpansion(s.expansion);
+  renderNetwork(s.network);
+  renderUsbNetwork(s.usb.network);
+  renderBeam(s.beam);
+}
+
+function renderTrial(trial) {
+  const on = !trial.validated;
+  $("trial").hidden = !on;
+  badge($("validated"), trial.validated ? "Validated" : "On trial", trial.validated ? "ok" : "warn");
+  if (!on) return;
+  const left = trial.revert_in == null ? null : Math.ceil(trial.revert_in / 1000);
+  const when = left == null ? "after the next restart"
+    : `in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+  $("trialtext").textContent = `This firmware is on trial: the NanoKVM goes back to the previous one ${when} unless you keep it.`;
+}
+
+function renderMetrics(m) {
+  const history = state.history;
+  $("cpu").replaceChildren(`${Math.round(m.cpu.total)}`, h("small", null, "%"));
+  $("cpusub").replaceChildren(m.load.length ? `Load ${m.load.map((l) => l.toFixed(2)).join(" · ")}` : "");
+  charts.cpu.set([{ values: history.cpu, color: COLORS.cpu, fill: true }]);
+  const cores = $("cores");
+  if (cores.children.length !== m.cpu.cores.length) {
+    cores.replaceChildren(...m.cpu.cores.map((_, i) => h("span", { title: `Core ${i}` }, h("i"))));
+  }
+  m.cpu.cores.forEach((percent, i) => {
+    const bar = cores.children[i];
+    bar.title = `Core ${i}: ${Math.round(percent)}%`;
+    bar.firstChild.style.width = `${Math.min(100, percent)}%`;
+  });
+
+  $("memory").replaceChildren(`${Math.round(m.memory.percent)}`, h("small", null, "%"));
+  $("memorysub").textContent = `${fmt.bytes(m.memory.used)} of ${fmt.bytes(m.memory.total)} in use`;
+  charts.memory.set([{ values: history.memory, color: COLORS.memory, fill: true }]);
+
+  if (m.temperature == null) {
+    $("temperature").textContent = "–";
+    $("temperaturesub").textContent = "No sensor";
+  } else {
+    const t = m.temperature;
+    $("temperature").replaceChildren(t.toFixed(1), h("small", null, " °C"));
+    const valid = history.temperature.filter((v) => v != null);
+    $("temperaturesub").replaceChildren(t >= 95 ? "Hot" : t >= 80 ? "Warm" : "Normal",
+      h("i", null, `  ·  ${Math.min(...valid).toFixed(1)} to ${Math.max(...valid).toFixed(1)} °C`));
+  }
+  charts.temperature.set([{ values: history.temperature, color: COLORS.temperature, fill: true }]);
+
+  const total = Object.values(m.network).reduce((t, n) => ({ down: t.down + n.down, up: t.up + n.up }),
+                                                { down: 0, up: 0 });
+  $("traffic").replaceChildren(fmt.rate(total.down + total.up));
+  $("trafficsub").replaceChildren(h("span", { style: `color:${COLORS.down}` }, `↓ ${fmt.rate(total.down)}`),
+    "   ", h("span", { style: `color:${COLORS.up}` }, `↑ ${fmt.rate(total.up)}`));
+  charts.network.set([
+    { values: totalTraffic("down"), color: COLORS.down, fill: true, label: "↓" },
+    { values: totalTraffic("up"), color: COLORS.up, label: "↑" },
+  ]);
+}
+
+// ---- The screen's settings: each change applies at once.
+
+const screenForm = $("screenform");
+let screenSettings = null;
+let screenBusy = 0;
+
+// Selects a value, adding an option for one the list does not have.
+function setSelect(select, value, label) {
+  const v = String(value);
+  if (![...select.options].some((o) => o.value === v)) {
+    select.insertBefore(new Option(label(+v), v), select.querySelector('[value="custom"]'));
+  }
+  select.value = v;
+}
+
+function renderScreen(screen) {
+  $("noscreen").hidden = !!screen;
+  screenForm.hidden = !screen;
+  if (!screen) return badge($("lit"), "Not running", "bad");
+  screenSettings = screen;
+  const light = screen.backlight;
+  const frequency = light && light.frequency ? ` · ${fmt.hertz(light.frequency)}` : "";
+  badge($("lit"), !light ? "Backlight unknown" : light.on ? `On${frequency}` : "Off, asleep",
+        light && light.on ? "ok" : "");
+  if (screenBusy) return;
+  const active = document.activeElement;
+  if (active !== $("brightness")) {
+    $("brightness").value = screen.brightness;
+    showBrightness();
+  }
+  $("pwmdefault").textContent = screen.pwm_default ? `Default, ${fmt.hertz(screen.pwm_default)}` : "Default";
+  if (active !== $("pwm") && $("pwmcustom").hidden) {
+    if (screen.pwm_frequency == null) $("pwm").value = "";
+    else setSelect($("pwm"), screen.pwm_frequency, fmt.hertz);
+  }
+  for (const button of $("rotate").children) button.setAttribute("aria-pressed", String(+button.dataset.value === screen.rotate));
+  if (active !== $("sleep")) setSelect($("sleep"), screen.sleep, (minutes) => `After ${minutes} minutes`);
+  $("calibrated").textContent = screen.calibration ? "Calibrated" : "Not calibrated";
+  $("resetcalibration").disabled = !screen.calibration;
+}
+
+function showBrightness() {
+  const input = $("brightness");
+  $("brightnessvalue").textContent = `${input.value}%`;
+  input.style.setProperty("--fill", `${((input.value - input.min) / (input.max - input.min)) * 100}%`);
+}
+
+async function changeScreen(changes, done) {
+  screenBusy++;
+  try {
+    const settings = await post("/api/screen", changes);
+    if (done) toast(done(settings));
+  } catch (e) {
+    toast(`Screen: ${e.message}`, true);
+  } finally {
+    screenBusy--;
+  }
+}
+
+let brightnessTimer;
+$("brightness").addEventListener("input", () => {
+  showBrightness();
+  clearTimeout(brightnessTimer);
+  brightnessTimer = setTimeout(() => changeScreen({ brightness: +$("brightness").value }), 120);
+});
+$("pwm").addEventListener("change", () => {
+  const value = $("pwm").value;
+  $("pwmcustom").hidden = value !== "custom";
+  if (value === "custom") return $("pwmhz").focus();
+  changeScreen({ pwm_frequency: value === "" ? null : +value },
+               () => `Backlight PWM at ${value === "" ? "the default" : fmt.hertz(+value)}`);
+});
+$("pwmapply").addEventListener("click", () => {
+  const hz = Math.round(+$("pwmhz").value);
+  if (!(hz >= 1 && hz <= 1e6)) return toast("A frequency from 1 Hz to 1 MHz", true);
+  $("pwmcustom").hidden = true;
+  changeScreen({ pwm_frequency: hz }, () => `Backlight PWM at ${fmt.hertz(hz)}`);
+});
+$("pwmhz").addEventListener("keydown", (e) => { if (e.key === "Enter") $("pwmapply").click(); });
+$("rotate").addEventListener("click", (e) => {
+  const button = e.target.closest("button");
+  if (!button) return;
+  changeScreen({ rotate: +button.dataset.value }, () => (+button.dataset.value ? "Screen upside down" : "Screen upright"));
+});
+$("sleep").addEventListener("change", () => changeScreen({ sleep: +$("sleep").value }));
+$("resetcalibration").addEventListener("click", () => changeScreen({ calibration: null }, () => "Calibration reset"));
+
+// ---- Cards
+
+function renderVideo(video) {
+  const input = video.input;
+  const signal = input && typeof input === "object";
+  badge($("videobadge"), signal ? "Signal" : inputText(input), signal ? "ok" : input === "unsupported" ? "bad" : "");
+  const parts = state.overview ? Object.fromEntries(state.overview.components.map((c) => [c.id, c])) : {};
+  const capture = video.capture || {};
+  facts($("videofacts"), [
+    ["Input", signal ? `${input.width} × ${input.height}, ${input.fps} frames a second` : inputText(input)],
+    ["Bridge", parts.video_bridge && parts.video_bridge.chip],
+    ["Encoders", "H.264 and JPEG, in the SoC"],
+    ["Input changes", capture.mid_frame_stops == null ? null : String(capture.mid_frame_stops)],
+    ["Receiver restarts", capture.csi_recoveries == null ? null : String(capture.csi_recoveries)],
+  ]);
+}
+
+function renderUsb(usb) {
+  const c = usb.connection;
+  const [text, kind] = c ? (USB_STATES[c.state] || [c.state, ""]) : ["No controller", "bad"];
+  badge($("usbbadge"), text, kind);
+  const medium = usb.medium;
+  facts($("usbfacts"), [
+    ["Link", c ? (c.state === "configured" ? SPEEDS[c.speed] || "Connected" : text) : "The USB controller is not bound"],
+    ["Devices", usb.functions == null ? null
+      : usb.functions.length ? h("div", { class: "tags" }, ["Network", ...usb.functions.map((f) => FUNCTIONS[f] || f)]
+          .map((name) => h("span", { class: "tag" }, name)))
+      : "Network only"],
+    ["Virtual disk", !usb.functions || !usb.functions.includes("storage") ? null
+      : medium ? `${medium.image.split("/").pop()} · ${medium.cdrom ? "CD-ROM" : "drive"}${medium.read_only ? ", read-only" : ""}`
+      : "Empty"],
+    ["Controller", c && h("span", { class: "mono" }, c.controller)],
+  ]);
+}
+
+// ---- Auxiliary port: its two lines, NanoKVMGo.Expansion
+
+const XMODES = {
+  off: ["Off", "Off: inputs pulled down"],
+  uart: ["UART", "UART, ttyS3 (TXD idles high)"],
+  gpio: ["GPIO", "Two GPIOs"],
+  pwm: ["PWM", "Two PWM outputs"],
+  pwm_gpio: ["PWM + GPIO", "PWM out, GPIO in (Finger Robot)"],
+  gpio_pwm: ["GPIO + PWM", "GPIO, then PWM out"],
+  i2c: ["I2C", "I2C bus, i2c-2"],
+};
+const XROLES = {
+  off: "Off", uart_txd: "UART TXD", uart_rxd: "UART RXD", gpio: "GPIO", pwm: "PWM",
+  i2c_sda: "I2C SDA", i2c_scl: "I2C SCL",
+};
+const XROLE_TEXT = {
+  off: "An input, pulled down: nothing is driven.",
+  uart_txd: "Sends ttyS3's data; high while idle.",
+  uart_rxd: "Receives ttyS3's data.",
+  i2c_sda: "Data of the I2C bus i2c-2, pulled up.",
+  i2c_scl: "Clock of the I2C bus i2c-2, pulled up.",
+};
+const XPADS = ["UART3_TXD pad", "UART3_RXD pad"];
+// What was typed for each PWM line, kept across refreshes.
+const xpwm = [{ hz: 50, us: 1500 }, { hz: 50, us: 1500 }];
+let xbusy = 0;
+
+function renderExpansion(x) {
+  $("noxpansion").hidden = !!x;
+  $("xform").hidden = !x;
+  if (!x) return badge($("xbadge"), "No driver", "bad");
+  badge($("xbadge"), (XMODES[x.mode] || [x.mode])[0], x.mode === "off" ? "" : "ok");
+  if (xbusy) return;
+  const select = $("xmode");
+  if (document.activeElement !== select) {
+    if (select.options.length !== x.modes.length) {
+      select.replaceChildren(...x.modes.map((mode) => h("option", { value: mode }, (XMODES[mode] || [mode, mode])[1])));
+    }
+    select.value = x.mode;
+  }
+  if (!$("xlines").contains(document.activeElement)) $("xlines").replaceChildren(...x.lines.map(xline));
+}
+
+function xline(line) {
+  const n = line.line;
+  const head = h("header", null, h("b", null, `Line ${n}`), h("small", null, XPADS[n]),
+                 h("span", { class: "tag" }, XROLES[line.role] || line.role));
+  if (line.role === "gpio") {
+    const gpio = line.gpio, edges = line.edges;
+    const dl = h("dl", { class: "facts" });
+    facts(dl, [
+      ["Level", gpio ? `${gpio.value ? "High" : "Low"}, ${gpio.direction === "output" ? "driven" : "input"}` : "–"],
+      ["Edges", edges ? `${edges.total} · ${edges.per_second} a second` : "–"],
+    ]);
+    const button = (text, value) => h("button", { class: "btn small", type: "button", "data-line": n,
+                                                  "data-gpio": value == null ? "input" : value }, text);
+    return h("div", { class: "xline" }, head, dl,
+             h("div", { class: "field" }, button("Input", null), button("Low", 0), button("High", 1)));
+  }
+  if (line.role === "pwm") {
+    const pwm = line.pwm;
+    if (pwm) xpwm[n] = { hz: +(1e9 / pwm.period).toFixed(3), us: +(pwm.duty_cycle / 1000).toFixed(3) };
+    const dl = h("dl", { class: "facts" });
+    facts(dl, [["Output", pwm ? `${fmt.hertz(1e9 / pwm.period)}, high ${+(pwm.duty_cycle / 1000).toFixed(1)} µs `
+                                + `(${(100 * pwm.duty_cycle / pwm.period).toFixed(1)}%)` : "Stopped"]]);
+    const input = (key, label, step) => [
+      h("label", { for: `x${key}${n}` }, label),
+      h("input", { type: "number", id: `x${key}${n}`, min: "0", step, value: xpwm[n][key] }),
+    ];
+    return h("div", { class: "xline" }, head, dl,
+             h("div", { class: "field" }, ...input("hz", "Hz", "any"), ...input("us", "High µs", "any"),
+               h("button", { class: "btn small", type: "button", "data-line": n, "data-pwm": "set" }, "Set"),
+               h("button", { class: "btn small", type: "button", "data-line": n, "data-pwm": "stop" }, "Stop")));
+  }
+  return h("div", { class: "xline" }, head, h("p", null, XROLE_TEXT[line.role] || ""));
+}
+
+async function changeExpansion(path, body, done) {
+  xbusy++;
+  try {
+    const reply = await post(path, body);
+    if (done) toast(done(reply));
+  } catch (e) {
+    const error = e.data && e.data.error;
+    toast(error === "busy" ? "Something else still holds those lines"
+          : error === "not_gpio" || error === "not_pwm" ? "The lines are in another mode now" : `Auxiliary port: ${e.message}`, true);
+  } finally {
+    xbusy--;
+  }
+}
+
+$("xmode").addEventListener("change", () => {
+  const mode = $("xmode").value;
+  changeExpansion("/api/expansion/mode", { mode }, () => `Auxiliary port: ${(XMODES[mode] || [mode, mode])[1]}`);
+});
+$("xlines").addEventListener("click", (e) => {
+  const button = e.target.closest("button");
+  if (!button) return;
+  // The lines redraw each second unless something in them has the focus.
+  button.blur();
+  const line = +button.dataset.line;
+  if (button.dataset.gpio) {
+    const value = button.dataset.gpio === "input" ? null : +button.dataset.gpio;
+    return changeExpansion("/api/expansion/gpio", { line, value },
+      () => (value == null ? `Line ${line} is an input` : `Line ${line} driven ${value ? "high" : "low"}`));
+  }
+  if (button.dataset.pwm === "stop") {
+    return changeExpansion("/api/expansion/pwm", { line, stop: true }, () => `Line ${line} stopped`);
+  }
+  const hz = +$(`xhz${line}`).value, us = +$(`xus${line}`).value;
+  const period = Math.round(1e9 / hz), duty = Math.round(us * 1000);
+  if (!(hz > 0 && period >= 1000 && period <= 1e10)) return toast("A frequency from 0.1 Hz to 1 MHz", true);
+  if (!(duty >= 0 && duty <= period)) return toast("The high time has to fit in the period", true);
+  xpwm[line] = { hz, us };
+  document.activeElement.blur();
+  changeExpansion("/api/expansion/pwm", { line, period, duty_cycle: duty },
+    () => `Line ${line}: ${fmt.hertz(hz)}, high ${us} µs`);
+});
+
+function renderNetwork(network) {
+  const rates = (state.metrics && state.metrics.network) || {};
+  const names = Object.keys(network || {}).sort((a, b) => (a === "wlan0" ? -1 : b === "wlan0" ? 1 : a.localeCompare(b)));
+  if (!names.length) return $("ifaces").replaceChildren(h("p", { class: "note" }, "No network interfaces."));
+  $("ifaces").replaceChildren(...names.map((name) => {
+    const i = network[name], ap = i.wifi, rate = rates[name];
+    const online = i.connection === "internet" ? ["Internet", "ok"] : i.connection === "lan" ? ["Local", "ok"]
+      : i.connection === "disconnected" ? ["Disconnected", ""] : [i.connection || "–", ""];
+    return h("div", { class: "iface" },
+      h("header", null, icon(i.kind === "wifi" ? "wifi" : i.kind === "usb" ? "usb" : "network"),
+        h("b", null, IFACES[i.kind] || name), h("span", { class: "mono muted" }, name),
+        h("span", { class: "spacer" }), h("span", { class: `badge ${online[1]}` }, online[0])),
+      h("dl", { class: "facts" },
+        ap ? [h("dt", null, "Wi-Fi"), h("dd", null, ap.ssid || "hidden network")] : null,
+        ap ? [h("dt", null, "Signal"), h("dd", { style: `color:${COLORS[signalKind(ap.signal_dbm)]}` },
+          signalBars(ap.signal_percent), h("span", { class: "num" }, `${ap.signal_dbm} dBm · ${ap.signal_percent}%`),
+          h("span", { class: "muted" }, ap.band ? `  ·  ${ap.band}, channel ${ap.channel}` : ""))] : null,
+        ap && ap.link_speed ? [h("dt", null, "Link"), h("dd", { class: "num" },
+          `${ap.link_speed} Mb/s${ap.width ? ` · ${ap.width}` : ""}`)] : null,
+        [h("dt", null, "Addresses"), h("dd", null, i.addresses.length
+          ? h("div", null, i.addresses.map((a) => h("div", { class: "mono" }, a))) : "none")],
+        i.mac ? [h("dt", null, "MAC"), h("dd", { class: "mono" }, i.mac)] : null,
+        rate ? [h("dt", null, "Traffic"), h("dd", { class: "num" }, `↓ ${fmt.rate(rate.down)}  ↑ ${fmt.rate(rate.up)}`)] : null));
+  }));
+}
+
+// ---- The USB network's MAC addresses
+
+const MAC = /^[0-9a-f]{2}([:-][0-9a-f]{2}){5}$/i;
+const MAC_ERRORS = {
+  invalid_address: "Not a MAC address",
+  multicast_address: "A multicast address: the first byte has to be even",
+  same_addresses: "Each end needs an address of its own",
+  no_default_addresses: "There is no default: the NanoKVM has no serial number",
+};
+const macFields = {
+  device_address: { input: $("devicemac"), hint: $("devicehint"), field: $("devicefield") },
+  host_address: { input: $("hostmac"), hint: $("hosthint"), field: $("hostfield") },
+};
+let usbNetwork = null;
+// The addresses asked for, until the status shows them or the time is up.
+let pendingMacs = null;
+
+function renderUsbNetwork(network) {
+  usbNetwork = network || null;
+  $("usbnetedit").disabled = !network;
+  if (!network) {
+    facts($("usbnetfacts"), [["Addresses", "Unknown: the USB functions are not running"]]);
+    return;
+  }
+  const defaults = network.default_addresses || {};
+  const address = (key) => h("span", { class: "address" }, h("span", { class: "mono" }, network[key]),
+    network[key] === defaults[key] ? h("span", { class: "tag" }, "Default") : h("span", { class: "tag custom" }, "Custom"));
+  facts($("usbnetfacts"), [
+    ["NanoKVM", address("device_address")],
+    ["Target computer", address("host_address")],
+  ]);
+  if (!pendingMacs) return;
+  if (network.device_address === pendingMacs.device_address && network.host_address === pendingMacs.host_address) {
+    pendingMacs = null;
+    toast("The USB network has its new addresses");
+  } else if (Date.now() > pendingMacs.until) {
+    pendingMacs = null;
+    toast("The USB network kept its addresses: see the NanoKVM's log", true);
+  }
+}
+
+// What a field asks for: an address (its default when empty), or why not.
+function macOf(key) {
+  const text = macFields[key].input.value.trim();
+  const fallback = usbNetwork && usbNetwork.default_addresses && usbNetwork.default_addresses[key];
+  if (!text) return fallback ? { mac: fallback } : { error: MAC_ERRORS.no_default_addresses };
+  if (!MAC.test(text)) return { error: "Six bytes in hex, such as 02:12:34:56:78:9a" };
+  const mac = text.toLowerCase().replaceAll("-", ":");
+  if (parseInt(mac.slice(0, 2), 16) & 1) return { error: MAC_ERRORS.multicast_address };
+  if (mac === "00:00:00:00:00:00") return { error: "No device can have this address" };
+  return { mac };
+}
+
+// Shows what each field asks for; the addresses when Apply can send them.
+function checkMacs() {
+  const defaults = (usbNetwork && usbNetwork.default_addresses) || {};
+  const wanted = {};
+  for (const [key, f] of Object.entries(macFields)) {
+    const { mac, error } = macOf(key);
+    wanted[key] = mac;
+    f.field.classList.toggle("invalid", !!error);
+    f.hint.textContent = error
+      || (!f.input.value.trim() ? "The default"
+        : mac === defaults[key] ? "The default, as it is" : defaults[key] ? `The default is ${defaults[key]}` : "");
+  }
+  let valid = Object.values(wanted).every(Boolean);
+  if (valid && wanted.device_address === wanted.host_address) {
+    macFields.host_address.field.classList.add("invalid");
+    macFields.host_address.hint.textContent = "The NanoKVM's end has this address: " + MAC_ERRORS.same_addresses.toLowerCase();
+    valid = false;
+  }
+  const edited = Object.values(macFields).some((f) => f.input.value.trim() !== f.initial);
+  $("macapply").disabled = !valid || !edited;
+  return valid ? wanted : null;
+}
+
+function openMacDialog() {
+  if (!usbNetwork) return;
+  const defaults = usbNetwork.default_addresses || {};
+  for (const [key, f] of Object.entries(macFields)) {
+    f.input.placeholder = defaults[key] || "02:12:34:56:78:9a";
+    f.input.value = usbNetwork[key] === defaults[key] ? "" : usbNetwork[key];
+    f.initial = f.input.value;
+  }
+  const medium = state.status && state.status.usb.medium;
+  $("macwarning").textContent = "The target computer sees the NanoKVM's USB devices unplugged and plugged in " +
+    "again. This page reconnects by itself." +
+    (medium ? " Eject the virtual disk on the target computer first." : "");
+  $("macerror").hidden = true;
+  checkMacs();
+  $("macdialog").showModal();
+}
+
+$("usbnetedit").addEventListener("click", openMacDialog);
+$("maccancel").addEventListener("click", () => $("macdialog").close());
+$("macdefaults").addEventListener("click", () => {
+  for (const f of Object.values(macFields)) f.input.value = "";
+  checkMacs();
+});
+for (const f of Object.values(macFields)) f.input.addEventListener("input", checkMacs);
+$("macform").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const wanted = checkMacs();
+  if (!wanted) return;
+  const body = Object.fromEntries(Object.entries(macFields).map(([key, f]) =>
+    [key, f.input.value.trim() ? wanted[key] : null]));
+  $("macapply").disabled = true;
+  $("macerror").hidden = true;
+  try {
+    await post("/api/usb/network", body);
+    $("macdialog").close();
+    pendingMacs = { ...wanted, until: Date.now() + 20000 };
+    toast("Changing the addresses: the USB devices reconnect");
+  } catch (err) {
+    const data = err.data || {};
+    const text = MAC_ERRORS[data.error] || err.message;
+    const f = macFields[data.field];
+    if (f) {
+      f.field.classList.add("invalid");
+      f.hint.textContent = text;
+    } else {
+      $("macerror").textContent = text;
+      $("macerror").hidden = false;
+    }
+    $("macapply").disabled = false;
+  }
+});
+
+function renderStorage(storage) {
+  if (!storage) return;
+  const card = storage.card;
+  badge($("card"), card ? [[card.manufacturer, card.name].filter(Boolean).join(" "), fmt.bytes(card.size),
+                           card.date && `made ${fmt.month(card.date)}`].filter(Boolean).join(" · ") : "No card", "plain");
+  if (!card) {
+    $("disk").replaceChildren();
+    $("legend").replaceChildren(h("p", { class: "note" }, "No SD card found."));
+    return;
+  }
+  // The card from start to end: what comes before the first partition, the
+  // partitions and what the last leaves.
+  const parts = storage.partitions;
+  const first = parts.length ? parts[0].start : card.size;
+  const end = parts.reduce((e, p) => Math.max(e, p.start + p.size), first);
+  const segments = [
+    ...(first > 0 ? [{ kind: "reserved", size: first }] : []),
+    ...parts.map((p) => ({ kind: "partition", size: p.size, p })),
+    ...(card.size - end > 0 ? [{ kind: "free", size: card.size - end }] : []),
+  ];
+  $("disk").replaceChildren(...segments.map((s) => {
+    const role = s.p && ROLES[s.p.role];
+    const fs = s.p && s.p.filesystem;
+    const usedShare = fs && fs.size && s.p.role === "data" ? fs.used / fs.size : 0;
+    const title = s.kind === "free" ? `Not partitioned: ${fmt.bytes(s.size)}`
+      : s.kind === "reserved" ? `Boot loader and settings: ${fmt.bytes(s.size)}`
+      : `${role ? role.name : `Partition ${s.p.number}`}: ${fmt.bytes(s.size)}`;
+    // Widths by the square root of the sizes: a 128 MB partition stays in
+    // sight beside 100 GB, and the larger still look larger.
+    const grow = Math.sqrt(s.size);
+    const style = s.kind === "reserved" ? null
+      : s.kind === "free" ? `flex:${grow} 1 0`
+      : `flex:${grow} 1 0;background:${role ? role.color : "#8a94a6"}`;
+    return h("div", { class: s.kind === "partition" ? "part" : s.kind, style, title },
+      usedShare ? h("div", { class: "used", style: `width:${Math.round(usedShare * 100)}%` }) : null,
+      s.kind === "reserved" ? null : h("span", null, s.kind === "free" ? `${fmt.bytes(s.size)} not partitioned` : role ? role.name : `#${s.p.number}`));
+  }));
+  $("legend").replaceChildren(...parts.map((p) => {
+    const role = ROLES[p.role];
+    const fs = p.filesystem;
+    const running = p.mount === "/";
+    let detail = `${fmt.bytes(p.size)}`;
+    if (fs && p.role === "data" && fs.size) detail += ` · ${fs.type} · ${fmt.bytes(fs.used)} used, ${fmt.bytes(fs.available)} free`;
+    else if (fs && running) detail += ` · ${fs.type} image of ${fmt.bytes(fs.size)}`;
+    else if (!fs) detail += " · not mounted";
+    return h("div", null, h("span", { class: "swatch", style: `background:${role ? role.color : "#8a94a6"}` }),
+      h("b", null, `${role ? role.name : `Partition ${p.number}`}${running ? ", running" : ""}`),
+      h("small", null, detail));
+  }));
+  const free = card.size - end;
+  const note = $("storagenote");
+  note.hidden = free < card.size * 0.2;
+  note.textContent = note.hidden ? "" :
+    `${fmt.bytes(free)} of the card is in no partition: the data partition was made for a smaller image. ` +
+    "Writing the firmware to the card with fwup lets the data partition fill it.";
+}
+
+function shortUuid(uuid) {
+  return uuid ? h("span", { class: "mono", title: uuid }, uuid.slice(0, 8)) : "–";
+}
+
+function renderStatic(o) {
+  const slots = o.firmware.slots;
+  $("slots").replaceChildren(...(slots.length ? slots : [{ slot: o.firmware.active || "?" }]).map((s) =>
+    h("div", { class: `slot ${s.active ? "active" : ""}` },
+      h("header", null, h("span", { class: "muted" }, `Slot ${s.slot.toUpperCase()}`),
+        s.active ? h("span", { class: "badge ok" }, "Running") : h("span", { class: "badge plain" }, "Standby")),
+      h("div", { class: "version" }, s.version || "–"),
+      h("p", null, s.uuid ? ["UUID ", shortUuid(s.uuid)] : "No firmware"))));
+  const running = slots.find((s) => s.active) || {};
+  facts($("firmwarefacts"), [
+    ["Product", running.product],
+    ["Platform", running.platform && `${running.platform}${running.architecture ? `, ${running.architecture}` : ""}`],
+    ["Author", running.author],
+    ["Source", running.vcs && h("span", { class: "mono" }, running.vcs)],
+  ]);
+
+  const parts = o.components;
+  const missing = parts.filter((c) => !c.device).length;
+  const unbound = parts.filter((c) => c.device && !c.driver).length;
+  badge($("hardwarebadge"), missing || unbound ? `${missing + unbound} of ${parts.length} need attention` : `All ${parts.length} parts working`,
+        missing || unbound ? "warn" : "ok");
+  $("components").replaceChildren(...parts.map((c) => {
+    const [text, kind] = !c.device ? ["Missing", "bad"] : !c.driver ? ["No driver", "warn"] : ["Working", "ok"];
+    return h("tr", null,
+      h("td", null, c.name),
+      h("td", null, c.chip || h("span", { class: "muted" }, "–")),
+      h("td", null, c.device ? h("span", { class: "mono" }, `${c.bus} ${c.device}`) : h("span", { class: "muted" }, "–")),
+      h("td", null, c.driver ? h("span", { class: "mono" }, c.driver) : h("span", { class: "muted" }, "–")),
+      h("td", null, h("span", { class: `badge ${kind}` }, text)));
+  }));
+}
+
+function renderBeam(beam) {
+  const o = state.overview;
+  if (!o) return;
+  const sw = o.software;
+  facts($("softwarefacts"), [
+    ["Linux", o.hardware.linux],
+    ["Erlang/OTP", sw.otp && `${sw.otp}, ERTS ${sw.erts}`],
+    ["Elixir", sw.elixir],
+    ["Application", sw.app && `kuroneko ${sw.app}`],
+    ["Libraries", [sw.nano_kvm_go && `nano_kvm_go ${sw.nano_kvm_go}`,
+      sw.kuroneko_gadget && `kuroneko_gadget ${sw.kuroneko_gadget}`].filter(Boolean).join(", ")],
+    ["BEAM", `${fmt.bytes(beam.memory)} · ${beam.processes} processes · ${beam.schedulers} schedulers`],
+    ["Serial number", o.hardware.serial_number && h("span", { class: "mono" }, o.hardware.serial_number)],
+  ]);
+}
+
+// ---- Data: the overview once, then the socket.
+
+async function load() {
+  const reply = await fetch("/api/device");
+  if (reply.status === 401) return location.reload();
+  if (!reply.ok) throw new Error(`HTTP ${reply.status}`);
+  const o = await reply.json();
+  state.overview = o;
+  state.status = o.status;
+  state.storage = o.storage;
+  if (o.metrics.history) state.history = o.metrics.history;
+  state.metrics = o.metrics.current;
+  render();
+}
+
+let socket = null;
+let retryDelay = 1000;
+let lastMessage = 0;
+
+function connect() {
+  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/device/live`);
+  socket = ws;
+  ws.onopen = () => { retryDelay = 1000; };
+  ws.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    lastMessage = Date.now();
+    live(true);
+    if (message.history) state.history = message.history;
+    if (message.metrics) {
+      if (!message.history) remember(message.metrics);
+      state.metrics = message.metrics;
+      renderMetrics(message.metrics);
+    }
+    if (message.status) { state.status = message.status; renderStatus(message.status); }
+    if (message.storage) { state.storage = message.storage; renderStorage(message.storage); }
+    if (!$("overlay").hidden && restartedAt && Date.now() - restartedAt > 5000) {
+      $("overlay").hidden = true;
+      restartedAt = 0;
+      load().catch(() => {});
+      toast("The NanoKVM is back");
+    }
+  };
+  ws.onclose = () => {
+    if (socket !== ws) return;
+    live(false);
+    setTimeout(async () => {
+      // A closed session ends at the login page.
+      const auth = await fetch("/api/auth").then((r) => r.json()).catch(() => null);
+      if (auth && !auth.logged_in) return location.reload();
+      connect();
+    }, retryDelay);
+    retryDelay = Math.min(retryDelay * 2, 8000);
+  };
+}
+
+function live(on) {
+  $("live").className = on ? "live on" : "live";
+  $("live").firstChild.textContent = on ? "Live" : "Reconnecting";
+}
+
+// No message for a while: the connection is gone even if the socket says not.
+setInterval(() => {
+  if (lastMessage && Date.now() - lastMessage > 5000 && socket && socket.readyState === WebSocket.OPEN) {
+    socket.close();
+  }
+}, 2000);
+
+// ---- Actions
+
+let restartedAt = 0;
+$("restart").addEventListener("click", () => $("restartdialog").showModal());
+$("restartcancel").addEventListener("click", () => $("restartdialog").close());
+$("restartconfirm").addEventListener("click", async () => {
+  $("restartdialog").close();
+  try {
+    await post("/api/reboot", {});
+    restartedAt = Date.now();
+    $("overlay").hidden = false;
+  } catch (e) {
+    toast(`Restart: ${e.message}`, true);
+  }
+});
+
+$("keep").addEventListener("click", async () => {
+  $("keep").disabled = true;
+  try {
+    await post("/api/firmware/validate", {});
+    toast("The NanoKVM keeps this firmware");
+  } catch (e) {
+    toast(`Firmware: ${e.message}`, true);
+  } finally {
+    $("keep").disabled = false;
+  }
+});
+
+showBrightness();
+load().catch((e) => toast(`Device: ${e.message}`, true)).finally(connect);
+</script>
+</body>
+</html>
