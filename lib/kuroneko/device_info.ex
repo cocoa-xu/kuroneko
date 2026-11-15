@@ -81,8 +81,20 @@ defmodule Kuroneko.DeviceInfo do
     %{active: active, slots: slots}
   end
 
+  # The firmware's trial, and the memory sizes' (NanoKVMGo.CMA.trial/1) when
+  # this boot runs them: validating the firmware keeps both.
   defp trial do
-    %{validated: Nerves.Runtime.firmware_valid?(), revert_in: Kuroneko.TrialGuard.remaining()}
+    memory =
+      case safely(&NanoKVMGo.CMA.trial/0) do
+        %{state: :running, sizes: sizes} -> sizes
+        _ -> nil
+      end
+
+    %{
+      validated: Nerves.Runtime.firmware_valid?(),
+      memory: memory,
+      revert_in: Kuroneko.TrialGuard.remaining()
+    }
   end
 
   defp software do

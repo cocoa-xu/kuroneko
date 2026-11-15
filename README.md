@@ -92,6 +92,11 @@ New firmware runs on trial: confirm it on the device page, or with
 `Nerves.Runtime.validate_firmware()` over SSH, within five minutes, or the
 device goes back to the firmware before.
 
+The memory for video and the NPU (192 and 64 MiB) changes at the next boot,
+over SSH: `NanoKVMGo.CMA.put_sizes(%{video: 160, npu: 96})`. With
+`trial: true` the next boot runs the new sizes on trial, kept the same way
+as a new firmware.
+
 The device keeps its state in `/data/kuroneko`: the password, the
 certificate, the settings of the screen and the USB devices. Devices that ran
 the NanoKVM-Go test application (`nanokvm_hello`) keep theirs: it moves

@@ -989,14 +989,20 @@ function renderStatus(s) {
 }
 
 function renderTrial(trial) {
-  const on = !trial.validated;
-  $("trial").hidden = !on;
+  const firmware = !trial.validated;
+  const memory = trial.memory;
+  $("trial").hidden = !firmware && !memory;
   badge($("validated"), trial.validated ? "Validated" : "On trial", trial.validated ? "ok" : "warn");
-  if (!on) return;
+  if (!firmware && !memory) return;
   const left = trial.revert_in == null ? null : Math.ceil(trial.revert_in / 1000);
   const when = left == null ? "after the next restart"
     : `in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
-  $("trialtext").textContent = `This firmware is on trial: the NanoKVM goes back to the previous one ${when} unless you keep it.`;
+  const mib = (size) => size === "default" ? "default" : `${size} MiB`;
+  const sizes = memory && `memory for video ${mib(memory.video)} and the NPU ${mib(memory.npu)}`;
+  const what = firmware && memory ? `This firmware and its ${sizes} are`
+    : firmware ? "This firmware is" : `The ${sizes} are`;
+  $("trialtext").textContent = `${what} on trial: the NanoKVM goes back to the previous ${firmware && !memory ? "one" : "ones"} ${when} unless you keep ${firmware && !memory ? "it" : "them"}.`;
+  $("keep").textContent = firmware && memory ? "Keep both" : firmware ? "Keep this firmware" : "Keep these sizes";
 }
 
 function renderMetrics(m) {
@@ -1632,7 +1638,7 @@ $("keep").addEventListener("click", async () => {
   $("keep").disabled = true;
   try {
     await post("/api/firmware/validate", {});
-    toast("The NanoKVM keeps this firmware");
+    toast("Kept");
   } catch (e) {
     toast(`Firmware: ${e.message}`, true);
   } finally {
