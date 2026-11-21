@@ -2,7 +2,8 @@
 
 An open KVM over IP for the Sipeed NanoKVM-Go: the target computer's screen,
 sound, keyboard and mouse in your browser. It is an Elixir application on
-Nerves, on open mainline drivers, with no vendor software on the device.
+Nerves, on open mainline drivers, with no vendor software on the device's
+processor.
 
 * **Video** - the HDMI/DisplayPort input up to 3840 × 2160 at 30 fps, as
   H.264 for browsers with WebCodecs and MJPEG for the others
@@ -18,13 +19,18 @@ Nerves, on open mainline drivers, with no vendor software on the device.
   its little screen, with touch and the button
 * **The device page** - its hardware, temperature, CPU, memory and network,
   the auxiliary port's lines, firmware updates on trial, restart
-* **Login** - one password, kept as a PBKDF2 hash; five wrong ones lock the
-  page for a minute; HTTPS with a certificate the device makes itself
+* **Settings** - the Wi-Fi to join, the SSH keys that may log in, the
+  password
+* **Login** - one password for the page and SSH, kept as a PBKDF2 hash and
+  first set with a code from the LCD; five wrong ones lock the logins for a
+  minute; HTTPS with a certificate the device makes itself
 
-It is built from [`nano_kvm_go`](https://github.com/cocoa-xu/nano_kvm_go),
-the board's hardware, and
+Kuroneko is the whole stack in the open, from the boot loader and the Linux
+drivers to the page: use it as it is, read it, or build your own device on
+it. It is made of [`nano_kvm_go`](https://github.com/cocoa-xu/nano_kvm_go),
+the board's hardware,
 [`kuroneko_gadget`](https://github.com/cocoa-xu/kuroneko_gadget), what the
-target sees over USB, on the
+target sees over USB, and the
 [`nerves_system_nano_kvm_go`](https://github.com/cocoa-xu/nerves_system_nano_kvm_go)
 Nerves system.
 
@@ -32,6 +38,60 @@ Nerves system.
 
 The Sipeed NanoKVM-Go+ (512 MB). The NanoKVM-Go with 256 MB is not supported
 yet.
+
+## Trying it
+
+Kuroneko runs from a microSD card of its own. Keep the card the NanoKVM-Go
+came with: putting it back brings the original software back, as Kuroneko
+changes nothing outside its own card.
+
+1. Download `kuroneko.fw` from the [releases](https://github.com/cocoa-xu/kuroneko/releases)
+   and burn it to a card with [fwup](https://github.com/fwup-home/fwup)
+   (`brew install fwup` on macOS), which finds the card itself:
+
+   ```sh
+   fwup kuroneko.fw
+   ```
+
+   To have it join your Wi-Fi from the first start, and to log in over SSH
+   with your own key:
+
+   ```sh
+   NERVES_WIFI_SSID='my network' NERVES_WIFI_PASSPHRASE='my passphrase' \
+     NERVES_SSH_AUTHORIZED_KEYS="$(cat ~/.ssh/id_ed25519.pub)" fwup kuroneko.fw
+   ```
+
+   Burning tools such as balenaEtcher take `kuroneko.img.gz` instead, without
+   these settings.
+
+2. Put the card in the NanoKVM-Go and connect it to the computer to control,
+   USB and HDMI, as with its own software.
+
+3. Its screen shows a setup code and where to find the page. On the
+   computer it is connected to, open `http://nerves.local`: the USB network
+   needs no driver on Linux and macOS. Any computer on its Wi-Fi can open
+   the address the screen shows.
+
+4. Choose a password, with the setup code. The password logs you in to the
+   page and over SSH, with any user name.
+
+5. **Settings** joins the Wi-Fi and adds SSH keys.
+
+HTTPS, which the microphone needs, uses a certificate the device made
+itself: the browser asks once whether to trust it.
+
+## Updating
+
+New firmware goes over SSH, with your key or the password:
+
+```sh
+ssh -s nerves-XXXX.local fwup < kuroneko.fw
+```
+
+`XXXX` ends the device's serial number; the screen shows the whole name.
+New firmware runs on trial: keep it on the device page, or with
+`Nerves.Runtime.validate_firmware()` over SSH, within five minutes, or the
+device goes back to the firmware before.
 
 ## Building
 
@@ -52,10 +112,10 @@ mix firmware
 mix burn
 ```
 
-Two files of yours stay out of the project:
+Two files of yours may go in `config/`, which git leaves out:
 
-* `config/wifi.secret.exs` - your Wi-Fi, else set it on the device with
-  `VintageNetWiFi.quick_configure("ssid", "passphrase")`:
+* `authorized_keys` - SSH keys built into your firmware, one per line
+* `wifi.secret.exs` - your Wi-Fi:
 
   ```elixir
   import Config
@@ -73,24 +133,10 @@ Two files of yours stay out of the project:
     ]
   ```
 
-* `config/authorized_keys` - the SSH keys that may log in to the device,
-  one per line; without it, your own `~/.ssh/id_*.pub`
+Without them the firmware is the one anybody can use: Wi-Fi, keys and the
+password are then set on the device. Build firmware for others that way.
 
 ## Using it
-
-Open `http://nerves-XXXX.local`, where XXXX ends the device's serial number,
-or its address on the USB network from the target computer. The first visit
-sets the password: do it right away, on a network you trust.
-
-Firmware updates go over SSH:
-
-```sh
-ssh -s nerves-XXXX.local fwup < _build/nano_kvm_go_dev/nerves/images/kuroneko.fw
-```
-
-New firmware runs on trial: confirm it on the device page, or with
-`Nerves.Runtime.validate_firmware()` over SSH, within five minutes, or the
-device goes back to the firmware before.
 
 The memory for video and the NPU (192 and 64 MiB) changes at the next boot,
 over SSH: `NanoKVMGo.CMA.put_sizes(%{video: 160, npu: 96})`. With
@@ -98,9 +144,16 @@ over SSH: `NanoKVMGo.CMA.put_sizes(%{video: 160, npu: 96})`. With
 as a new firmware.
 
 The device keeps its state in `/data/kuroneko`: the password, the
-certificate, the settings of the screen and the USB devices. Devices that ran
-the NanoKVM-Go test application (`nanokvm_hello`) keep theirs: it moves
-there at the first start.
+certificate, the settings of the screen and the USB devices. SSH keys added
+on the device are in `/data/nerves_ssh`, the Wi-Fi in `/data/vintage_net`.
+
+## Known limits
+
+* The NanoKVM-Go with 256 MB is not supported yet.
+* Wi-Fi networks that need a user name (WPA2-Enterprise) and WEP ones
+  cannot be joined from the page. Networks that offer WPA2 and WPA3 are
+  joined with WPA2: WPA3 through this Wi-Fi chip is not proven yet.
+* Firmware updates go over SSH: the page cannot upload them yet.
 
 ## License
 
