@@ -214,8 +214,9 @@
         <button class="btn small danger" id="forget" type="button" hidden>Forget network</button>
       </div>
       <div class="rows" id="nets"></div>
-      <p class="note">A passphrase joins WPA2 and WPA3 networks alike; networks that also need a user name
-        are not supported here. Over USB the page stays reachable whatever the Wi-Fi does.</p>
+      <p class="note">With a passphrase the NanoKVM-Go takes WPA2, or WPA3 where a network offers nothing
+        else. Networks that need a user name too, and WEP, are not supported here. Over USB the page stays
+        reachable whatever the Wi-Fi does.</p>
     </section>
 
     <section class="card" id="ssh">
@@ -367,7 +368,8 @@ function signalBars(percent) {
 
 // ---- Wi-Fi
 
-const SECURITY = { open: "Open", personal: "Passphrase", enterprise: "User name and password", wep: "WEP" };
+const SECURITY = { open: "Open", wpa2: "WPA2", wpa2_wpa3: "WPA2/WPA3", wpa3: "WPA3", enterprise: "Enterprise",
+                   wep: "WEP" };
 let wifi = null;
 let joining = null;
 
@@ -400,7 +402,7 @@ function renderWifi(w) {
 
 function networkRow(n) {
   const current = n.ssid === wifi.network;
-  const supported = n.security === "open" || n.security === "personal";
+  const supported = !["enterprise", "wep"].includes(n.security);
   const action = current
     ? h("span", { class: "tag ok" }, wifi.connection === "internet" || wifi.connection === "lan" ? "Joined" : "Joining")
     : supported
@@ -429,7 +431,7 @@ function openJoin(network) {
   $("joinintro").textContent = network ? "" : "A network that does not announce its name.";
   $("joinintro").hidden = !!network;
   $("ssidfield").hidden = !!network;
-  const passphrase = !network || network.security === "personal";
+  const passphrase = !network || network.security !== "open";
   $("passfield").hidden = $("showfield").hidden = !passphrase;
   $("passhint").textContent = network ? "" : "· empty for an open network";
   $("ssid").value = $("passphrase").value = "";

@@ -1,9 +1,12 @@
 defmodule Kuroneko.WiFi do
   @moduledoc """
   The device's Wi-Fi for the settings page: its state, the networks in
-  reach, joining one and forgetting it. The security follows from the
-  passphrase: with one, WPA2 or WPA3, whichever the network offers
-  (`VintageNetWiFi.Cookbook.generic/2`); without one, an open network.
+  reach, joining one and forgetting it.
+
+  A network without a passphrase is open. With one, the device takes WPA2,
+  also on networks that offer WPA2 and WPA3, and WPA3 (SAE) only on networks
+  that offer nothing else: SAE through this Wi-Fi chip's driver is not
+  proven yet. A passphrase of 64 hex digits is the key itself, for WPA2.
 
   VintageNet runs on the device only: on the host there is no Wi-Fi.
   """
@@ -34,18 +37,35 @@ defmodule Kuroneko.WiFi do
   def scan, do: vintage_net(:scan, [@ifname])
 
   @doc """
-  The configuration that joins a network, checked: `hidden: true` for one
-  that does not announce its name.
+  The configuration that joins a network, checked. Options: `hidden: true`
+  for one that does not announce its name, `:security` as `networks/1`
+  gives it, else taken from the networks in reach.
   """
   @spec config(String.t(), String.t() | nil, keyword()) :: {:ok, map()} | {:error, atom()}
   def config(ssid, passphrase, opts \\ []) when is_binary(ssid) do
+    security = Keyword.get_lazy(opts, :security, fn -> security_of(ssid) end)
+
     result =
-      if passphrase in [nil, ""],
-        do: cookbook(:open_wifi, [ssid]),
-        else: cookbook(:generic, [ssid, passphrase])
+      case recipe(passphrase, security) do
+        :open -> cookbook(:open_wifi, [ssid])
+        :wpa2 -> cookbook(:wpa_psk, [ssid, passphrase])
+        :wpa2_key -> wpa2_key(ssid, passphrase)
+        :wpa3 -> cookbook(:generic, [ssid, passphrase])
+      end
 
     with {:ok, config} <- result do
       {:ok, if(opts[:hidden], do: scan_for(config), else: config)}
+    end
+  end
+
+  @doc "How to join a network with a passphrase and the security it offers."
+  @spec recipe(String.t() | nil, atom() | nil) :: :open | :wpa2 | :wpa2_key | :wpa3
+  def recipe(passphrase, security) do
+    cond do
+      passphrase in [nil, ""] -> :open
+      passphrase =~ ~r/^[[:xdigit:]]{64}$/ -> :wpa2_key
+      security == :wpa3 -> :wpa3
+      true -> :wpa2
     end
   end
 
@@ -65,8 +85,8 @@ defmodule Kuroneko.WiFi do
 
   @doc """
   The networks in reach, one per name with its strongest access point, the
-  strongest first; hidden ones left out. `security` is `:open`,
-  `:personal` (a passphrase), `:enterprise` (a user name too) or `:wep`.
+  strongest first; hidden ones left out. `security` is `:open`, `:wpa2`,
+  `:wpa2_wpa3`, `:wpa3`, `:enterprise` (a user name too) or `:wep`.
   """
   @spec networks([map()]) :: [map()]
   def networks(access_points) do
@@ -88,14 +108,35 @@ defmodule Kuroneko.WiFi do
 
   defp security(flags) do
     names = Enum.map(flags, &Atom.to_string/1)
+    psk? = Enum.any?(names, &String.contains?(&1, "psk"))
+    sae? = Enum.any?(names, &String.contains?(&1, "sae"))
 
     cond do
       Enum.any?(names, &String.contains?(&1, "eap")) -> :enterprise
-      Enum.any?(names, &String.contains?(&1, ["psk", "sae"])) -> :personal
+      psk? and sae? -> :wpa2_wpa3
+      sae? -> :wpa3
+      psk? -> :wpa2
       "wep" in names -> :wep
       true -> :open
     end
   end
+
+  defp security_of(ssid) do
+    Network.get(@ifname, ["wifi", "access_points"], [])
+    |> networks()
+    |> Enum.find_value(&(&1.ssid == ssid and &1.security))
+  end
+
+  # The recipes check passphrases, not keys.
+  defp wpa2_key(ssid, key) when byte_size(ssid) in 1..32 do
+    network = %{key_mgmt: :wpa_psk, ssid: ssid, psk: key}
+
+    {:ok,
+     %{type: VintageNetWiFi, vintage_net_wifi: %{networks: [network]}, ipv4: %{method: :dhcp}}}
+  end
+
+  defp wpa2_key("", _key), do: {:error, :ssid_too_short}
+  defp wpa2_key(_ssid, _key), do: {:error, :ssid_too_long}
 
   # A hidden network answers only probes that name it.
   defp scan_for(%{vintage_net_wifi: %{networks: networks}} = config) do

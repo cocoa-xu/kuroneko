@@ -49,6 +49,7 @@ defmodule Kuroneko.SSHTest do
     on_exit(fn -> Application.delete_env(:nerves_ssh, :authorized_keys) end)
 
     assert SSH.remove_key(@ed25519) == {:error, :built_in}
+    assert SSH.remove_key(@ed25519 <> "\n") == {:error, :built_in}
     # The host has no SSH daemon.
     assert SSH.remove_key(@ecdsa) == {:error, :no_ssh}
     assert SSH.add_keys(@ecdsa) == {:error, :no_ssh}

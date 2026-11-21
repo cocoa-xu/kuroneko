@@ -60,6 +60,8 @@ defmodule Kuroneko.SSH do
   @doc "Removes a key that was added, by its line."
   @spec remove_key(String.t()) :: :ok | {:error, :built_in | :no_ssh}
   def remove_key(line) do
+    line = String.trim(line)
+
     if line in Application.get_env(:nerves_ssh, :authorized_keys, []),
       do: {:error, :built_in},
       else: nerves_ssh(:remove_authorized_key, [line])

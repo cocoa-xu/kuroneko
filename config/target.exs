@@ -42,11 +42,11 @@ authorized_keys =
 
 config :nerves_ssh,
   authorized_keys: authorized_keys,
-  daemon_option_overrides: [pwdfun: &Kuroneko.SSH.check_password/4]
-
-# A passphrase joins WPA2 and WPA3 networks alike, also in
-# VintageNetWiFi.quick_configure/2.
-config :vintage_net_wifi, :quick_configure, &VintageNetWiFi.Cookbook.generic/2
+  daemon_option_overrides: [
+    pwdfun: &Kuroneko.SSH.check_password/4,
+    auth_method_kb_interactive_data:
+      {~c"Kuroneko", ~c"The password of the device's web page.", ~c"Password: ", false}
+  ]
 
 # Configure the network using vintage_net
 #
