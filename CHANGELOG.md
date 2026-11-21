@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+* Builds on its own: `nano_kvm_go`, `kuroneko_gadget` and the Nerves system
+  come from GitHub at their release tags, or from the checkouts next to it
+  with `KURONEKO_DEPS_PATH=..`
+
 ## v0.1.0 (2026-11-21)
 
 First version:

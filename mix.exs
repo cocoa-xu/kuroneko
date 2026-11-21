@@ -40,8 +40,8 @@ defmodule Kuroneko.MixProject do
       {:ring_logger, "~> 0.11.0"},
       {:toolshed, "~> 0.5.0"},
       {:muontrap, "~> 2.0"},
-      {:nano_kvm_go, path: "../nano_kvm_go"},
-      {:kuroneko_gadget, path: "../kuroneko_gadget"},
+      sibling(:nano_kvm_go, "v0.2.0"),
+      sibling(:kuroneko_gadget, "v0.1.0"),
       {:bandit, "~> 1.6"},
       {:websock_adapter, "~> 0.5"},
       {:jason, "~> 1.4"},
@@ -59,12 +59,20 @@ defmodule Kuroneko.MixProject do
       # bumps to Nerves systems. Since these include Linux kernel and Erlang
       # version updates, please review their release notes in case
       # changes to your application are needed.
-      {:nerves_system_nano_kvm_go,
-       path: "../nerves_system_nano_kvm_go",
-       runtime: false,
-       targets: :nano_kvm_go,
-       nerves: [compile: true]}
+      sibling(:nerves_system_nano_kvm_go, "v0.1.0",
+        runtime: false,
+        targets: :nano_kvm_go,
+        nerves: [compile: true]
+      )
     ]
+  end
+
+  # KURONEKO_DEPS_PATH=.. builds with the checkouts next to this one
+  defp sibling(app, tag, opts \\ []) do
+    case System.get_env("KURONEKO_DEPS_PATH") do
+      nil -> {app, [github: "cocoa-xu/#{app}", tag: tag] ++ opts}
+      dir -> {app, [path: Path.join(dir, "#{app}")] ++ opts}
+    end
   end
 
   def release do

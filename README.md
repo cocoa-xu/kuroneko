@@ -95,15 +95,10 @@ device goes back to the firmware before.
 
 ## Building
 
-You need Elixir 1.20 and Erlang/OTP 29 with `nerves_bootstrap`. Check the
-four projects out side by side, at the tags of a release:
+You need Elixir 1.20 and Erlang/OTP 29 with `nerves_bootstrap`:
 
 ```sh
-git clone -b v0.1.0 https://github.com/cocoa-xu/kuroneko
-git clone -b v0.1.0 https://github.com/cocoa-xu/kuroneko_gadget
-git clone -b v0.2.0 https://github.com/cocoa-xu/nano_kvm_go
-git clone -b v0.1.0 https://github.com/cocoa-xu/nerves_system_nano_kvm_go
-
+git clone https://github.com/cocoa-xu/kuroneko
 cd kuroneko
 export MIX_TARGET=nano_kvm_go
 mix deps.get
@@ -111,9 +106,14 @@ mix firmware
 mix burn
 ```
 
-`mix deps.get` downloads the Nerves system prebuilt. From other commits of
-`nerves_system_nano_kvm_go`, `mix firmware` builds it with Buildroot, which
-takes Linux and a while.
+`mix deps.get` fetches `nano_kvm_go`, `kuroneko_gadget` and
+`nerves_system_nano_kvm_go` at the tags in `mix.exs`, and the Nerves system
+prebuilt.
+
+To work on them too, check them out next to `kuroneko` and set
+`KURONEKO_DEPS_PATH=..`: the build takes them from there. A system that
+differs from its release is then built with Buildroot, which takes Linux and
+a while.
 
 Two files of yours may go in `config/`, which git leaves out:
 
