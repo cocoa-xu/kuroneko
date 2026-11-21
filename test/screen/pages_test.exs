@@ -43,6 +43,14 @@ defmodule Kuroneko.Screen.PagesTest do
     for view <- [
           %{page: :status, info: @status, settings: settings, toast: nil},
           %{page: :status, info: %{@status | wifi: nil, video: :none, temperature: nil}},
+          %{
+            page: :status,
+            info: Map.merge(@status, %{setup_code: "012345", host: "nerves-1234"})
+          },
+          %{
+            page: :status,
+            info: Map.merge(@status, %{setup_code: "999999", host: "x", wifi: nil})
+          },
           %{page: :network, info: @network, settings: settings, toast: {"Calibrated", :ok}},
           %{page: :network, info: %{@network | ap: nil}},
           %{page: :settings, settings: settings, toast: nil},
@@ -61,6 +69,19 @@ defmodule Kuroneko.Screen.PagesTest do
         ] do
       size(Pages.render(view))
     end
+  end
+
+  test "until there is a password, the status page shows where to set it and the code" do
+    info = Map.merge(@status, %{setup_code: "012345", host: "nerves-1234"})
+    canvas = Pages.render(%{page: :status, info: info})
+    texts = for {:text, _x, _y, text, _color, scale} <- canvas.items, do: {to_string(text), scale}
+
+    assert {"012 345", 3} in texts
+    assert {"https://192.0.2.10/", 1} in texts
+    assert {"http://nerves-1234.local/", 1} in texts
+
+    without_setup = Pages.render(%{page: :status, info: Map.put(info, :setup_code, nil)})
+    refute Enum.any?(without_setup.items, &match?({:text, _, _, ~c"012 345", _, _}, &1))
   end
 
   test "tiles and buttons are where they are drawn" do

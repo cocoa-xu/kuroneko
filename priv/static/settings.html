@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings · NanoKVM-Go</title>
+<style>
+  :root {
+    --bg: #0b0d10;
+    --panel: #12161b;
+    --panel-2: #181d24;
+    --line: #20262e;
+    --line-2: #2b333d;
+    --text: #e8eaed;
+    --text-2: #a4acb7;
+    --text-3: #6c7581;
+    --accent: #6aa8ff;
+    --ok: #3ecf8e;
+    --warn: #f5b84b;
+    --bad: #ff6b6b;
+    --radius: 14px;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body { margin: 0; min-height: 100vh; color: var(--text); font: 14px/1.5 var(--sans);
+    background: radial-gradient(1100px 520px at 0% -8%, rgba(106, 168, 255, 0.07), transparent 62%),
+                radial-gradient(900px 480px at 100% -12%, rgba(177, 140, 255, 0.06), transparent 60%),
+                var(--bg);
+    -webkit-font-smoothing: antialiased; }
+  [hidden] { display: none !important; }
+  a { color: var(--accent); }
+  .icon { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8;
+    stroke-linecap: round; stroke-linejoin: round; }
+  .num { font-variant-numeric: tabular-nums; }
+  .mono { font-family: var(--mono); font-size: 12.5px; }
+
+  /* Header */
+  .top { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 18px;
+    height: 58px; padding: 0 24px; background: rgba(11, 13, 16, 0.75);
+    backdrop-filter: saturate(150%) blur(14px); -webkit-backdrop-filter: saturate(150%) blur(14px);
+    border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none;
+    font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; }
+  .mark { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px;
+    background: linear-gradient(140deg, #6aa8ff, #9a7bff); color: #0b0d10; }
+  .mark .icon { width: 18px; height: 18px; stroke-width: 2.2; }
+  .tabs { display: flex; gap: 2px; padding: 3px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; }
+  .tabs a { padding: 4px 12px; border-radius: 7px; color: var(--text-2); text-decoration: none;
+    font-weight: 550; }
+  .tabs a:hover { color: var(--text); }
+  .tabs a[aria-current="page"] { background: var(--line-2); color: var(--text); }
+
+  /* Buttons and fields */
+  .btn { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px;
+    border-radius: 9px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--text);
+    font: inherit; font-weight: 550; cursor: pointer; white-space: nowrap; }
+  .btn:hover { background: var(--line-2); }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #08111f; }
+  .btn.primary:hover { background: #82b7ff; }
+  .btn.danger { color: #ffb4b4; }
+  .btn.small { height: 28px; padding: 0 10px; border-radius: 8px; font-size: 13px; }
+  :is(.btn, input, textarea, .tabs a):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type="text"], input[type="password"], textarea { width: 100%; border-radius: 9px;
+    border: 1px solid var(--line-2); background-color: var(--panel-2); color: var(--text); font: inherit; }
+  input[type="text"], input[type="password"] { height: 34px; padding: 0 12px; }
+  textarea { min-height: 76px; padding: 8px 12px; resize: vertical; font-family: var(--mono); font-size: 12.5px; }
+  input::placeholder, textarea::placeholder { color: var(--text-3); }
+
+  /* Layout */
+  main { max-width: 1280px; margin: 0 auto; padding: 30px 24px 72px; }
+  .hero { margin-bottom: 22px; }
+  .hero h1 { margin: 0; font-size: 30px; line-height: 1.15; font-weight: 680; letter-spacing: -0.025em; }
+  .hero p { margin: 6px 0 0; color: var(--text-2); }
+  .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; align-items: start; }
+  .card { grid-column: span 6; min-width: 0; padding: 18px 20px 20px; border-radius: var(--radius);
+    background: var(--panel); border: 1px solid var(--line); }
+  #wifi { grid-row: span 2; }
+  .card > header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 8px 12px; margin-bottom: 14px; }
+  .card h2 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 15.5px; font-weight: 650;
+    letter-spacing: -0.01em; }
+  .card h2 .icon { color: var(--text-3); }
+  .card p { margin: 0; color: var(--text-2); }
+  .badge { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; max-width: 100%;
+    padding: 2px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; line-height: 1.3;
+    background: var(--panel-2); color: var(--text-2); border: 1px solid var(--line-2); }
+  .badge::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
+  .badge.ok { color: #9ee8c4; border-color: rgba(62, 207, 142, 0.3); background: rgba(62, 207, 142, 0.08); }
+  .badge.ok::before { background: var(--ok); }
+  .badge.warn { color: #f8d9a0; border-color: rgba(245, 184, 75, 0.3); background: rgba(245, 184, 75, 0.08); }
+  .badge.warn::before { background: var(--warn); }
+  .badge.bad { color: #ffc2c2; border-color: rgba(255, 107, 107, 0.3); background: rgba(255, 107, 107, 0.08); }
+  .badge.bad::before { background: var(--bad); }
+  dl.facts { display: grid; grid-template-columns: minmax(90px, max-content) minmax(0, 1fr); gap: 7px 20px;
+    margin: 0; }
+  dl.facts dt { color: var(--text-3); }
+  dl.facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  .tag { flex: none; padding: 2px 9px; border-radius: 7px; background: var(--panel-2); border: 1px solid var(--line-2);
+    color: var(--text-2); font-size: 12.5px; white-space: nowrap; }
+  .tag.ok { color: #9ee8c4; border-color: rgba(62, 207, 142, 0.3); background: rgba(62, 207, 142, 0.08); }
+  .note { margin: 14px 0 0 !important; color: var(--text-3) !important; font-size: 12.5px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 12px; }
+  .actions .spacer { flex: 1; }
+  .empty { padding: 14px; border-radius: 11px; border: 1px dashed var(--line-2); color: var(--text-3) !important;
+    text-align: center; }
+  .signal { display: inline-flex; align-items: flex-end; gap: 2px; height: 13px; }
+  .signal i { width: 3px; border-radius: 1px; background: var(--line-2); }
+  .signal i.on { background: currentColor; }
+
+  /* Networks and keys */
+  .rows { display: grid; gap: 8px; }
+  .row { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 12px; border-radius: 11px;
+    background: var(--panel-2); border: 1px solid var(--line); }
+  .row.current { border-color: rgba(62, 207, 142, 0.35); }
+  .row > .icon { color: var(--text-3); }
+  .row .name { flex: 1; min-width: 0; display: grid; }
+  .row .name b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .name small { color: var(--text-3); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; }
+  .row .lock { width: 15px; height: 15px; color: var(--text-3); }
+  .command { display: flex; align-items: center; gap: 10px; margin: 12px 0 16px; padding: 10px 12px;
+    border-radius: 11px; background: #05070a; border: 1px solid var(--line-2); }
+  .command code { flex: 1; min-width: 0; overflow-x: auto; font-family: var(--mono); font-size: 13px; color: var(--text); }
+  .subsection { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .subsection h3 { margin: 0 0 10px; font-size: 13.5px; font-weight: 650; }
+  .subsection .actions { margin: 10px 0 0; }
+
+  /* Forms */
+  .formfield { display: grid; gap: 6px; margin-top: 14px; }
+  .formfield > span { color: var(--text-2); font-weight: 550; }
+  .formfield > span i { font-style: normal; font-weight: 400; color: var(--text-3); }
+  .formfield small { min-height: 18px; color: var(--text-3); font-size: 12.5px; }
+  .formfield.invalid input { border-color: var(--bad); }
+  .formfield.invalid small { color: #ffc2c2; }
+  .check { display: flex; align-items: center; gap: 8px; margin-top: 4px; color: var(--text-2); cursor: pointer; }
+  .formerror { margin: 12px 0 0 !important; color: #ffc2c2 !important; }
+  .callout { display: flex; gap: 10px; margin-top: 16px; padding: 12px 14px; border-radius: 11px;
+    border: 1px solid rgba(245, 184, 75, 0.3); background: rgba(245, 184, 75, 0.07); }
+  .callout .icon { margin-top: 1px; color: var(--warn); }
+  .callout p { color: #f8d9a0 !important; font-size: 13px; }
+
+  /* Toast, dialog */
+  #toast { position: fixed; left: 50%; bottom: 24px; z-index: 30; transform: translate(-50%, 20px);
+    max-width: calc(100vw - 32px); padding: 10px 16px; border-radius: 11px; background: #1c222b;
+    border: 1px solid var(--line-2); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); opacity: 0;
+    pointer-events: none; transition: opacity 0.2s, transform 0.2s; }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  #toast.error { border-color: rgba(255, 107, 107, 0.5); color: #ffc2c2; }
+  dialog { width: min(440px, calc(100vw - 32px)); padding: 22px; border-radius: 16px; color: var(--text);
+    background: var(--panel); border: 1px solid var(--line-2); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55); }
+  dialog::backdrop { background: rgba(4, 6, 9, 0.65); backdrop-filter: blur(3px); }
+  dialog h3 { margin: 0 0 8px; font-size: 17px; overflow-wrap: anywhere; }
+  dialog p { margin: 0; color: var(--text-2); }
+  dialog menu { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin: 20px 0 0;
+    padding: 0; }
+
+  @media (max-width: 1000px) {
+    .card { grid-column: span 12; }
+    #wifi { grid-row: auto; }
+  }
+  @media (max-width: 620px) {
+    .top { gap: 12px; padding: 0 16px; }
+    .brand span { display: none; }
+    main { padding: 22px 16px 56px; }
+    .hero h1 { font-size: 25px; }
+    .card { padding: 16px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #toast { transition: none; }
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-kvm" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2.5"/><path d="M9 20h6M12 16v4"/><path d="m9.5 8.5 2.5 2 2.5-2"/></symbol>
+  <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M2 8.8a15 15 0 0 1 20 0M5 12.5a10.5 10.5 0 0 1 14 0M8.5 16.1a5.5 5.5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.2-8.2M16 7l2.5 2.5M13.5 9.5l2 2"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="m7 9 3 3-3 3M13 15h4"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.6-4.5L4 8M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14.6 4.5L20 16M20 20v-4h-4"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18.5A2 2 0 0 0 3.5 21.5h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></symbol>
+</svg>
+
+<header class="top">
+  <a class="brand" href="/"><span class="mark"><svg class="icon"><use href="#i-kvm"/></svg></span><span>NanoKVM-Go</span></a>
+  <nav class="tabs" aria-label="Pages">
+    <a href="/">Remote</a>
+    <a href="/device">Device</a>
+    <a href="/settings" aria-current="page">Settings</a>
+  </nav>
+</header>
+
+<main id="settings">
+  <section class="hero">
+    <h1>Settings</h1>
+    <p>How this NanoKVM-Go reaches your network, and who may log in to it.</p>
+  </section>
+
+  <div class="grid">
+    <section class="card" id="wifi">
+      <header>
+        <h2><svg class="icon"><use href="#i-wifi"/></svg>Wi-Fi</h2>
+        <span class="badge" id="wifistate">–</span>
+      </header>
+      <dl class="facts" id="wififacts"></dl>
+      <div class="actions">
+        <button class="btn small" id="scan" type="button"><svg class="icon"><use href="#i-refresh"/></svg>Scan</button>
+        <button class="btn small" id="other" type="button">Other network…</button>
+        <span class="spacer"></span>
+        <button class="btn small danger" id="forget" type="button" hidden>Forget network</button>
+      </div>
+      <div class="rows" id="nets"></div>
+      <p class="note">A passphrase joins WPA2 and WPA3 networks alike; networks that also need a user name
+        are not supported here. Over USB the page stays reachable whatever the Wi-Fi does.</p>
+    </section>
+
+    <section class="card" id="ssh">
+      <header>
+        <h2><svg class="icon"><use href="#i-terminal"/></svg>SSH</h2>
+      </header>
+      <p>An Elixir shell (IEx) on the device, and firmware updates. Log in with any user name and this page's
+        password, or with a key below.</p>
+      <div class="command"><code id="sshcommand">ssh nerves.local</code></div>
+      <div class="rows" id="keys"></div>
+      <div class="subsection">
+        <h3>Add keys</h3>
+        <textarea id="newkeys" spellcheck="false" autocomplete="off" autocapitalize="off"
+                  placeholder="ssh-ed25519 AAAA… you@computer"></textarea>
+        <p class="formerror" id="keyerror" hidden></p>
+        <div class="actions">
+          <button class="btn small primary" id="addkeys" type="button">Add</button>
+        </div>
+        <p class="note">Public keys, one per line, as in <span class="mono">~/.ssh/id_ed25519.pub</span>. The
+          device keeps them across firmware updates.</p>
+      </div>
+    </section>
+
+    <section class="card" id="password">
+      <header>
+        <h2><svg class="icon"><use href="#i-lock"/></svg>Password</h2>
+      </header>
+      <form id="passwordform" novalidate>
+        <p>For this page and SSH. Changing it ends the other sessions of the page.</p>
+        <label class="formfield">
+          <span>Current password</span>
+          <input type="password" id="current" autocomplete="current-password" required>
+        </label>
+        <label class="formfield">
+          <span>New password <i>· at least 8 characters</i></span>
+          <input type="password" id="newpassword" autocomplete="new-password" required minlength="8">
+        </label>
+        <label class="formfield">
+          <span>New password again</span>
+          <input type="password" id="again" autocomplete="new-password" required>
+        </label>
+        <p class="formerror" id="passworderror" hidden></p>
+        <div class="actions">
+          <button class="btn small primary" id="changepassword" type="submit">Change the password</button>
+        </div>
+      </form>
+    </section>
+  </div>
+</main>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<dialog id="joindialog" aria-labelledby="jointitle">
+  <form id="joinform" novalidate>
+    <h3 id="jointitle">Join a network</h3>
+    <p id="joinintro"></p>
+    <label class="formfield" id="ssidfield">
+      <span>Name</span>
+      <input type="text" id="ssid" spellcheck="false" autocomplete="off" autocapitalize="off" maxlength="32">
+    </label>
+    <label class="formfield" id="passfield">
+      <span>Passphrase <i id="passhint"></i></span>
+      <input type="password" id="passphrase" spellcheck="false" autocomplete="off" maxlength="64">
+    </label>
+    <label class="check" id="showfield"><input type="checkbox" id="showpass"> Show the passphrase</label>
+    <div class="callout" id="joinwarning" hidden><svg class="icon"><use href="#i-alert"/></svg>
+      <p>This page came over Wi-Fi: it goes away while the NanoKVM-Go changes networks. Its screen then
+        shows its new address; over USB it stays where it is.</p></div>
+    <p class="formerror" id="joinerror" hidden></p>
+    <menu>
+      <button class="btn" type="button" id="joincancel">Cancel</button>
+      <button class="btn primary" type="submit" id="joinapply">Join</button>
+    </menu>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+
+// ---- Helpers
+
+const $ = (id) => document.getElementById(id);
+const SVG = "http://www.w3.org/2000/svg";
+
+function h(tag, props, ...children) {
+  const el = document.createElement(tag);
+  for (const [key, value] of Object.entries(props || {})) {
+    if (value == null || value === false) continue;
+    if (key === "class") el.className = value;
+    else if (key === "style") el.style.cssText = value;
+    else if (key.startsWith("on")) el.addEventListener(key.slice(2), value);
+    else el.setAttribute(key, value === true ? "" : value);
+  }
+  el.append(...children.flat().filter((child) => child != null && child !== false));
+  return el;
+}
+
+function icon(name, extra) {
+  const svg = document.createElementNS(SVG, "svg");
+  svg.setAttribute("class", `icon ${extra || ""}`.trim());
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS(SVG, "use");
+  use.setAttribute("href", `#i-${name}`);
+  svg.append(use);
+  return svg;
+}
+
+function facts(dl, rows) {
+  dl.replaceChildren(...rows.filter(([, value]) => value != null && value !== "")
+    .flatMap(([term, value]) => [h("dt", null, term), h("dd", null, value)]));
+}
+
+function badge(el, text, kind) {
+  el.textContent = text;
+  el.className = `badge ${kind || ""}`;
+}
+
+let toastTimer;
+function toast(text, error) {
+  const el = $("toast");
+  el.textContent = text;
+  el.className = error ? "show error" : "show";
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = el.className.replace("show", "").trim(); }, error ? 5000 : 3000);
+}
+
+// A 401 means the session ended, except where it means a wrong password.
+async function request(path, { body, reloadOn401 = true } = {}) {
+  const options = body === undefined ? {} :
+    { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
+  const reply = await fetch(path, options);
+  if (reply.status === 401 && reloadOn401) {
+    location.reload();
+    return new Promise(() => {});
+  }
+  const data = await reply.json().catch(() => ({}));
+  if (!reply.ok) throw Object.assign(new Error(data.error || `HTTP ${reply.status}`), { data });
+  return data;
+}
+
+const COLORS = { ok: "var(--ok)", warn: "var(--warn)", bad: "var(--bad)" };
+
+function signalBars(percent) {
+  const on = Math.max(1, Math.ceil(percent / 25));
+  const kind = percent >= 60 ? "ok" : percent >= 35 ? "warn" : "bad";
+  return h("span", { class: "signal", style: `color:${COLORS[kind]}`, "aria-hidden": "true" },
+    [4, 7, 10, 13].map((height, i) => h("i", { class: i < on ? "on" : "", style: `height:${height}px` })));
+}
+
+// ---- Wi-Fi
+
+const SECURITY = { open: "Open", personal: "Passphrase", enterprise: "User name and password", wep: "WEP" };
+let wifi = null;
+let joining = null;
+
+function wifiState(w) {
+  if (!w.present) return ["No Wi-Fi", "bad"];
+  if (!w.network) return ["Not set up", ""];
+  if (w.connection === "internet") return ["Connected", "ok"];
+  if (w.connection === "lan") return ["Connected, no internet", "warn"];
+  return ["Connecting", "warn"];
+}
+
+function renderWifi(w) {
+  wifi = w;
+  badge($("wifistate"), ...wifiState(w));
+  const link = w.link;
+  facts($("wififacts"), [
+    ["Network", w.network || "None"],
+    ["Address", w.address],
+    ["Signal", link && h("span", { class: "num" }, signalBars(link.signal_percent),
+      ` ${link.signal_percent}% · ${link.signal_dbm} dBm`)],
+    ["Band", link && [link.band, link.channel && `channel ${link.channel}`].filter(Boolean).join(", ")]
+  ]);
+  $("forget").hidden = !w.network;
+  $("scan").disabled = $("other").disabled = !w.present;
+
+  const empty = !w.present ? "The Wi-Fi chip did not come up: no networks to show." :
+    "No networks seen yet: scan to look for them.";
+  $("nets").replaceChildren(...(w.networks.length ? w.networks.map(networkRow) : [h("p", { class: "empty" }, empty)]));
+}
+
+function networkRow(n) {
+  const current = n.ssid === wifi.network;
+  const supported = n.security === "open" || n.security === "personal";
+  const action = current
+    ? h("span", { class: "tag ok" }, wifi.connection === "internet" || wifi.connection === "lan" ? "Joined" : "Joining")
+    : supported
+      ? h("button", { class: "btn small", type: "button", onclick: () => openJoin(n) }, "Join…")
+      : h("span", { class: "tag", title: "Not supported here" }, "Not supported");
+
+  return h("div", { class: `row${current ? " current" : ""}` },
+    signalBars(n.signal_percent),
+    h("div", { class: "name" }, h("b", null, n.ssid),
+      h("small", null, [SECURITY[n.security], n.band].filter(Boolean).join(" · "))),
+    n.security !== "open" && icon("lock", "lock"),
+    action);
+}
+
+async function refreshWifi() {
+  try {
+    renderWifi(await request("/api/wifi"));
+  } catch (err) {
+    toast(`Wi-Fi: ${err.message}`, true);
+  }
+}
+
+function openJoin(network) {
+  joining = network;
+  $("jointitle").textContent = network ? `Join “${network.ssid}”` : "Join a network";
+  $("joinintro").textContent = network ? "" : "A network that does not announce its name.";
+  $("joinintro").hidden = !!network;
+  $("ssidfield").hidden = !!network;
+  const passphrase = !network || network.security === "personal";
+  $("passfield").hidden = $("showfield").hidden = !passphrase;
+  $("passhint").textContent = network ? "" : "· empty for an open network";
+  $("ssid").value = $("passphrase").value = "";
+  $("showpass").checked = false;
+  $("passphrase").type = "password";
+  $("joinwarning").hidden = !(wifi && wifi.address && location.hostname === wifi.address);
+  $("joinerror").hidden = true;
+  $("joinapply").disabled = false;
+  $("joindialog").showModal();
+  (network ? $("passphrase") : $("ssid")).focus();
+}
+
+$("showpass").addEventListener("change", (e) => { $("passphrase").type = e.target.checked ? "text" : "password"; });
+$("joincancel").addEventListener("click", () => $("joindialog").close());
+$("other").addEventListener("click", () => openJoin(null));
+
+$("joinform").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const ssid = joining ? joining.ssid : $("ssid").value;
+  $("joinapply").disabled = true;
+  $("joinerror").hidden = true;
+  try {
+    await request("/api/wifi", { body: { ssid, passphrase: $("passphrase").value || null, hidden: !joining } });
+    $("joindialog").close();
+    toast(`Joining “${ssid}”: the device's screen shows its address once connected`);
+    setTimeout(refreshWifi, 3000);
+  } catch (err) {
+    $("joinerror").textContent = err.message;
+    $("joinerror").hidden = false;
+    $("joinapply").disabled = false;
+  }
+});
+
+$("scan").addEventListener("click", async () => {
+  $("scan").disabled = true;
+  try {
+    await request("/api/wifi/scan", { body: {} });
+    toast("Looking for networks");
+    setTimeout(refreshWifi, 3000);
+    setTimeout(refreshWifi, 7000);
+  } catch (err) {
+    toast(`Scan: ${err.message}`, true);
+  } finally {
+    setTimeout(() => { $("scan").disabled = !(wifi && wifi.present); }, 3000);
+  }
+});
+
+$("forget").addEventListener("click", async () => {
+  if (!confirm(`Forget “${wifi.network}”? The NanoKVM-Go stays off Wi-Fi until it joins another network.`)) return;
+  try {
+    await request("/api/wifi/forget", { body: {} });
+    toast("Leaving the network");
+    setTimeout(refreshWifi, 2000);
+  } catch (err) {
+    toast(`Wi-Fi: ${err.message}`, true);
+  }
+});
+
+// ---- SSH
+
+function renderKeys(keys) {
+  $("keys").replaceChildren(...(keys.length ? keys.map(keyRow) :
+    [h("p", { class: "empty" }, "No keys: log in with the password.")]));
+}
+
+function keyRow(key) {
+  const action = key.built_in
+    ? h("span", { class: "tag", title: "Comes with the firmware: only new firmware takes it away" }, "Built in")
+    : h("button", { class: "btn small danger", type: "button", onclick: () => removeKey(key) }, "Remove");
+
+  return h("div", { class: "row" },
+    icon("key"),
+    h("div", { class: "name" }, h("b", null, key.comment || key.type),
+      h("small", { class: "mono", title: key.fingerprint }, `${key.type} ${key.fingerprint}`)),
+    action);
+}
+
+async function removeKey(key) {
+  if (!confirm(`Remove the key “${key.comment || key.fingerprint}”? It can no longer log in.`)) return;
+  try {
+    renderKeys((await request("/api/ssh/keys/remove", { body: { key: key.key } })).keys);
+    toast("Key removed");
+  } catch (err) {
+    toast(`SSH: ${err.message}`, true);
+  }
+}
+
+$("addkeys").addEventListener("click", async () => {
+  const text = $("newkeys").value;
+  if (!text.trim()) return $("newkeys").focus();
+  $("addkeys").disabled = true;
+  $("keyerror").hidden = true;
+  try {
+    renderKeys((await request("/api/ssh/keys", { body: { key: text } })).keys);
+    $("newkeys").value = "";
+    toast("Added: the key can log in now");
+  } catch (err) {
+    $("keyerror").textContent = err.message;
+    $("keyerror").hidden = false;
+  } finally {
+    $("addkeys").disabled = false;
+  }
+});
+
+$("sshcommand").textContent = `ssh ${location.hostname}`;
+
+// ---- Password
+
+$("passwordform").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const error = (text) => { $("passworderror").textContent = text; $("passworderror").hidden = !text; };
+  error("");
+  if ($("newpassword").value.length < 8) return error("The new password needs at least 8 characters.");
+  if ($("newpassword").value !== $("again").value) return error("The two new passwords differ.");
+  $("changepassword").disabled = true;
+  try {
+    await request("/api/auth/password",
+      { body: { current: $("current").value, password: $("newpassword").value }, reloadOn401: false });
+    e.target.reset();
+    toast("Password changed: the other sessions have ended");
+  } catch (err) {
+    error(err.message === "wrong password" ? "The current password is not right." : err.message);
+  } finally {
+    $("changepassword").disabled = false;
+  }
+});
+
+// ---- Start
+
+(async () => {
+  try {
+    const [w, ssh] = await Promise.all([request("/api/wifi"), request("/api/ssh/keys")]);
+    renderWifi(w);
+    renderKeys(ssh.keys);
+  } catch (err) {
+    toast(err.message, true);
+  }
+  setInterval(() => { if (!document.hidden) refreshWifi(); }, 5000);
+})();
+</script>
+</body>
+</html>

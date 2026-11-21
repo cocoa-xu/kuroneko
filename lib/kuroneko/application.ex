@@ -11,7 +11,8 @@ defmodule Kuroneko.Application do
 
     children =
       [
-        Kuroneko.LoginLimit
+        Kuroneko.LoginLimit,
+        Kuroneko.SetupCode
       ] ++ target_children()
 
     # See https://elixir.hexdocs.pm/Supervisor.html
@@ -63,6 +64,8 @@ defmodule Kuroneko.Application do
       Application.put_env(:kuroneko, :mjpeg_token, mjpeg_token)
 
       [
+        # The Wi-Fi and SSH keys the card was burned with.
+        {Task, &Kuroneko.Provisioning.run/0},
         Kuroneko.TrialGuard,
         {Kuroneko.Gadget, NanoKVMGo.USB.gadget_options() ++ [functions: usb_functions]},
         {NanoKVMGo.Video,

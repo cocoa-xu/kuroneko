@@ -21,6 +21,8 @@
     border: 1px solid #3fa45b; background: #1f2226; color: #e6e8eb; cursor: pointer; }
   button:disabled { opacity: 0.5; cursor: default; }
   .error { color: #e0786f; margin: 10px 0 0; }
+  .hint { color: #7d838b; font-size: 12px; }
+  #code { font-variant-numeric: tabular-nums; letter-spacing: 0.15em; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -34,6 +36,11 @@
     <label for="again">Password again</label>
     <input id="again" type="password" autocomplete="new-password">
   </div>
+  <div id="code-field" hidden>
+    <label for="code">Setup code <span class="hint">on the NanoKVM-Go's screen</span></label>
+    <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7"
+           pattern="[0-9 ]{6,7}" placeholder="000 000">
+  </div>
   <button id="submit">Log in</button>
   <p class="error" id="error" hidden></p>
 </form>
@@ -41,6 +48,7 @@
   const form = document.getElementById("form");
   const password = document.getElementById("password");
   const again = document.getElementById("again");
+  const code = document.getElementById("code");
   const error = document.getElementById("error");
   const submit = document.getElementById("submit");
   let setup = false;
@@ -60,9 +68,12 @@
     setup = !auth.password_set;
     if (setup) {
       document.getElementById("intro").textContent =
-        "Choose the password that keeps others from this computer: at least 8 characters.";
+        "Choose the password that keeps others from this computer: at least 8 characters. " +
+        "It also logs you in over SSH.";
       document.getElementById("again-field").hidden = false;
+      document.getElementById("code-field").hidden = false;
       again.required = true;
+      code.required = true;
       password.autocomplete = "new-password";
       submit.textContent = "Set the password";
     }
@@ -74,11 +85,17 @@
     if (setup && password.value !== again.value) return show("The two passwords differ.");
     submit.disabled = true;
     try {
-      await post(setup ? "/api/auth/setup" : "/api/auth/login", { password: password.value });
+      if (setup) await post("/api/auth/setup", { password: password.value, code: code.value });
+      else await post("/api/auth/login", { password: password.value });
       location.reload();
     } catch (err) {
       show(err.message);
-      password.select();
+      if (setup && err.message.includes("code")) {
+        code.value = "";
+        code.focus();
+      } else {
+        password.select();
+      }
     } finally {
       submit.disabled = false;
     }

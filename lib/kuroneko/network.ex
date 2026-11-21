@@ -71,10 +71,12 @@ defmodule Kuroneko.Network do
     end
   end
 
-  defp band(mhz) when mhz in 2401..2495, do: "2.4 GHz"
-  defp band(mhz) when mhz in 5150..5925, do: "5 GHz"
-  defp band(mhz) when mhz in 5926..7125, do: "6 GHz"
-  defp band(_mhz), do: nil
+  @doc "The Wi-Fi band of a frequency in MHz, `\"5 GHz\"`."
+  @spec band(integer()) :: String.t() | nil
+  def band(mhz) when mhz in 2401..2495, do: "2.4 GHz"
+  def band(mhz) when mhz in 5150..5925, do: "5 GHz"
+  def band(mhz) when mhz in 5926..7125, do: "6 GHz"
+  def band(_mhz), do: nil
 
   defp channel(2484), do: 14
   defp channel(mhz) when mhz in 2401..2495, do: div(mhz - 2407, 5)

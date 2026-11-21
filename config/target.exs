@@ -29,34 +29,34 @@ config :logger, :default_handler, false
 # * See https://nerves-ssh.hexdocs.pm/readme.html for general SSH configuration
 # * See https://ssh-subsystem-fwup.hexdocs.pm/readme.html for firmware updates
 
-# Who may log in: the keys in config/authorized_keys, which is kept out of
-# the project, else your own public keys.
+# Who may log in: any user name with the web page's password, and the keys
+# added on its settings page or when the card was burned (Kuroneko.SSH).
+# Keys of your own, one per line in config/authorized_keys, which is kept
+# out of the project, are built into the firmware. Firmware for others is
+# built without that file: nothing else here takes keys from the computer.
 authorized_keys =
   case File.read(Path.join(__DIR__, "authorized_keys")) do
-    {:ok, keys} ->
-      String.split(keys, "\n", trim: true)
-
-    {:error, _reason} ->
-      System.user_home!()
-      |> Path.join(".ssh/id_{rsa,ecdsa,ed25519}.pub")
-      |> Path.wildcard()
-      |> Enum.map(&File.read!/1)
+    {:ok, keys} -> keys |> String.split("\n", trim: true) |> Enum.reject(&(&1 =~ ~r/^\s*#/))
+    {:error, _reason} -> []
   end
 
-if authorized_keys == [] do
-  Mix.raise("No SSH keys for the device: add config/authorized_keys, or make one with ssh-keygen")
-end
+config :nerves_ssh,
+  authorized_keys: authorized_keys,
+  daemon_option_overrides: [pwdfun: &Kuroneko.SSH.check_password/4]
 
-config :nerves_ssh, authorized_keys: authorized_keys
+# A passphrase joins WPA2 and WPA3 networks alike, also in
+# VintageNetWiFi.quick_configure/2.
+config :vintage_net_wifi, :quick_configure, &VintageNetWiFi.Cookbook.generic/2
 
 # Configure the network using vintage_net
 #
 # Update regulatory_domain to your 2-letter country code E.g., "US"
 #
 # See https://github.com/nerves-networking/vintage_net for more information
-# usb0 (USB gadget) and wlan0. Your Wi-Fi goes in config/wifi.secret.exs,
-# which is kept out of the project, or on the device:
-# VintageNetWiFi.quick_configure("ssid", "passphrase").
+# usb0 (USB gadget) and wlan0. The Wi-Fi is set on the settings page, when
+# the card is burned (config/provisioning.conf) or in IEx with
+# VintageNetWiFi.quick_configure("ssid", "passphrase"); your own may go in
+# config/wifi.secret.exs, which is kept out of the project.
 config :vintage_net,
   regulatory_domain: "00",
   config: [

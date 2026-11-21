@@ -412,8 +412,11 @@ defmodule Kuroneko.Screen do
 
   defp info(:status) do
     functions = Kuroneko.Gadget.functions()
+    {:ok, host} = :inet.gethostname()
 
     %{
+      setup_code: Kuroneko.SetupCode.current(),
+      host: to_string(host),
       wifi: Network.ipv4("wlan0"),
       usb: Network.ipv4("usb0"),
       video: video(),

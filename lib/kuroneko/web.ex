@@ -33,14 +33,22 @@ defmodule Kuroneko.Web do
       `Kuroneko.DeviceSocket`)
     * `POST /api/firmware/validate`: keeps the firmware on trial
     * `POST /api/reboot`
+    * `/settings`: the settings page, Wi-Fi, SSH keys and the password;
+      `GET /api/wifi`, the Wi-Fi's state and the networks in reach (see
+      `Kuroneko.WiFi`), `POST /api/wifi/scan`, `POST /api/wifi` `{"ssid":
+      ..., "passphrase": ..., "hidden": false}` to join a network, `POST
+      /api/wifi/forget`; `GET /api/ssh/keys`, `POST /api/ssh/keys` `{"key":
+      ...}` (one or more lines) and `POST /api/ssh/keys/remove` `{"key":
+      ...}` (see `Kuroneko.SSH`)
 
   MJPEG for other browsers comes from `NanoKVMGo.Video` on 8088. WebSockets,
   like the POSTs, take only requests from the page itself: browsers let any
   site open a WebSocket to the device, and say which in the origin.
 
   Everything but the page and logging in needs a session, which a password
-  (`Kuroneko.Auth`) opens: `POST /api/auth/setup` `{"password": ...}`
-  while there is none, `POST /api/auth/login`, `POST /api/auth/logout`,
+  (`Kuroneko.Auth`) opens: `POST /api/auth/setup` `{"password": ...,
+  "code": ...}` while there is none, with the code the LCD shows
+  (`Kuroneko.SetupCode`), `POST /api/auth/login`, `POST /api/auth/logout`,
   `POST /api/auth/password` `{"current": ..., "password": ...}`. Without a
   session the page is the login page. With HTTPS running, HTTP sends
   browsers there.
@@ -48,6 +56,7 @@ defmodule Kuroneko.Web do
 
   alias Kuroneko.Auth
   alias Kuroneko.LoginLimit
+  alias Kuroneko.SetupCode
   alias Kuroneko.USBSettings
   use Plug.Router
   require Logger
@@ -64,6 +73,7 @@ defmodule Kuroneko.Web do
   @public [
     {"GET", "/"},
     {"GET", "/device"},
+    {"GET", "/settings"},
     {"GET", "/api/auth"},
     {"POST", "/api/auth/login"},
     {"POST", "/api/auth/setup"}
@@ -88,20 +98,38 @@ defmodule Kuroneko.Web do
 
   get("/", do: page(conn, "index.html"))
   get("/device", do: page(conn, "device.html"))
+  get("/settings", do: page(conn, "settings.html"))
 
   get "/api/auth" do
     json(conn, 200, %{password_set: Auth.password_set?(), logged_in: logged_in?(conn)})
   end
 
+  # The first password takes the code on the LCD: someone at the device
+  # sets it, not whoever reaches the page first.
   post "/api/auth/setup" do
-    with {:ok, %{"password" => password}, conn} when is_binary(password) <- page_json(conn),
+    with {:ok, %{"password" => password} = data, conn} when is_binary(password) <-
+           page_json(conn),
+         {:allowed, true} <- {:allowed, LoginLimit.allow?()},
          false <- Auth.password_set?(),
+         {:code, true} <- {:code, SetupCode.check(data["code"])},
          :ok <- Auth.set_password(password) do
       conn |> start_session() |> json(200, %{ok: true})
     else
-      {:error, :too_short} -> json(conn, 400, %{error: "at least 8 characters"})
-      true -> json(conn, 409, %{error: "a password is set"})
-      other -> refused(conn, other)
+      {:allowed, false} ->
+        json(conn, 429, %{error: "too many tries, wait a minute"})
+
+      {:code, false} ->
+        LoginLimit.failed()
+        json(conn, 401, %{error: "wrong setup code: the screen shows a new one"})
+
+      {:error, :too_short} ->
+        json(conn, 400, %{error: "at least 8 characters"})
+
+      true ->
+        json(conn, 409, %{error: "a password is set"})
+
+      other ->
+        refused(conn, other)
     end
   end
 
@@ -289,6 +317,68 @@ defmodule Kuroneko.Web do
     end
   end
 
+  get("/api/wifi", do: json(conn, 200, wifi().overview()))
+
+  post "/api/wifi/scan" do
+    with {:ok, _data, conn} <- page_json(conn) do
+      case wifi().scan() do
+        :ok -> json(conn, 202, %{scanning: true})
+        {:error, reason} -> json(conn, 503, %{error: wifi_error(reason)})
+      end
+    else
+      other -> refused(conn, other)
+    end
+  end
+
+  # Joining another network takes away the one the page may have come over:
+  # the reply leaves first.
+  post "/api/wifi" do
+    with {:ok, %{"ssid" => ssid} = data, conn} when is_binary(ssid) <- page_json(conn),
+         passphrase when is_binary(passphrase) or is_nil(passphrase) <- data["passphrase"],
+         {:ok, config} <- wifi().config(ssid, passphrase, hidden: data["hidden"] == true) do
+      later(fn -> wifi().apply_config(config) end, "Wi-Fi network not joined")
+      json(conn, 202, %{joining: ssid})
+    else
+      {:error, reason} when is_atom(reason) -> json(conn, 400, %{error: wifi_error(reason)})
+      other -> refused(conn, other)
+    end
+  end
+
+  post "/api/wifi/forget" do
+    with {:ok, _data, conn} <- page_json(conn) do
+      later(fn -> wifi().forget() end, "Wi-Fi network not forgotten")
+      json(conn, 202, %{forgetting: true})
+    else
+      other -> refused(conn, other)
+    end
+  end
+
+  get("/api/ssh/keys", do: json(conn, 200, %{keys: ssh().keys()}))
+
+  post "/api/ssh/keys" do
+    with {:ok, %{"key" => text}, conn} when is_binary(text) <- page_json(conn) do
+      case ssh().add_keys(text) do
+        :ok -> json(conn, 200, %{keys: ssh().keys()})
+        {:error, :invalid_key} -> json(conn, 400, %{error: "not a public key: one per line"})
+        {:error, reason} -> json(conn, 503, %{error: inspect(reason)})
+      end
+    else
+      other -> refused(conn, other)
+    end
+  end
+
+  post "/api/ssh/keys/remove" do
+    with {:ok, %{"key" => line}, conn} when is_binary(line) <- page_json(conn) do
+      case ssh().remove_key(line) do
+        :ok -> json(conn, 200, %{keys: ssh().keys()})
+        {:error, :built_in} -> json(conn, 400, %{error: "built into the firmware"})
+        {:error, reason} -> json(conn, 503, %{error: inspect(reason)})
+      end
+    else
+      other -> refused(conn, other)
+    end
+  end
+
   get "/status" do
     conn
     |> put_resp_content_type("application/json")
@@ -395,6 +485,25 @@ defmodule Kuroneko.Web do
 
   defp refused(conn, {:page, false}), do: send_resp(conn, 403, "forbidden")
   defp refused(conn, _other), do: send_resp(conn, 400, "bad request")
+
+  # After the reply has left.
+  defp later(change, failure) do
+    Task.start(fn ->
+      Process.sleep(@reply_delay)
+      with {:error, reason} <- change.(), do: Logger.error("#{failure}: #{inspect(reason)}")
+    end)
+  end
+
+  defp wifi, do: Application.get_env(:kuroneko, :wifi, Kuroneko.WiFi)
+  defp ssh, do: Application.get_env(:kuroneko, :ssh, Kuroneko.SSH)
+
+  defp wifi_error(:ssid_too_short), do: "the network needs a name"
+  defp wifi_error(:ssid_too_long), do: "the name is longer than 32 bytes"
+  defp wifi_error(:password_too_short), do: "the passphrase needs at least 8 characters"
+  defp wifi_error(:password_too_long), do: "the passphrase is longer than 63 characters"
+  defp wifi_error(:invalid_characters), do: "the passphrase takes ASCII characters only"
+  defp wifi_error(:no_wifi), do: "this device has no Wi-Fi"
+  defp wifi_error(reason), do: inspect(reason)
 
   defp websocket(conn, handler) do
     if same_origin?(conn) do

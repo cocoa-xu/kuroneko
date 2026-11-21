@@ -80,7 +80,14 @@ defmodule Kuroneko.WebTest do
           get: "/ws",
           post: "/api/reboot",
           post: "/api/firmware/validate",
-          post: "/api/auth/password"
+          post: "/api/auth/password",
+          get: "/api/wifi",
+          post: "/api/wifi",
+          post: "/api/wifi/scan",
+          post: "/api/wifi/forget",
+          get: "/api/ssh/keys",
+          post: "/api/ssh/keys",
+          post: "/api/ssh/keys/remove"
         ] do
       assert request(method, path, "{}", @page, false).status == 401, "#{method} #{path}"
     end
@@ -94,6 +101,8 @@ defmodule Kuroneko.WebTest do
     # Logging in on the device page reloads it.
     assert request(:get, "/device", "", [], false).resp_body =~ "Log in to control the computer"
     assert request(:get, "/device").resp_body =~ ~s(<main id="device")
+    assert request(:get, "/settings", "", [], false).resp_body =~ "Log in to control the computer"
+    assert request(:get, "/settings").resp_body =~ ~s(<main id="settings")
     refute_receive :rebooted, 100
   end
 
@@ -125,6 +134,44 @@ defmodule Kuroneko.WebTest do
     assert request(:post, "/api/auth/password", right, @page).status == 200
     assert Auth.generation() == before + 1
     assert Auth.verify("a new password")
+  end
+
+  test "the first password takes the code the screen shows" do
+    File.rm!(Application.fetch_env!(:kuroneko, :auth_file))
+    setup = &Jason.encode!(%{password: &1, code: &2})
+
+    assert request(:post, "/api/auth/setup", setup.("a new password", "000 000x"), @page, false).status ==
+             401
+
+    assert request(
+             :post,
+             "/api/auth/setup",
+             Jason.encode!(%{password: "a new password"}),
+             @page,
+             false
+           ).status ==
+             401
+
+    refute Auth.password_set?()
+
+    code = Kuroneko.SetupCode.current()
+    assert request(:post, "/api/auth/setup", setup.("short", code), @page, false).status == 400
+
+    conn = request(:post, "/api/auth/setup", setup.("a new password", code), @page, false)
+    assert conn.status == 200
+    assert get_session(conn, "generation") == Auth.generation()
+    assert Auth.verify("a new password")
+    assert Kuroneko.SetupCode.current() == nil
+  end
+
+  test "five wrong setup codes close the setup for a minute" do
+    File.rm!(Application.fetch_env!(:kuroneko, :auth_file))
+    wrong = Jason.encode!(%{password: "a new password", code: "x"})
+    for _ <- 1..5, do: request(:post, "/api/auth/setup", wrong, @page, false)
+
+    right = Jason.encode!(%{password: "a new password", code: Kuroneko.SetupCode.current()})
+    assert request(:post, "/api/auth/setup", right, @page, false).status == 429
+    refute Auth.password_set?()
   end
 
   test "Wake-on-LAN only from the page, and only for a MAC address" do
@@ -351,6 +398,133 @@ defmodule Kuroneko.WebTest do
     test "tells when the lines are not there" do
       Application.put_env(:kuroneko, :expansion_server, __MODULE__.None)
       assert request(:post, "/api/expansion/mode", ~s({"mode":"uart"}), @page).status == 503
+    end
+  end
+
+  describe "Wi-Fi" do
+    defmodule FakeWiFi do
+      def overview do
+        %{
+          present: true,
+          network: "home",
+          connection: :internet,
+          address: "192.0.2.10",
+          link: nil,
+          networks: [%{ssid: "home", signal_percent: 80, band: "5 GHz", security: :personal}]
+        }
+      end
+
+      def scan, do: tell(:scanned)
+      def config("", _passphrase, _opts), do: {:error, :ssid_too_short}
+      def config(_ssid, "short", _opts), do: {:error, :password_too_short}
+
+      def config(ssid, passphrase, opts),
+        do: {:ok, %{ssid: ssid, passphrase: passphrase, hidden: opts[:hidden]}}
+
+      def apply_config(config), do: tell({:applied, config})
+      def forget, do: tell(:forgot)
+
+      defp tell(message) do
+        send(Kuroneko.WebTest, message)
+        :ok
+      end
+    end
+
+    setup do
+      Process.register(self(), Kuroneko.WebTest)
+      Application.put_env(:kuroneko, :wifi, FakeWiFi)
+      on_exit(fn -> Application.delete_env(:kuroneko, :wifi) end)
+    end
+
+    test "the state and the networks in reach" do
+      assert %{"network" => "home", "networks" => [%{"ssid" => "home", "security" => "personal"}]} =
+               Jason.decode!(request(:get, "/api/wifi").resp_body)
+    end
+
+    test "joins a network after the reply, from the page only" do
+      evil = [{"origin", "http://evil.example"}, {"content-type", "application/json"}]
+
+      assert request(:post, "/api/wifi", ~s({"ssid":"home","passphrase":"long enough"}), evil).status ==
+               403
+
+      assert request(:post, "/api/wifi", ~s({"ssid":"home","passphrase":"long enough"}), @page).status ==
+               202
+
+      assert_receive {:applied, %{ssid: "home", passphrase: "long enough", hidden: false}}, 2_000
+
+      assert request(
+               :post,
+               "/api/wifi",
+               ~s({"ssid":"lab","passphrase":null,"hidden":true}),
+               @page
+             ).status == 202
+
+      assert_receive {:applied, %{ssid: "lab", passphrase: nil, hidden: true}}, 2_000
+    end
+
+    test "says what is wrong with a network or a passphrase" do
+      for {body, error} <- [
+            {~s({"ssid":"","passphrase":"long enough"}), "the network needs a name"},
+            {~s({"ssid":"home","passphrase":"short"}),
+             "the passphrase needs at least 8 characters"}
+          ] do
+        conn = request(:post, "/api/wifi", body, @page)
+        assert {conn.status, Jason.decode!(conn.resp_body)} == {400, %{"error" => error}}
+      end
+
+      for body <- [~s({"ssid":"home","passphrase":8}), ~s({"passphrase":"long enough"}), ~s([1])] do
+        assert request(:post, "/api/wifi", body, @page).status == 400, body
+      end
+
+      refute_receive {:applied, _config}, 700
+    end
+
+    test "scans and forgets" do
+      assert request(:post, "/api/wifi/scan", "{}", @page).status == 202
+      assert_receive :scanned
+      assert request(:post, "/api/wifi/forget", "{}", @page).status == 202
+      assert_receive :forgot, 2_000
+    end
+  end
+
+  describe "SSH keys" do
+    defmodule FakeSSH do
+      def keys,
+        do: [
+          %{key: "ssh-ed25519 AAAA test", type: "ssh-ed25519", comment: "test", built_in: false}
+        ]
+
+      def add_keys("not a key"), do: {:error, :invalid_key}
+      def add_keys(_text), do: :ok
+      def remove_key("built in"), do: {:error, :built_in}
+      def remove_key(_line), do: :ok
+    end
+
+    setup do
+      Application.put_env(:kuroneko, :ssh, FakeSSH)
+      on_exit(fn -> Application.delete_env(:kuroneko, :ssh) end)
+    end
+
+    test "lists, adds and removes keys from the page" do
+      assert %{"keys" => [%{"comment" => "test"}]} =
+               Jason.decode!(request(:get, "/api/ssh/keys").resp_body)
+
+      json_only = [{"content-type", "application/json"}]
+
+      assert request(:post, "/api/ssh/keys", ~s({"key":"ssh-ed25519 AAAA"}), json_only).status ==
+               403
+
+      assert request(:post, "/api/ssh/keys", ~s({"key":"ssh-ed25519 AAAA"}), @page).status == 200
+      assert request(:post, "/api/ssh/keys", ~s({"key":"not a key"}), @page).status == 400
+      assert request(:post, "/api/ssh/keys", ~s({"key":1}), @page).status == 400
+
+      assert request(:post, "/api/ssh/keys/remove", ~s({"key":"ssh-ed25519 AAAA"}), @page).status ==
+               200
+
+      conn = request(:post, "/api/ssh/keys/remove", ~s({"key":"built in"}), @page)
+
+      assert {conn.status, Jason.decode!(conn.resp_body)} ==
+               {400, %{"error" => "built into the firmware"}}
     end
   end
 end

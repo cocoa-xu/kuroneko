@@ -21,7 +21,7 @@ defmodule Kuroneko.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger, :runtime_tools, :ssl],
+      extra_applications: [:logger, :runtime_tools, :ssl, :ssh],
       mod: {Kuroneko.Application, []}
     ]
   end

@@ -79,6 +79,23 @@ defmodule Kuroneko.Screen.Pages do
     |> Canvas.rect(x - 2, y - 2, 5, 5, @red)
   end
 
+  # Until the page has a password: where to set it and the code it takes.
+  def render(%{page: :status, info: %{setup_code: code} = info} = view) when is_binary(code) do
+    spaced = String.slice(code, 0, 3) <> " " <> String.slice(code, 3, 3)
+    addresses = Enum.reject([url(info), "http://#{info.host}.local/"], &(&1 == ""))
+
+    addresses
+    |> Enum.with_index()
+    |> Enum.reduce(title(:status, "Welcome"), fn {address, i}, canvas ->
+      center(canvas, 78 + i * 22, address, if(i == 0, do: @white, else: @grey))
+    end)
+    |> center(56, "Set a password in a browser:", @grey)
+    |> center(136, "Setup code", @grey)
+    |> Canvas.text(x_centered(spaced, 3), 158, spaced, @green, scale: 3)
+    |> center(222, "The page asks for it once.", @dim)
+    |> toast(view)
+  end
+
   def render(%{page: :status, info: info} = view) do
     title(:status, "NanoKVM-Go")
     |> lines([
