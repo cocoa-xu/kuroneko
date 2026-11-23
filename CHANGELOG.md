@@ -16,6 +16,11 @@
   back to it when ejected. What is in a drive goes in again after a
   restart, unless inserted with `remember: false`. Up to 16 drives at
   once, set in USB…, each with its own image or folder
+* USB… adds storage devices and USB networks, each by name, as many as
+  the device's USB endpoints take, and counts the endpoints as you choose.
+  The drives in Disk… span every storage device, `GET /api/usb` tells each
+  USB device with what each kind takes, and each further network gets a
+  /30 of its own
 * The USB network's addresses can move, on the device page, where
   172.31.0.0/16 is taken
 * A network's signal in dBm when the pointer rests on its bars, and a

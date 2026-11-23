@@ -51,6 +51,10 @@
     padding: 16px 20px; width: min(600px, calc(100vw - 32px)); box-sizing: border-box; }
   dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
   dialog h3 { margin: 0 0 10px; font-size: 15px; color: #e6e8eb; }
+  .usbrow { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+  .usbrow input[type=text] { width: 9em; }
+  .usbadd { display: flex; gap: 8px; margin: 8px 0 0; }
+  #usbendpoints.over { color: #e5484d; }
   dialog fieldset { border: 1px solid #2c3036; border-radius: 6px; margin: 12px 0 0;
     padding: 6px 12px 10px; }
   dialog legend { padding: 0 4px; color: #e6e8eb; }
@@ -194,6 +198,19 @@
       reconnects the NanoKVM's USB devices on the target.</p>
     <label><input type="checkbox" id="voice"> Echo cancellation, noise suppression and automatic
       gain on this browser's microphone</label>
+    <fieldset id="usbmore">
+      <legend>More USB devices</legend>
+      <div id="usbnetworks"></div>
+      <div id="usbstorages"></div>
+      <div class="usbadd">
+        <button type="button" id="usbaddnetwork">Add a network</button>
+        <button type="button" id="usbaddstorage">Add a storage device</button>
+      </div>
+      <p class="note">Each USB device takes some of the NanoKVM's endpoints: a network two IN and one
+        OUT, the keyboard and mice one IN each, a storage device one of each however many drives it
+        has, the microphone one IN, the speaker one OUT. The USB network <code>usb0</code> is always
+        there. <strong id="usbendpoints"></strong></p>
+    </fieldset>
     <p class="note error" id="usberror" hidden></p>
     <menu>
       <button type="button" id="usbcancel">Cancel</button>
@@ -964,6 +981,10 @@
     invalid_sample_bits: (d) => `The ${d} cannot have that sample size.`,
     not_enough_endpoints: (_d, body) => `These take ${body.need.in} IN and ${body.need.out} OUT endpoints; ` +
       `the NanoKVM has ${body.have.in} and ${body.have.out}. Turn something off.`,
+    "invalid networks": () => "Give each network a name of its own, other than usb0: letters, digits, " +
+      "\"-\" and \"_\", up to 32. Up to 4 networks.",
+    "invalid storages": () => "Give each storage device a name of its own, other than disk: letters, digits, " +
+      "\"-\" and \"_\", up to 32. Up to 4 storage devices.",
   };
 
   async function postUsb(changes) {
@@ -1034,6 +1055,10 @@
       usbForm.storage.checked = s.storage;
       usbForm.drives.value = String(s.drives || 1);
       usbForm.audio.value = s.audio;
+      usbMore = { networks: [...(s.networks || [])], storages: (s.storages || []).map((x) => ({ ...x })) };
+      usbEndpoints = usb.endpoints || null;
+      usbInstances = usb.instances || [];
+      renderUsbMore();
       for (const fieldset of fieldsets) {
         const direction = fieldset.dataset.direction, f = s[direction];
         setSelect(fieldset.querySelector("[name=channels]"), f.channels);
@@ -1053,10 +1078,82 @@
 
   document.getElementById("usbcancel").onclick = () => usbDialog.close();
 
+  // More USB devices: networks and storage devices besides the usual, each by
+  // name, within the endpoints the NanoKVM has.
+  let usbMore = { networks: [], storages: [] }, usbEndpoints = null, usbInstances = [];
+  const DRIVE_COUNTS = Array.from({ length: 16 }, (_, i) => i + 1);
+
+  function nextName(prefix, taken, from) {
+    for (let i = from; ; i++) if (!taken.includes(`${prefix}${i}`)) return `${prefix}${i}`;
+  }
+
+  function renderUsbMore() {
+    document.getElementById("usbnetworks").replaceChildren(...usbMore.networks.map((name, i) =>
+      node("div", { className: "usbrow" },
+        node("span", { textContent: "Network" }),
+        node("input", { type: "text", value: name, title: "Its name; the NanoKVM names its interface",
+          oninput: (e) => { usbMore.networks[i] = e.target.value.trim(); } }),
+        node("span", { className: "note", textContent: networkInterface(name) }),
+        node("button", { type: "button", textContent: "Remove",
+          onclick: () => { usbMore.networks.splice(i, 1); renderUsbMore(); } }))));
+    document.getElementById("usbstorages").replaceChildren(...usbMore.storages.map((st, i) => {
+      const drives = node("select", { onchange: (e) => { st.drives = +e.target.value; } },
+        ...DRIVE_COUNTS.map((n) => new Option(String(n), String(n))));
+      drives.value = String(st.drives);
+      return node("div", { className: "usbrow" },
+        node("span", { textContent: "Storage device" }),
+        node("input", { type: "text", value: st.name, title: "Its name",
+          oninput: (e) => { st.name = e.target.value.trim(); } }),
+        node("span", { textContent: "with" }), drives, node("span", { textContent: "drives" }),
+        node("button", { type: "button", textContent: "Remove",
+          onclick: () => { usbMore.storages.splice(i, 1); renderUsbMore(); } }));
+    }));
+    countEndpoints();
+  }
+
+  document.getElementById("usbaddnetwork").onclick = () => {
+    usbMore.networks.push(nextName("usb", usbMore.networks, 1));
+    renderUsbMore();
+  };
+  document.getElementById("usbaddstorage").onclick = () => {
+    usbMore.storages.push({ name: nextName("disk", usbMore.storages.map((x) => x.name), 2), drives: 1 });
+    renderUsbMore();
+  };
+
+  function networkInterface(name) {
+    const found = usbInstances.find((i) => i.kind === "network" && i.name === name);
+    return found && found.interface ? `interface ${found.interface}` : "";
+  }
+
+  // The endpoints the devices chosen take, at what the NanoKVM says each kind takes.
+  function countEndpoints() {
+    const line = document.getElementById("usbendpoints");
+    const costs = usbEndpoints && usbEndpoints.costs, have = usbEndpoints && usbEndpoints.have;
+    if (!costs) {
+      line.textContent = "";
+      usbApply.disabled = false;
+      return;
+    }
+    const audio = usbForm.audio.value;
+    const kinds = ["network", ...usbMore.networks.map(() => "network"),
+      ...(usbForm.hid.checked ? ["keyboard", "mouse", "relative_mouse"] : []),
+      ...(usbForm.storage.checked ? ["storage"] : []), ...usbMore.storages.map(() => "storage"),
+      ...(audio === "off" ? [] : ["microphone"]), ...(audio === "duplex" ? ["speaker"] : [])];
+    const use = kinds.reduce((u, k) => ({ in: u.in + costs[k].in, out: u.out + costs[k].out }), { in: 0, out: 0 });
+    const over = have && (use.in > have.in || use.out > have.out);
+    line.textContent = have ? `In use: IN ${use.in} of ${have.in}, OUT ${use.out} of ${have.out}.` +
+      (over ? " Too many: remove or turn something off." : "") : `In use: IN ${use.in}, OUT ${use.out}.`;
+    line.classList.toggle("over", !!over);
+    usbApply.disabled = !!over;
+  }
+
+  for (const name of ["hid", "storage", "audio"]) usbForm[name].addEventListener("change", countEndpoints);
+
   usbApply.onclick = async () => {
     const changes = { hid: usbForm.hid.checked, pointer: usbForm.pointer.value,
                       jiggler: usbForm.jiggler.checked, storage: usbForm.storage.checked,
-                      drives: +usbForm.drives.value, audio: usbForm.audio.value };
+                      drives: +usbForm.drives.value, audio: usbForm.audio.value,
+                      networks: usbMore.networks, storages: usbMore.storages };
     for (const fieldset of fieldsets) {
       changes[fieldset.dataset.direction] = {
         channels: +fieldset.querySelector("[name=channels]").value,
@@ -1237,7 +1334,9 @@
   }
 
   // The list is drawn anew only when it changes, so that a choice being made stays.
-  const driveName = (s, drive) => s.drives.length > 1 ? `Drive ${drive + 1}` : "The drive";
+  // A drive by number, and by its storage device when there are several.
+  const driveName = (s, d) => s.drives.length < 2 ? "The drive"
+    : new Set(s.drives.map((x) => x.storage)).size > 1 ? `Drive ${d.drive + 1} (${d.storage})` : `Drive ${d.drive + 1}`;
 
   function renderDisk(s) {
     const busy = s.busy;
@@ -1257,8 +1356,8 @@
       if (!d) return node("span", { textContent: "There is no drive: turn the virtual disk on in USB…" });
       const m = d.medium;
       return node("div", { className: "diskdrive" },
-        node("span", { textContent: m ? `${driveName(s, d.drive)}: ${m.name} (${describeMedium(m)})`
-          : `${driveName(s, d.drive)} is empty.` }),
+        node("span", { textContent: m ? `${driveName(s, d)}: ${m.name} (${describeMedium(m)})`
+          : `${driveName(s, d)} is empty.` }),
         m ? node("button", { type: "button", textContent: "Eject", disabled: !!busy,
           onclick: () => diskAction("/api/disk/eject", { drive: d.drive }) }) : null);
     }));
@@ -1273,7 +1372,7 @@
     const chosen = target.value;
     document.getElementById("disktargetlabel").hidden = s.drives.length < 2;
     target.replaceChildren(...s.drives.map((d) =>
-      new Option(`Drive ${d.drive + 1}${d.medium ? `, ${d.medium.name}` : ", empty"}`, String(d.drive))));
+      new Option(`${driveName(s, d)}${d.medium ? `, ${d.medium.name}` : ", empty"}`, String(d.drive))));
     const empty = s.drives.find((d) => !d.medium);
     target.value = chosen && s.drives.some((d) => String(d.drive) === chosen) ? chosen
       : String(empty ? empty.drive : 0);

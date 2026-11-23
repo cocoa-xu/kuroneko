@@ -12,9 +12,9 @@ processor.
 * **Keyboard and mouse** - keys as you press them, an absolute mouse, a pen
   or a touch screen for Android and iPadOS, a relative mouse for BIOS setups
   and games; typing text, a mouse jiggler, Wake-on-LAN
-* **USB devices** - which ones the target sees: keyboard and mouse, a
-  virtual disk, a sound card in the formats you choose; the USB network's
-  addresses
+* **USB devices** - which ones the target sees, as many as the device's
+  USB endpoints take: keyboard and mouse, virtual disks, USB networks, a
+  sound card in the formats you choose; the USB network's addresses
 * **The LCD** - the device's address, the video input and its own load on
   its little screen, with touch and the button
 * **The device page** - its hardware, temperature, CPU, memory and network,
@@ -151,8 +151,9 @@ a smaller disc cannot hold it), any other image as a USB drive. The page
 shows what it found under each image, and any of these can be forced.
 What is in a drive goes in again after the device restarts, unless asked
 not to. **USB…** gives the virtual disk up to 16 drives, which the target
-sees at once, each with its own image or folder. A folder goes in as a drive
-made from it:
+sees at once, each with its own image or folder, and adds storage devices,
+each a USB drive of its own, for BIOSes that boot only a device's first
+drive. A folder goes in as a drive made from it:
 read-only, the target sees the folder as it was; writable, what the target
 changes comes back to the folder when the drive is ejected. The drive is
 exFAT, which holds files of any size, or FAT32 for BIOS updates, UEFI and
@@ -160,7 +161,15 @@ older systems, with files of at most 4 GiB.
 
 The USB network puts the device in a /30 of 172.31.0.0/16 made from its
 name. Where that is taken, the device page sets another address, such as
-`10.55.0.1/24`: the target gets the next one.
+`10.55.0.1/24`: the target gets the next one. **USB…** adds more USB
+networks, each in a /30 of its own.
+
+The device has seven USB endpoints each way besides the control one, which
+the USB devices share: a network takes two IN and one OUT, the keyboard and
+each mouse one IN, a storage device one each way whatever its drives, the
+microphone one IN and the speaker one OUT. **USB…** counts them as you
+choose, and what does not fit is refused: drop the sound card or the mice
+for more storage devices.
 
 The memory for video and the NPU (192 and 64 MiB) changes at the next boot,
 over SSH: `NanoKVMGo.CMA.put_sizes(%{video: 160, npu: 96})`. With
