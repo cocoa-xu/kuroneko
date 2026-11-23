@@ -149,8 +149,10 @@ structures: a disc image on the disc its format belongs on (ISO 9660 alone
 a CD, UDF a DVD, UDF 2.50 and later a Blu-ray disc, any of them larger when
 a smaller disc cannot hold it), any other image as a USB drive. The page
 shows what it found under each image, and any of these can be forced.
-What is in the drive goes in again after the device restarts, unless asked
-not to. A folder goes in as a drive made from it:
+What is in a drive goes in again after the device restarts, unless asked
+not to. **USB…** gives the virtual disk up to 16 drives, which the target
+sees at once, each with its own image or folder. A folder goes in as a drive
+made from it:
 read-only, the target sees the folder as it was; writable, what the target
 changes comes back to the folder when the drive is ejected. The drive is
 exFAT, which holds files of any size, or FAT32 for BIOS updates, UEFI and

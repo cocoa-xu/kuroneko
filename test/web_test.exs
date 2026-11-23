@@ -562,13 +562,18 @@ defmodule Kuroneko.WebTest do
 
   describe "virtual disk" do
     defmodule FakeDisk do
-      def state,
-        do: %{items: [%{name: "debian.iso", kind: :image, size: 3}], medium: nil, busy: nil}
+      def state do
+        %{
+          items: [%{name: "debian.iso", kind: :image, size: 3}],
+          drives: [%{drive: 0, medium: nil}, %{drive: 1, medium: nil}],
+          busy: nil
+        }
+      end
 
       def insert("busy.iso", _opts), do: {:error, :busy}
       def insert("Odd", _opts), do: {:error, {:bad_name, "Odd/a:b.txt"}}
       def insert(name, opts), do: tell({:insert, name, opts})
-      def eject, do: tell(:ejected)
+      def eject(drive), do: tell({:ejected, drive})
       def delete(name), do: tell({:deleted, name})
 
       def upload_paths(name, opts) do
@@ -602,9 +607,11 @@ defmodule Kuroneko.WebTest do
       end)
     end
 
-    test "the library and the drive" do
-      assert %{"items" => [%{"name" => "debian.iso", "kind" => "image"}], "medium" => nil} =
-               Jason.decode!(request(:get, "/api/disk").resp_body)
+    test "the library and the drives" do
+      assert %{
+               "items" => [%{"name" => "debian.iso", "kind" => "image"}],
+               "drives" => [%{"drive" => 0, "medium" => nil}, %{"drive" => 1, "medium" => nil}]
+             } = Jason.decode!(request(:get, "/api/disk").resp_body)
     end
 
     test "inserts, ejects and deletes for the page only, and says why not" do
@@ -634,8 +641,15 @@ defmodule Kuroneko.WebTest do
       assert {conn.status, Jason.decode!(conn.resp_body)} ==
                {400, %{"error" => "bad_name", "name" => "Odd/a:b.txt"}}
 
+      assert request(:post, "/api/disk/insert", ~s({"name":"debian.iso","drive":1}), @page).status ==
+               202
+
+      assert_receive {:insert, "debian.iso", [drive: 1]}
+
       assert request(:post, "/api/disk/eject", "{}", @page).status == 202
-      assert_receive :ejected
+      assert_receive {:ejected, 0}
+      assert request(:post, "/api/disk/eject", ~s({"drive":1}), @page).status == 202
+      assert_receive {:ejected, 1}
       assert request(:post, "/api/disk/delete", ~s({"name":"debian.iso"}), @page).status == 200
       assert_receive {:deleted, "debian.iso"}
       assert request(:post, "/api/disk/delete", ~s({"file":"debian.iso"}), @page).status == 400

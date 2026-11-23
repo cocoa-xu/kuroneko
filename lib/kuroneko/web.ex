@@ -38,8 +38,9 @@ defmodule Kuroneko.Web do
       "media": "auto", "read_only": true}` for an image (`"cd"`, `"dvd"`,
       `"bd"` or `"drive"` force one), `{"name": ..., "filesystem":
       "exfat", "read_only": true}` (or `"fat32"`) for a folder, with
+      `"drive": 1` for a drive other than the first empty one and
       `"remember": false` for it not to go in again after a restart, `POST
-      /api/disk/eject`, `POST
+      /api/disk/eject` `{"drive": 1}`, `POST
       /api/disk/delete` `{"name": ...}`, `PUT /api/disk/files?name=...` with
       the file as the body (`folder/file` for a folder's files, `&replace=1`
       to replace one)
@@ -259,8 +260,14 @@ defmodule Kuroneko.Web do
          {:ok, changes} when is_map(changes) <- Jason.decode(body),
          {:ok, _settings} <- USBSettings.merge(USBSettings.saved(), changes) do
       case USBSettings.update(changes) do
-        {:ok, _settings} -> json(conn, 200, usb())
-        {:error, reason} -> json(conn, 500, %{error: inspect(reason)})
+        {:ok, _settings} ->
+          json(conn, 200, usb())
+
+        {:error, {:not_enough_endpoints, counts}} ->
+          json(conn, 409, Map.put(counts, :error, :not_enough_endpoints))
+
+        {:error, reason} ->
+          json(conn, 500, %{error: inspect(reason)})
       end
     else
       {:page, false} -> send_resp(conn, 403, "forbidden")
@@ -409,7 +416,9 @@ defmodule Kuroneko.Web do
   end
 
   post "/api/disk/eject" do
-    with {:ok, _data, conn} <- page_json(conn), :ok <- disk().eject() do
+    with {:ok, data, conn} <- page_json(conn),
+         drive = if(is_integer(data["drive"]), do: data["drive"], else: 0),
+         :ok <- disk().eject(drive) do
       json(conn, 202, %{ejecting: true})
     else
       {:error, reason} -> disk_refused(conn, reason)
@@ -604,7 +613,10 @@ defmodule Kuroneko.Web do
     flags =
       for key <- [:read_only, :remember], is_boolean(data["#{key}"]), do: {key, data["#{key}"]}
 
-    choices ++ flags
+    drive =
+      if is_integer(data["drive"]) and data["drive"] >= 0, do: [drive: data["drive"]], else: []
+
+    drive ++ choices ++ flags
   end
 
   # The page explains the reasons it knows.
@@ -612,6 +624,7 @@ defmodule Kuroneko.Web do
     status =
       case reason do
         r when r in [:busy, :in_use, :exists, :eject_first] -> 409
+        :no_drive -> 404
         r when r in [:invalid_name, :file_too_large] -> 400
         :enoent -> 404
         :no_room -> 507

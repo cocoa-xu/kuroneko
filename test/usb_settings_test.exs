@@ -58,6 +58,9 @@ defmodule Kuroneko.USBSettingsTest do
     off = %{settings | "hid" => false, "storage" => false, "audio" => "off"}
     assert USBSettings.functions(off) == []
 
+    drives = %{off | "storage" => true, "drives" => 3}
+    assert USBSettings.functions(drives) == [{:storage, drives: 3}]
+
     touch = %{settings | "pointer" => "touch", "audio" => "off", "storage" => false}
     assert USBSettings.functions(touch) == [:keyboard, {:mouse, mode: :touch}, :relative_mouse]
   end
@@ -75,6 +78,8 @@ defmodule Kuroneko.USBSettingsTest do
     assert {:ok, %{"audio" => "mic"}} = USBSettings.merge(defaults, %{"audio" => "mic"})
     assert {:error, {:invalid, "audio"}} = USBSettings.merge(defaults, %{"audio" => "loud"})
     assert {:error, {:invalid, "volume"}} = USBSettings.merge(defaults, %{"volume" => 11})
+    assert {:ok, %{"drives" => 4}} = USBSettings.merge(defaults, %{"drives" => 4})
+    assert {:error, {:invalid, "drives"}} = USBSettings.merge(defaults, %{"drives" => 17})
     assert {:error, {:invalid, "hid"}} = USBSettings.merge(defaults, %{"hid" => "yes"})
     assert {:ok, %{"pointer" => "stylus"}} = USBSettings.merge(defaults, %{"pointer" => "stylus"})
     assert {:error, {:invalid, "pointer"}} = USBSettings.merge(defaults, %{"pointer" => "pen"})

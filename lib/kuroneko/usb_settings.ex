@@ -7,6 +7,7 @@ defmodule Kuroneko.USBSettings do
       (a pen, for Android and iPadOS) or `"touch"` (a touch screen); the
       relative mouse is always there with it
     * `"storage"` - the virtual disk
+    * `"drives"` - its drives, 1 to 16, which take the endpoints of one
     * `"audio"` - the sound card in the stock firmware's modes: `"off"`,
       `"mic"` (a microphone the browser talks into) and `"duplex"` (also a
       speaker, whose sound the browser plays)
@@ -28,6 +29,7 @@ defmodule Kuroneko.USBSettings do
     "pointer" => "absolute",
     "jiggler" => false,
     "storage" => true,
+    "drives" => 1,
     "audio" => "off",
     "microphone" => @default_format,
     "speaker" => @default_format
@@ -76,7 +78,13 @@ defmodule Kuroneko.USBSettings do
         do: [:keyboard, {:mouse, mode: pointer_mode(settings["pointer"])}, :relative_mouse],
         else: []
 
-    storage = if settings["storage"], do: [:storage], else: []
+    storage =
+      cond do
+        not settings["storage"] -> []
+        settings["drives"] > 1 -> [{:storage, drives: settings["drives"]}]
+        true -> [:storage]
+      end
+
     hid ++ storage ++ Enum.map(@modes[settings["audio"]], &{&1, audio_options(settings, &1)})
   end
 
@@ -114,6 +122,7 @@ defmodule Kuroneko.USBSettings do
     with {:ok, settings} <- merge(saved(), changes),
          :ok <- Kuroneko.Gadget.configure(functions(settings)),
          :ok <- save(settings) do
+      Kuroneko.VirtualDisk.drives_changed()
       {:ok, settings}
     end
   end
@@ -129,6 +138,9 @@ defmodule Kuroneko.USBSettings do
 
   defp put(settings, key, value) when key in ["hid", "storage", "jiggler"] and is_boolean(value),
     do: {:ok, %{settings | key => value}}
+
+  defp put(settings, "drives", drives) when drives in 1..16,
+    do: {:ok, %{settings | "drives" => drives}}
 
   defp put(settings, "audio", mode) when is_map_key(@modes, mode),
     do: {:ok, %{settings | "audio" => mode}}

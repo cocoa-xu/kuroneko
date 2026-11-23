@@ -1,7 +1,8 @@
 defmodule Kuroneko.VirtualDisk do
   @moduledoc """
-  The virtual disk's library and what is in its drive (`Kuroneko.Gadget.Storage`):
-  image files and folders in `/data/images`.
+  The virtual disk's library and what is in its drives (`Kuroneko.Gadget.Storage`):
+  image files and folders in `/data/images`. The drives are numbered from 0,
+  as the storage function has them.
 
     * An image file goes in as it is: on the disc its format belongs on, a CD,
       a DVD or a BD (see `Kuroneko.VirtualDisk.Image`), or as a USB drive,
@@ -16,9 +17,9 @@ defmodule Kuroneko.VirtualDisk do
   Making a drive and copying changes back take a while: they run here, one at
   a time, and `state/0` says how far they are.
 
-  What is in the drive goes in again when the NanoKVM restarts, unless it
-  was inserted with `remember: false`; a folder's drive is not made again
-  then. Ejecting it, here or on the computer, forgets it.
+  What is in a drive goes in again when the NanoKVM restarts, unless it was
+  inserted with `remember: false`; a folder's drive is not made again then.
+  Ejecting it, here or on the computer, forgets it.
   """
 
   use GenServer
@@ -54,18 +55,21 @@ defmodule Kuroneko.VirtualDisk do
   def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
   @doc """
-  The library, what is in the drive and what is under way: `%{items:
-  [%{name, kind: :image | :folder, size, format}], medium: nil | %{name,
-  kind, cdrom, disc, read_only, remember, image}, busy: nil | %{action: :making |
-  :copying_back, name, done, total}, free: bytes, error: nil | text}`. An
-  image's `format` is what `Kuroneko.VirtualDisk.Image.probe/1` finds.
+  The library, what is in the drives and what is under way: `%{items:
+  [%{name, kind: :image | :folder, size, format}], drives: [%{drive: 0,
+  medium: nil | %{name, kind, cdrom, disc, read_only, remember, image}}],
+  busy: nil | %{action: :making | :copying_back, name, drive, done, total},
+  free: bytes, error: nil | text}`. An image's `format` is what
+  `Kuroneko.VirtualDisk.Image.probe/1` finds.
   """
   @spec state() :: map()
   def state, do: GenServer.call(__MODULE__, :state, 30_000)
 
   @doc """
-  Puts an image file or a folder of the library in the drive. Options:
+  Puts an image file or a folder of the library in a drive. Options:
 
+    * `:drive`: the drive, by default the one that has it already, else the
+      first empty one, else the first
     * `:media` (image files): `:auto`, the default, puts an optical disc
       image on its disc and any other image in a USB drive; `:cd`, `:dvd`,
       `:bd` and `:drive` force one
@@ -79,9 +83,18 @@ defmodule Kuroneko.VirtualDisk do
   @spec insert(String.t(), keyword()) :: :ok | {:error, term()}
   def insert(name, opts \\ []), do: GenServer.call(__MODULE__, {:insert, name, opts}, 30_000)
 
-  @doc "Takes the medium out; a writable folder's changes then go back to it."
-  @spec eject() :: :ok | {:error, term()}
-  def eject, do: GenServer.call(__MODULE__, :eject, 30_000)
+  @doc "Takes a drive's medium out; a writable folder's changes then go back to it."
+  @spec eject(non_neg_integer()) :: :ok | {:error, term()}
+  def eject(drive \\ 0), do: GenServer.call(__MODULE__, {:eject, drive}, 30_000)
+
+  @doc false
+  # The drives changed (the USB settings): media of drives gone are out.
+  @spec drives_changed() :: :ok
+  def drives_changed do
+    GenServer.call(__MODULE__, :drives_changed, 30_000)
+  catch
+    :exit, _not_running -> :ok
+  end
 
   @doc "Deletes an image file or a folder from the library, unless it is in use."
   @spec delete(String.t()) :: :ok | {:error, term()}
@@ -117,16 +130,24 @@ defmodule Kuroneko.VirtualDisk do
     with :ok <- File.mkdir_p(Path.dirname(to)), do: File.rename(from, to)
   end
 
-  @doc "What is in the drive, with the image or folder's name; `nil` when it is empty."
-  @spec medium() :: map() | nil
-  def medium do
-    GenServer.call(__MODULE__, :medium)
+  @doc """
+  What is in each drive, with the image or folder's name and the drive's
+  number; `nil` for an empty one.
+  """
+  @spec media() :: [map() | nil]
+  def media do
+    GenServer.call(__MODULE__, :media)
   catch
     :exit, _reason ->
-      case Storage.medium() do
-        {:ok, %{image: image} = medium} -> Map.put(medium, :name, Path.basename(image))
-        _empty -> nil
-      end
+      Storage.media()
+      |> Enum.with_index()
+      |> Enum.map(fn
+        {%{image: image} = medium, drive} ->
+          Map.merge(medium, %{name: Path.basename(image), drive: drive})
+
+        {nil, _drive} ->
+          nil
+      end)
   end
 
   @doc """
@@ -223,7 +244,7 @@ defmodule Kuroneko.VirtualDisk do
 
   @impl GenServer
   def init(_opts),
-    do: {:ok, %{medium: nil, busy: nil, task: nil, error: nil, formats: %{}}, {:continue, :start}}
+    do: {:ok, %{media: %{}, busy: nil, task: nil, error: nil, formats: %{}}, {:continue, :start}}
 
   @impl GenServer
   def handle_continue(:start, state) do
@@ -233,12 +254,13 @@ defmodule Kuroneko.VirtualDisk do
 
   @impl GenServer
   def handle_call(:state, _from, state) do
-    state = check_drive(state)
+    state = check_drives(state)
     {items, state} = items(state)
 
     reply = %{
       items: items,
-      medium: medium(state),
+      drives:
+        for(drive <- 0..(drives() - 1)//1, do: %{drive: drive, medium: medium(state, drive)}),
       busy: state.busy,
       free: free_space(),
       error: state.error
@@ -247,24 +269,29 @@ defmodule Kuroneko.VirtualDisk do
     {:reply, reply, state}
   end
 
-  def handle_call(:medium, _from, state), do: {:reply, medium(state), state}
+  def handle_call(:media, _from, state),
+    do: {:reply, for(drive <- 0..(drives() - 1)//1, do: medium(state, drive)), state}
 
   def handle_call({:writable?, relative}, _from, state),
     do: {:reply, if(in_use?(state, relative), do: {:error, :in_use}, else: :ok), state}
+
+  def handle_call(:drives_changed, _from, %{busy: nil} = state),
+    do: {:reply, :ok, gone(state, Enum.filter(Map.keys(state.media), &(&1 >= drives())))}
 
   def handle_call(_request, _from, %{busy: busy} = state) when busy != nil,
     do: {:reply, {:error, :busy}, state}
 
   def handle_call({:insert, name, opts}, _from, state) do
-    state = check_drive(state)
+    state = check_drives(state)
 
-    with :ok <- writable_folder_out(state),
-         {:ok, relative} <- library_path(name),
+    with {:ok, relative} <- library_path(name),
+         {:ok, drive} <- pick_drive(state, opts[:drive], relative),
+         :ok <- writable_folder_out(state, drive),
          path = Path.join(dir(), relative),
          {:ok, kind} <- kind(path) do
       case kind do
-        :image -> insert_image(state, relative, path, opts)
-        :folder -> make_drive(state, relative, path, opts)
+        :image -> insert_image(state, drive, relative, path, opts)
+        :folder -> make_drive(state, drive, relative, path, opts)
       end
       |> case do
         {:ok, state} -> {:reply, :ok, state}
@@ -275,15 +302,15 @@ defmodule Kuroneko.VirtualDisk do
     end
   end
 
-  def handle_call(:eject, _from, state) do
-    case Storage.eject() do
-      :ok -> {:reply, :ok, taken_out(state)}
+  def handle_call({:eject, drive}, _from, state) do
+    case Storage.eject(drive: drive) do
+      :ok -> {:reply, :ok, taken_out(state, drive)}
       error -> {:reply, error, state}
     end
   end
 
   def handle_call({:delete, name}, _from, state) do
-    state = check_drive(state)
+    state = check_drives(state)
 
     with {:ok, relative} <- library_path(name),
          false <- in_use?(state, relative),
@@ -291,7 +318,7 @@ defmodule Kuroneko.VirtualDisk do
          true <- File.exists?(path) do
       case File.rm_rf(path) do
         {:ok, _removed} ->
-          if match?(%{name: ^relative}, remembered()), do: forget()
+          for {drive, %{name: ^relative}} <- remembered(), do: forget(drive)
           {:reply, :ok, state}
 
         {:error, reason, _file} ->
@@ -320,7 +347,7 @@ defmodule Kuroneko.VirtualDisk do
 
   defp finish(state, {:inserted, medium}) do
     remember(medium)
-    %{state | task: nil, busy: nil, medium: medium, error: nil}
+    %{put_medium(state, medium) | task: nil, busy: nil, error: nil}
   end
 
   defp finish(state, :copied_back), do: %{state | task: nil, busy: nil, error: nil}
@@ -330,31 +357,65 @@ defmodule Kuroneko.VirtualDisk do
     %{state | task: nil, busy: nil, error: describe(error)}
   end
 
+  defp put_medium(state, medium), do: put_in(state.media[medium.drive], medium)
+
+  # The drive asked for, else the one with the item, else the first empty
+  # one, else the first. An item is in one drive at a time.
+  defp pick_drive(state, wanted, relative) do
+    count = drives()
+
+    current =
+      Enum.find_value(state.media, fn {drive, medium} -> medium.name == relative && drive end)
+
+    cond do
+      count == 0 ->
+        {:error, :no_storage}
+
+      wanted != nil and not (is_integer(wanted) and wanted in 0..(count - 1)) ->
+        {:error, :no_drive}
+
+      current != nil and wanted != nil and wanted != current ->
+        {:error, :in_use}
+
+      wanted != nil ->
+        {:ok, wanted}
+
+      current != nil ->
+        {:ok, current}
+
+      true ->
+        {:ok, Enum.find(0..(count - 1), 0, &(not Map.has_key?(state.media, &1)))}
+    end
+  end
+
+  defp drives, do: Storage.drives()
+
   # ---- Image files
 
-  defp insert_image(state, relative, path, opts) do
+  defp insert_image(state, drive, relative, path, opts) do
     {format, entry} = cached_format(state.formats, path)
     state = put_in(state.formats[path], entry)
     disc = disc(Keyword.get(opts, :media, :auto), format)
     read_only = disc != nil or Keyword.get(opts, :read_only, format.disc != nil)
 
-    case Storage.insert(path, cdrom: disc != nil, disc: disc, read_only: read_only) do
+    case Storage.insert(path, drive: drive, cdrom: disc != nil, disc: disc, read_only: read_only) do
       :ok ->
-        state = forget_folder_image(state)
+        state = forget_folder_image(state, drive)
 
         medium = %{
           name: relative,
           kind: :image,
+          drive: drive,
           cdrom: disc != nil,
           disc: disc,
           read_only: read_only,
           remember: Keyword.get(opts, :remember, true),
           request: Keyword.take(opts, [:media, :read_only]),
-          image: in_drive(path)
+          image: in_drive(drive, path)
         }
 
         remember(medium)
-        {:ok, %{state | medium: medium, error: nil}}
+        {:ok, %{put_medium(state, medium) | error: nil}}
 
       error ->
         {error, state}
@@ -389,7 +450,7 @@ defmodule Kuroneko.VirtualDisk do
 
   # ---- Folders
 
-  defp make_drive(state, relative, folder, opts) do
+  defp make_drive(state, drive, relative, folder, opts) do
     read_only = Keyword.get(opts, :read_only, true)
     filesystem = Keyword.get(opts, :filesystem, :exfat)
     {bytes, entries, largest} = measure(folder)
@@ -398,13 +459,14 @@ defmodule Kuroneko.VirtualDisk do
          :ok <- if(name = bad_name(folder), do: {:error, {:bad_name, name}}, else: :ok),
          {:ok, size} <- drive_size(bytes, entries, not read_only, free_space()),
          :ok <- File.mkdir_p(Path.join(dir(), @work)) do
-      state = forget_folder_image(state)
+      state = forget_folder_image(state, drive)
       id = Base.url_encode64(:crypto.strong_rand_bytes(6), padding: false)
       image = Path.join([dir(), @work, "#{id}.img"])
 
       medium = %{
         name: relative,
         kind: :folder,
+        drive: drive,
         filesystem: filesystem,
         read_only: read_only,
         remember: Keyword.get(opts, :remember, true),
@@ -417,8 +479,8 @@ defmodule Kuroneko.VirtualDisk do
         Task.async(fn ->
           with :ok <- build(folder, image, size, medium, progress),
                :ok <- write_marker(medium),
-               :ok <- Storage.insert(image, cdrom: false, read_only: read_only) do
-            {:inserted, %{medium | image: in_drive(image)}}
+               :ok <- Storage.insert(image, drive: drive, cdrom: false, read_only: read_only) do
+            {:inserted, %{medium | image: in_drive(drive, image)}}
           else
             error ->
               remove_image(image)
@@ -426,7 +488,7 @@ defmodule Kuroneko.VirtualDisk do
           end
         end)
 
-      busy = %{action: :making, name: relative, done: 0, total: bytes}
+      busy = %{action: :making, name: relative, drive: drive, done: 0, total: bytes}
       {:ok, %{state | task: task, busy: busy, error: nil}}
     else
       error -> {error, state}
@@ -483,62 +545,88 @@ defmodule Kuroneko.VirtualDisk do
     unmount(mount)
   end
 
-  # Out of the drive, by this page or by the computer: a read-only folder's
-  # image goes; a writable one's is copied back to its folder first.
-  defp taken_out(%{medium: %{kind: :folder, read_only: false} = medium} = state) do
-    forget()
-    server = self()
-    task = Task.async(fn -> with :ok <- copy_back(medium, server), do: :copied_back end)
-    busy = %{action: :copying_back, name: medium.name, done: 0, total: 0}
-    %{state | medium: nil, task: task, busy: busy, error: nil}
-  end
+  # Out of a drive, by this page or by the computer: a read-only folder's
+  # image goes; a writable one's is copied back to its folder first, or at
+  # the next start when another copy runs.
+  defp taken_out(state, drive) do
+    forget(drive)
 
-  defp taken_out(state) do
-    forget()
-    %{forget_folder_image(state) | medium: nil}
-  end
+    case state.media[drive] do
+      %{kind: :folder, read_only: false} = medium when state.busy == nil ->
+        server = self()
+        task = Task.async(fn -> with :ok <- copy_back(medium, server), do: :copied_back end)
+        busy = %{action: :copying_back, name: medium.name, drive: drive, done: 0, total: 0}
+        %{state | media: Map.delete(state.media, drive), task: task, busy: busy, error: nil}
 
-  defp forget_folder_image(%{medium: %{kind: :folder, read_only: true, image: image}} = state) do
-    remove_image(image)
-    %{state | medium: nil}
-  end
+      %{kind: :folder, read_only: false} ->
+        %{state | media: Map.delete(state.media, drive)}
 
-  defp forget_folder_image(state), do: state
-
-  defp writable_folder_out(%{medium: %{kind: :folder, read_only: false}}),
-    do: {:error, :eject_first}
-
-  defp writable_folder_out(_state), do: :ok
-
-  # The computer can eject a removable drive itself, which empties it.
-  defp check_drive(%{medium: %{image: image}, busy: nil} = state) do
-    case Storage.medium() do
-      {:ok, %{image: ^image}} -> state
-      {:ok, _other} -> taken_out(state)
-      {:error, _reason} -> state
+      _image_or_read_only ->
+        state = forget_folder_image(state, drive)
+        %{state | media: Map.delete(state.media, drive)}
     end
   end
 
-  defp check_drive(state), do: state
+  # Drives that are no longer there.
+  defp gone(state, drives), do: Enum.reduce(drives, state, &taken_out(&2, &1))
+
+  defp forget_folder_image(state, drive) do
+    case state.media[drive] do
+      %{kind: :folder, read_only: true, image: image} ->
+        remove_image(image)
+        %{state | media: Map.delete(state.media, drive)}
+
+      _other ->
+        state
+    end
+  end
+
+  defp writable_folder_out(state, drive) do
+    if match?(%{kind: :folder, read_only: false}, state.media[drive]),
+      do: {:error, :eject_first},
+      else: :ok
+  end
+
+  # The computer can eject a removable drive itself, which empties it.
+  defp check_drives(%{busy: nil} = state) do
+    Enum.reduce_while(state.media, state, fn {drive, %{image: image}}, state ->
+      case Storage.medium(drive: drive) do
+        {:ok, %{image: ^image}} ->
+          {:cont, state}
+
+        {:ok, _other} ->
+          state |> taken_out(drive) |> then(&{if(&1.busy, do: :halt, else: :cont), &1})
+
+        {:error, _reason} ->
+          {:cont, state}
+      end
+    end)
+  end
+
+  defp check_drives(state), do: state
 
   # ---- At start
 
-  # The drive may still hold one of our images when only this server
-  # restarted. After a restart of the NanoKVM it is empty: the remembered
-  # folder's image goes in again; another writable folder's image left
-  # behind goes back to its folder, a read-only one goes.
+  # A drive may still hold one of our images when only this server
+  # restarted. After a restart of the NanoKVM the drives are empty: a
+  # remembered folder's image goes in again; another writable folder's
+  # image left behind goes back to its folder, a read-only one goes.
   defp recover(state) do
-    in_drive = in_drive(nil)
     remembered = remembered()
 
     Enum.reduce(markers(), state, fn medium, state ->
+      drive = medium.drive
+      in_drive = in_drive(drive, nil)
+      memory = remembered[drive]
+
       cond do
         real_path(medium.image) == in_drive ->
-          %{state | medium: %{medium | image: in_drive}}
+          put_medium(state, %{medium | image: in_drive})
 
-        match?(%{kind: :folder}, remembered) and remembered.name == medium.name and
-            Storage.insert(medium.image, cdrom: false, read_only: medium.read_only) == :ok ->
-          %{state | medium: %{medium | image: in_drive(medium.image)}}
+        match?(%{kind: :folder}, memory) and memory.name == medium.name and drive < drives() and
+            Storage.insert(medium.image, drive: drive, cdrom: false, read_only: medium.read_only) ==
+              :ok ->
+          put_medium(state, %{medium | image: in_drive(drive, medium.image)})
 
         medium.read_only ->
           remove_image(medium.image)
@@ -554,21 +642,30 @@ defmodule Kuroneko.VirtualDisk do
     end)
   end
 
-  defp insert_remembered(%{medium: nil, busy: nil} = state) do
-    with %{name: name, opts: opts} <- remembered(),
-         {:ok, relative} <- library_path(name),
+  defp insert_remembered(state) do
+    remembered()
+    |> Enum.sort()
+    |> Enum.reduce(state, fn {drive, memory}, state ->
+      if Map.has_key?(state.media, drive) or state.busy != nil or drive >= drives(),
+        do: state,
+        else: insert_again(state, drive, memory)
+    end)
+  end
+
+  defp insert_again(state, drive, %{name: name, opts: opts}) do
+    with {:ok, relative} <- library_path(name),
          path = Path.join(dir(), relative),
          {:ok, kind} <- kind(path) do
       inserted =
         cond do
-          kind == :image and real_path(path) == in_drive(nil) ->
-            {:ok, adopt_image(state, relative, opts)}
+          kind == :image and real_path(path) == in_drive(drive, nil) ->
+            {:ok, adopt_image(state, drive, relative, opts)}
 
           kind == :image ->
-            insert_image(state, relative, path, opts)
+            insert_image(state, drive, relative, path, opts)
 
           true ->
-            make_drive(state, relative, path, opts)
+            make_drive(state, drive, relative, path, opts)
         end
 
       case inserted do
@@ -580,30 +677,29 @@ defmodule Kuroneko.VirtualDisk do
           state
       end
     else
-      _nothing -> state
+      _gone -> state
     end
   end
 
-  defp insert_remembered(state), do: state
-
   # Still in the drive when only this server restarted: kept as it is, so
   # that the computer sees no change of medium.
-  defp adopt_image(state, relative, opts) do
-    {:ok, drive} = Storage.medium()
+  defp adopt_image(state, drive, relative, opts) do
+    {:ok, inserted} = Storage.medium(drive: drive)
 
     medium =
-      Map.merge(drive, %{
+      Map.merge(inserted, %{
         name: relative,
         kind: :image,
+        drive: drive,
         remember: true,
         request: Keyword.take(opts, [:media, :read_only])
       })
 
-    %{state | medium: medium}
+    put_medium(state, medium)
   end
 
-  # What goes in again at the next start, as it was asked for.
-  defp remember(%{remember: false}), do: forget()
+  # What goes in again at the next start, each drive's as it was asked for.
+  defp remember(%{remember: false, drive: drive}), do: forget(drive)
 
   defp remember(medium) do
     opts =
@@ -611,26 +707,49 @@ defmodule Kuroneko.VirtualDisk do
         do: [filesystem: medium.filesystem, read_only: medium.read_only],
         else: medium.request
 
-    save_memory(memory(medium.name, medium.kind, opts))
+    save_memory(
+      Map.put(remembered(), medium.drive, %{name: medium.name, kind: medium.kind, opts: opts})
+    )
   end
 
-  defp forget, do: File.rm(memory_file())
+  defp forget(drive) do
+    remembered = remembered()
+    if Map.has_key?(remembered, drive), do: save_memory(Map.delete(remembered, drive)), else: :ok
+  end
 
   defp remembered do
     with {:ok, json} <- File.read(memory_file()),
-         {:ok, fields} <- Jason.decode(json),
-         {:ok, memory} <- from_memory(fields) do
-      memory
+         {:ok, fields} <- Jason.decode(json) do
+      drives =
+        case fields do
+          %{"drives" => drives} when is_map(drives) -> drives
+          # One drive's, from before there were several.
+          %{"name" => _name} -> %{"0" => fields}
+          _other -> %{}
+        end
+
+      for {drive, entry} <- drives,
+          {drive, ""} <- [Integer.parse(drive)],
+          {:ok, memory} <- [from_memory(entry)],
+          into: %{},
+          do: {drive, memory}
     else
-      _none -> nil
+      _none -> %{}
     end
   end
 
-  defp save_memory(fields) do
+  defp save_memory(memories) when memories == %{}, do: File.rm(memory_file())
+
+  defp save_memory(memories) do
     path = memory_file()
 
+    drives =
+      for {drive, %{name: name, kind: kind, opts: opts}} <- memories,
+          into: %{},
+          do: {Integer.to_string(drive), memory(name, kind, opts)}
+
     with :ok <- File.mkdir_p(Path.dirname(path)),
-         :ok <- File.write(path <> ".tmp", Jason.encode!(fields)),
+         :ok <- File.write(path <> ".tmp", Jason.encode!(%{drives: drives})),
          do: File.rename(path <> ".tmp", path)
   end
 
@@ -671,6 +790,7 @@ defmodule Kuroneko.VirtualDisk do
       %{
         name: name,
         kind: :folder,
+        drive: if(is_integer(fields["drive"]), do: fields["drive"], else: 0),
         filesystem: if(fields["filesystem"] == "fat32", do: :fat32, else: :exfat),
         read_only: read_only,
         remember: fields["remember"] == true,
@@ -680,7 +800,7 @@ defmodule Kuroneko.VirtualDisk do
   end
 
   defp write_marker(medium) do
-    fields = Map.take(medium, [:name, :filesystem, :read_only, :remember])
+    fields = Map.take(medium, [:name, :drive, :filesystem, :read_only, :remember])
     File.write(medium.image <> ".json", Jason.encode!(fields))
   end
 
@@ -702,10 +822,10 @@ defmodule Kuroneko.VirtualDisk do
     end
   end
 
-  # The drive reports the file it holds by the path the kernel opened, with
+  # A drive reports the file it holds by the path the kernel opened, with
   # links resolved: /root/images for /data/images on Nerves.
-  defp in_drive(fallback) do
-    case Storage.medium() do
+  defp in_drive(drive, fallback) do
+    case Storage.medium(drive: drive) do
       {:ok, %{image: image}} -> image
       _empty -> fallback
     end
@@ -771,23 +891,28 @@ defmodule Kuroneko.VirtualDisk do
     end
   end
 
-  defp medium(state) do
-    case {state.medium, Storage.medium()} do
-      {%{image: image} = ours, {:ok, %{image: image} = drive}} ->
-        Map.merge(drive, Map.delete(ours, :request))
+  defp medium(state, drive) do
+    case {state.media[drive], Storage.medium(drive: drive)} do
+      {%{image: image} = ours, {:ok, %{image: image} = inserted}} ->
+        Map.merge(inserted, Map.delete(ours, :request))
 
-      {_ours, {:ok, %{image: image} = drive}} ->
-        Map.merge(drive, %{name: Path.basename(image), kind: :image, remember: false})
+      {_ours, {:ok, %{image: image} = inserted}} ->
+        Map.merge(inserted, %{
+          name: Path.basename(image),
+          kind: :image,
+          drive: drive,
+          remember: false
+        })
 
       _empty ->
         nil
     end
   end
 
-  # A name is in use when it, or a folder holding it, is in the drive or
-  # being made into a drive or copied back to.
+  # A name is in use when it, or a folder holding it, is in a drive or being
+  # made into a drive or copied back to.
   defp in_use?(state, relative) do
-    names = for %{name: name} <- [state.medium, state.busy], do: name
+    names = for %{name: name} <- [state.busy | Map.values(state.media)], do: name
     top = relative |> Path.split() |> hd()
     Enum.any?(names, &(&1 == relative or &1 == top or String.starts_with?(relative, &1 <> "/")))
   end

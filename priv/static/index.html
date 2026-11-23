@@ -72,6 +72,8 @@
   .disklist:empty { display: none; }
   .diskrow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 6px 10px; }
   .diskrow .diskinfo { flex-basis: 100%; white-space: normal; }
+  .diskdrive + .diskdrive { margin-top: 6px; }
+  .disktarget { display: flex; flex-wrap: wrap; gap: 4px 16px; }
   .diskrow + .diskrow { border-top: 1px solid #2c3036; }
   .diskrow .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     color: #e6e8eb; }
@@ -150,7 +152,13 @@
     </label>
     <label><input type="checkbox" name="jiggler"> Mouse jiggler: a pixel and back each
       minute, so that the target stays awake</label>
-    <label><input type="checkbox" name="storage"> Virtual disk</label>
+    <label><input type="checkbox" name="storage"> Virtual disk with
+      <select name="drives" title="Drives share one function's endpoints">
+        <option>1</option><option>2</option><option>3</option><option>4</option>
+        <option>5</option><option>6</option><option>7</option><option>8</option>
+        <option>9</option><option>10</option><option>11</option><option>12</option>
+        <option>13</option><option>14</option><option>15</option><option>16</option>
+      </select> drives</label>
     <label>Sound card
       <select name="audio">
         <option value="off">Off</option>
@@ -196,11 +204,14 @@
 <dialog id="diskdialog">
   <form method="dialog">
     <h3>Virtual disk</h3>
-    <div class="diskdrive" id="diskdrive"></div>
+    <div id="diskdrive"></div>
     <p class="note" id="diskbusy" hidden></p>
     <div class="disklist" id="disklist"></div>
-    <label class="note"><input type="checkbox" id="diskremember" checked> Insert it again after the NanoKVM
-      restarts</label>
+    <div class="note disktarget">
+      <label id="disktargetlabel" hidden>Insert into <select id="disktarget"></select></label>
+      <label><input type="checkbox" id="diskremember" checked> Insert it again after the NanoKVM
+        restarts</label>
+    </div>
     <div class="diskupload">
       <button type="button" id="diskaddfiles">Upload images…</button>
       <button type="button" id="diskaddfolder">Upload a folder…</button>
@@ -951,6 +962,8 @@
       `The ${d} format is more than USB carries: fewer channels, a smaller sample size or lower rates.`,
     invalid_channels: (d) => `The ${d} cannot have that many channels.`,
     invalid_sample_bits: (d) => `The ${d} cannot have that sample size.`,
+    not_enough_endpoints: (_d, body) => `These take ${body.need.in} IN and ${body.need.out} OUT endpoints; ` +
+      `the NanoKVM has ${body.have.in} and ${body.have.out}. Turn something off.`,
   };
 
   async function postUsb(changes) {
@@ -959,7 +972,7 @@
     const body = await reply.json().catch(() => ({}));
     if (!reply.ok) {
       const explain = USB_ERRORS[body.error];
-      throw new Error(explain ? explain(body.direction) : body.error || `HTTP ${reply.status}`);
+      throw new Error(explain ? explain(body.direction, body) : body.error || `HTTP ${reply.status}`);
     }
     return body;
   }
@@ -1019,6 +1032,7 @@
       usbForm.pointer.value = s.pointer;
       usbForm.jiggler.checked = s.jiggler;
       usbForm.storage.checked = s.storage;
+      usbForm.drives.value = String(s.drives || 1);
       usbForm.audio.value = s.audio;
       for (const fieldset of fieldsets) {
         const direction = fieldset.dataset.direction, f = s[direction];
@@ -1042,7 +1056,7 @@
   usbApply.onclick = async () => {
     const changes = { hid: usbForm.hid.checked, pointer: usbForm.pointer.value,
                       jiggler: usbForm.jiggler.checked, storage: usbForm.storage.checked,
-                      audio: usbForm.audio.value };
+                      drives: +usbForm.drives.value, audio: usbForm.audio.value };
     for (const fieldset of fieldsets) {
       changes[fieldset.dataset.direction] = {
         channels: +fieldset.querySelector("[name=channels]").value,
@@ -1165,6 +1179,7 @@
 
   function insertBody(item, mode) {
     const body = { name: item.name, remember: document.getElementById("diskremember").checked };
+    if (!document.getElementById("disktargetlabel").hidden) body.drive = +document.getElementById("disktarget").value;
     if (item.kind === "folder") {
       body.filesystem = mode.split("-")[0];
       body.read_only = !mode.endsWith("rw");
@@ -1222,28 +1237,51 @@
   }
 
   // The list is drawn anew only when it changes, so that a choice being made stays.
+  const driveName = (s, drive) => s.drives.length > 1 ? `Drive ${drive + 1}` : "The drive";
+
   function renderDisk(s) {
-    const m = s.medium, busy = s.busy;
+    const busy = s.busy;
     if (busy) {
       const percent = busy.total ? ` ${Math.floor((100 * busy.done) / busy.total)}%` : "";
+      const into = s.drives.length > 1 ? ` for drive ${busy.drive + 1}` : "";
       document.getElementById("diskbusy").textContent = busy.action === "making"
-        ? `Making a drive from ${busy.name}:${percent}` : `Copying the changes back to ${busy.name}:${percent}`;
+        ? `Making a drive from ${busy.name}${into}:${percent}` : `Copying the changes back to ${busy.name}:${percent}`;
     }
     document.getElementById("diskbusy").hidden = !busy;
     document.getElementById("diskfree").textContent = `${bytesText(s.free)} free on the NanoKVM.`;
     if (s.error) showDiskError(s.error);
-    const shown = JSON.stringify([s.items, m, busy && [busy.action, busy.name]]);
+    const shown = JSON.stringify([s.items, s.drives, busy && [busy.action, busy.name]]);
     if (shown === diskShown) return;
     diskShown = shown;
-    document.getElementById("diskdrive").replaceChildren(
-      node("span", { textContent: m ? `In the drive: ${m.name} (${describeMedium(m)})` : "The drive is empty." }),
-      m ? node("button", { type: "button", textContent: "Eject", disabled: !!busy,
-        onclick: () => diskAction("/api/disk/eject", {}) }) : null);
+    document.getElementById("diskdrive").replaceChildren(...(s.drives.length ? s.drives : [null]).map((d) => {
+      if (!d) return node("span", { textContent: "There is no drive: turn the virtual disk on in USB…" });
+      const m = d.medium;
+      return node("div", { className: "diskdrive" },
+        node("span", { textContent: m ? `${driveName(s, d.drive)}: ${m.name} (${describeMedium(m)})`
+          : `${driveName(s, d.drive)} is empty.` }),
+        m ? node("button", { type: "button", textContent: "Eject", disabled: !!busy,
+          onclick: () => diskAction("/api/disk/eject", { drive: d.drive }) }) : null);
+    }));
+    renderTarget(s);
     document.getElementById("disklist").replaceChildren(...s.items.map((item) => diskRow(item, s)));
   }
 
+  // Where Insert puts an item when there are several drives: the first empty
+  // one unless chosen.
+  function renderTarget(s) {
+    const target = document.getElementById("disktarget");
+    const chosen = target.value;
+    document.getElementById("disktargetlabel").hidden = s.drives.length < 2;
+    target.replaceChildren(...s.drives.map((d) =>
+      new Option(`Drive ${d.drive + 1}${d.medium ? `, ${d.medium.name}` : ", empty"}`, String(d.drive))));
+    const empty = s.drives.find((d) => !d.medium);
+    target.value = chosen && s.drives.some((d) => String(d.drive) === chosen) ? chosen
+      : String(empty ? empty.drive : 0);
+  }
+
   function diskRow(item, s) {
-    const inDrive = !!s.medium && s.medium.name === item.name;
+    const holder = s.drives.find((d) => d.medium && d.medium.name === item.name);
+    const inDrive = !!holder;
     const busyHere = !!s.busy && s.busy.name === item.name;
     const mode = node("select", { title: item.kind === "folder"
         ? "How the computer sees it. exFAT holds files of any size; FAT32 is for BIOS updates, UEFI and older systems."
@@ -1259,7 +1297,8 @@
       node("span", { className: "name", textContent: item.name, title: item.name }),
       node("span", { className: "muted", textContent: item.kind === "folder" ? "Folder" : "Image" }),
       node("span", { className: "muted", textContent: bytesText(item.size) }),
-      inDrive ? node("span", { className: "muted", textContent: "In the drive" }) : mode,
+      inDrive ? node("span", { className: "muted",
+        textContent: s.drives.length > 1 ? `In drive ${holder.drive + 1}` : "In the drive" }) : mode,
       inDrive ? null : insert,
       remove,
       item.format ? node("span", { className: "muted diskinfo", textContent: formatText(item.format) }) : null);

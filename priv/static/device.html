@@ -1190,7 +1190,11 @@ function renderUsb(usb) {
   const c = usb.connection;
   const [text, kind] = c ? (USB_STATES[c.state] || [c.state, ""]) : ["No controller", "bad"];
   badge($("usbbadge"), text, kind);
-  const medium = usb.medium;
+  const media = usb.media || [];
+  const describeMedium = (m) => `${m.name || m.image.split("/").pop()}, ${m.kind === "folder"
+    ? `folder as ${{ exfat: "exFAT", fat32: "FAT32" }[m.filesystem] || "a drive"}`
+    : m.cdrom ? { cd: "CD-ROM", dvd: "DVD-ROM", bd: "BD-ROM" }[m.disc] || "CD-ROM"
+    : "USB drive"}${m.read_only ? ", read-only" : ""}`;
   facts($("usbfacts"), [
     ["Link", c ? (c.state === "configured" ? SPEEDS[c.speed] || "Connected" : text) : "The USB controller is not bound"],
     ["Devices", usb.functions == null ? null
@@ -1198,11 +1202,8 @@ function renderUsb(usb) {
           .map((name) => h("span", { class: "tag" }, name)))
       : "Network only"],
     ["Virtual disk", !usb.functions || !usb.functions.includes("storage") ? null
-      : medium ? `${medium.name || medium.image.split("/").pop()}, ${medium.kind === "folder"
-          ? `folder as ${{ exfat: "exFAT", fat32: "FAT32" }[medium.filesystem] || "a drive"}`
-          : medium.cdrom ? { cd: "CD-ROM", dvd: "DVD-ROM", bd: "BD-ROM" }[medium.disc] || "CD-ROM"
-          : "USB drive"}${medium.read_only ? ", read-only" : ""}`
-      : "Empty"],
+      : media.length === 1 ? (media[0] ? describeMedium(media[0]) : "Empty")
+      : h("div", {}, media.map((m, i) => h("div", {}, `Drive ${i + 1}: ${m ? describeMedium(m) : "empty"}`)))],
     ["Controller", c && h("span", { class: "mono" }, c.controller)],
   ]);
 }
@@ -1439,10 +1440,10 @@ function openMacDialog() {
     f.input.value = usbNetwork[key] === defaults[key] ? "" : usbNetwork[key];
     f.initial = f.input.value;
   }
-  const medium = state.status && state.status.usb.medium;
+  const inserted = state.status && (state.status.usb.media || []).some(Boolean);
   $("macwarning").textContent = "The target computer sees the NanoKVM's USB devices unplugged and plugged in " +
     "again. This page reconnects by itself." +
-    (medium ? " Eject the virtual disk on the target computer first." : "");
+    (inserted ? " Eject the virtual disk on the target computer first." : "");
   $("macerror").hidden = true;
   checkMacs();
   $("macdialog").showModal();
