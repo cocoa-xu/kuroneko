@@ -872,7 +872,7 @@ defmodule Kuroneko.AudioSocket do
   def handle_in(_frame, state), do: {:ok, state}
 
   @impl WebSock
-  def handle_info({NanoKVMGo.Audio, source, {:format, format}}, state) do
+  def handle_info({NanoKVMGo.Audio, {:format, source, format}}, state) do
     state = put_in(state.formats[source], format)
 
     if state.current == source,
@@ -880,11 +880,11 @@ defmodule Kuroneko.AudioSocket do
       else: {:ok, state}
   end
 
-  def handle_info({NanoKVMGo.Audio, :usb, {:pcm, pcm}}, state) do
+  def handle_info({NanoKVMGo.Audio, {:pcm, :usb, pcm}}, state) do
     forward(:usb, pcm, %{state | usb_seen: now()})
   end
 
-  def handle_info({NanoKVMGo.Audio, :hdmi, {:pcm, pcm}}, state) do
+  def handle_info({NanoKVMGo.Audio, {:pcm, :hdmi, pcm}}, state) do
     if speaker_playing?(state), do: {:ok, state}, else: forward(:hdmi, pcm, state)
   end
 

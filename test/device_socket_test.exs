@@ -13,9 +13,7 @@ defmodule Kuroneko.DeviceSocketTest do
     File.write!(Path.join(proc, "meminfo"), "MemTotal: 1000 kB\nMemAvailable: 600 kB\n")
     File.write!(Path.join(proc, "net/dev"), "Inter-|\n face |\n")
 
-    start_supervised!(
-      {NanoKVMGo.Metrics, proc: proc, thermal: Path.join(tmp_dir, "thermal"), interval: nil}
-    )
+    start_supervised!({NanoKVMGo.Metrics, root: tmp_dir, interval: :timer.hours(1)})
   end
 
   defp decode({:push, {:text, json}, state}), do: {Jason.decode!(json), state}
@@ -37,7 +35,6 @@ defmodule Kuroneko.DeviceSocketTest do
     {_message, state} = decode(DeviceSocket.handle_info(:retry, state))
     assert state.metrics
 
-    send(metrics, :sample)
     send(metrics, :sample)
     assert_receive {NanoKVMGo.Metrics, sample}
     {message, state} = decode(DeviceSocket.handle_info({NanoKVMGo.Metrics, sample}, state))

@@ -80,7 +80,6 @@ defmodule Kuroneko.Application do
         Kuroneko.Gadget.Input,
         Kuroneko.Jiggler,
         NanoKVMGo.Display,
-        NanoKVMGo.Backlight,
         NanoKVMGo.Metrics,
         NanoKVMGo.Expansion,
         Kuroneko.ExpansionWatch,
