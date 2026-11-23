@@ -7,6 +7,7 @@ defmodule Kuroneko.WiFiTest do
     do: %{
       ssid: ssid,
       signal_percent: percent,
+      signal_dbm: div(percent, 2) - 100,
       frequency: mhz,
       flags: flags,
       bssid: "02:00:00:00:00:01"
@@ -23,10 +24,28 @@ defmodule Kuroneko.WiFiTest do
     ]
 
     assert WiFi.networks(access_points) == [
-             %{ssid: "home", signal_percent: 85, band: "5 GHz", security: :wpa2_wpa3},
-             %{ssid: "cafe", signal_percent: 60, band: "2.4 GHz", security: :open},
-             %{ssid: "office", signal_percent: 60, band: "5 GHz", security: :enterprise},
-             %{ssid: "old", signal_percent: 10, band: "2.4 GHz", security: :wep}
+             %{
+               ssid: "home",
+               signal_percent: 85,
+               signal_dbm: -58,
+               band: "5 GHz",
+               security: :wpa2_wpa3
+             },
+             %{
+               ssid: "cafe",
+               signal_percent: 60,
+               signal_dbm: -70,
+               band: "2.4 GHz",
+               security: :open
+             },
+             %{
+               ssid: "office",
+               signal_percent: 60,
+               signal_dbm: -70,
+               band: "5 GHz",
+               security: :enterprise
+             },
+             %{ssid: "old", signal_percent: 10, signal_dbm: -95, band: "2.4 GHz", security: :wep}
            ]
   end
 

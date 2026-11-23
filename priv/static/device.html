@@ -80,6 +80,7 @@
   .btn.danger { color: #ffb4b4; }
   .btn.danger.solid { background: #d84a4a; border-color: #d84a4a; color: #fff; }
   .btn.small { height: 28px; padding: 0 10px; border-radius: 8px; font-size: 13px; }
+  a.btn { text-decoration: none; }
   :is(.btn, select, input, .segmented button, .tabs a):focus-visible {
     outline: 2px solid var(--accent); outline-offset: 2px; }
   select, input[type="number"], input[type="text"] { height: 34px; border-radius: 9px;
@@ -196,6 +197,7 @@
   /* Network */
   .ifaces { display: grid; gap: 12px; }
   .iface { padding: 14px; border-radius: 11px; background: var(--panel-2); border: 1px solid var(--line); }
+  .iface .setup { display: flex; margin-top: 12px; }
   .iface header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
   .iface header b { font-weight: 650; }
   .iface header .spacer + .badge { margin-left: 0; }
@@ -1311,7 +1313,10 @@ function renderNetwork(network) {
         [h("dt", null, "Addresses"), h("dd", null, i.addresses.length
           ? h("div", null, i.addresses.map((a) => h("div", { class: "mono" }, a))) : "none")],
         i.mac ? [h("dt", null, "MAC"), h("dd", { class: "mono" }, i.mac)] : null,
-        rate ? [h("dt", null, "Traffic"), h("dd", { class: "num" }, `↓ ${fmt.rate(rate.down)}  ↑ ${fmt.rate(rate.up)}`)] : null));
+        rate ? [h("dt", null, "Traffic"), h("dd", { class: "num" }, `↓ ${fmt.rate(rate.down)}  ↑ ${fmt.rate(rate.up)}`)] : null),
+      // Where to join a network, for whoever reads the page from here.
+      i.kind === "wifi" && !online[1] ? h("div", { class: "setup" },
+        h("a", { class: "btn small primary", href: "/settings#wifi" }, "Set up Wi-Fi")) : null);
   }));
 }
 

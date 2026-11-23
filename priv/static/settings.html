@@ -371,10 +371,10 @@ async function request(path, { body, reloadOn401 = true } = {}) {
 
 const COLORS = { ok: "var(--ok)", warn: "var(--warn)", bad: "var(--bad)" };
 
-function signalBars(percent) {
+function signalBars(percent, title) {
   const on = Math.max(1, Math.ceil(percent / 25));
   const kind = percent >= 60 ? "ok" : percent >= 35 ? "warn" : "bad";
-  return h("span", { class: "signal", style: `color:${COLORS[kind]}`, "aria-hidden": "true" },
+  return h("span", { class: "signal", style: `color:${COLORS[kind]}`, "aria-hidden": "true", title },
     [4, 7, 10, 13].map((height, i) => h("i", { class: i < on ? "on" : "", style: `height:${height}px` })));
 }
 
@@ -450,7 +450,7 @@ function networkRow(n) {
       : h("span", { class: "tag", title: "Not supported here" }, "Not supported");
 
   return h("div", { class: `row${current ? " current" : ""}` },
-    signalBars(n.signal_percent),
+    signalBars(n.signal_percent, n.signal_dbm == null ? `${n.signal_percent}%` : `${n.signal_dbm} dBm (${n.signal_percent}%)`),
     h("div", { class: "name" }, h("b", null, n.ssid),
       h("small", null, [SECURITY[n.security], n.band].filter(Boolean).join(", "))),
     n.security !== "open" && icon("lock", "lock"),

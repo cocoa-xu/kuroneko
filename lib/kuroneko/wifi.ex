@@ -151,6 +151,7 @@ defmodule Kuroneko.WiFi do
       %{
         ssid: ssid,
         signal_percent: ap.signal_percent,
+        signal_dbm: Map.get(ap, :signal_dbm),
         band: Network.band(ap.frequency),
         security: security(ap.flags)
       }
