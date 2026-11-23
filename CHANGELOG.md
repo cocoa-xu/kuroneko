@@ -41,6 +41,8 @@
 * A network's signal in dBm when the pointer rests on its bars, and a
   button to the Wi-Fi settings on the device page while there is no Wi-Fi
 * The settings page's password card follows the SSH card, without a gap
+* The Nerves system v0.1.3: the USB optical drive with CDs of tracks and
+  with media events, and UDF and ISO 9660 for reading installer ISOs
 
 ## v0.1.1 (2026-11-23)
 
