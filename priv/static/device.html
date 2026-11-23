@@ -1144,7 +1144,7 @@ function renderVideo(video) {
   const parts = state.overview ? Object.fromEntries(state.overview.components.map((c) => [c.id, c])) : {};
   const capture = video.capture || {};
   facts($("videofacts"), [
-    ["Input", signal ? `${input.width} × ${input.height}, ${input.fps} frames a second` : inputText(input)],
+    ["Input", signal ? `${input.width} × ${input.height}, ${input.fps} FPS` : inputText(input)],
     ["Bridge", parts.video_bridge && parts.video_bridge.chip],
     ["Encoders", "H.264 and JPEG, in the SoC"],
     ["Input changes", capture.mid_frame_stops == null ? null : String(capture.mid_frame_stops)],
