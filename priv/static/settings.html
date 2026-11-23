@@ -81,7 +81,8 @@
   .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; align-items: start; }
   .card { grid-column: span 6; min-width: 0; padding: 18px 20px 20px; border-radius: var(--radius);
     background: var(--panel); border: 1px solid var(--line); }
-  #wifi { grid-row: span 2; }
+  /* SSH and the password stack in the right column, each as tall as its content. */
+  .column { grid-column: span 6; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
   .card > header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
     gap: 8px 12px; margin-bottom: 14px; }
   .card h2 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 15.5px; font-weight: 650;
@@ -163,8 +164,7 @@
     padding: 0; }
 
   @media (max-width: 1000px) {
-    .card { grid-column: span 12; }
-    #wifi { grid-row: auto; }
+    .card, .column { grid-column: span 12; }
   }
   @media (max-width: 620px) {
     .top { gap: 12px; padding: 0 16px; }
@@ -229,51 +229,53 @@
         here. Over USB the page stays reachable whatever the Wi-Fi does.</p>
     </section>
 
-    <section class="card" id="ssh">
-      <header>
-        <h2><svg class="icon"><use href="#i-terminal"/></svg>SSH</h2>
-      </header>
-      <p>An Elixir shell (IEx) on the device, and firmware updates. Log in with any user name and this page's
-        password, or with a key below.</p>
-      <div class="command"><code id="sshcommand">ssh nerves.local</code></div>
-      <div class="rows" id="keys"></div>
-      <div class="subsection">
-        <h3>Add keys</h3>
-        <textarea id="newkeys" spellcheck="false" autocomplete="off" autocapitalize="off"
-                  placeholder="ssh-ed25519 AAAA… you@computer"></textarea>
-        <p class="formerror" id="keyerror" hidden></p>
-        <div class="actions">
-          <button class="btn small primary" id="addkeys" type="button">Add</button>
+    <div class="column">
+      <section class="card" id="ssh">
+        <header>
+          <h2><svg class="icon"><use href="#i-terminal"/></svg>SSH</h2>
+        </header>
+        <p>An Elixir shell (IEx) on the device, and firmware updates. Log in with any user name and this page's
+          password, or with a key below.</p>
+        <div class="command"><code id="sshcommand">ssh nerves.local</code></div>
+        <div class="rows" id="keys"></div>
+        <div class="subsection">
+          <h3>Add keys</h3>
+          <textarea id="newkeys" spellcheck="false" autocomplete="off" autocapitalize="off"
+                    placeholder="ssh-ed25519 AAAA… you@computer"></textarea>
+          <p class="formerror" id="keyerror" hidden></p>
+          <div class="actions">
+            <button class="btn small primary" id="addkeys" type="button">Add</button>
+          </div>
+          <p class="note">Public keys, one per line, as in <span class="mono">~/.ssh/id_ed25519.pub</span>. The
+            device keeps them across firmware updates.</p>
         </div>
-        <p class="note">Public keys, one per line, as in <span class="mono">~/.ssh/id_ed25519.pub</span>. The
-          device keeps them across firmware updates.</p>
-      </div>
-    </section>
+      </section>
 
-    <section class="card" id="password">
-      <header>
-        <h2><svg class="icon"><use href="#i-lock"/></svg>Password</h2>
-      </header>
-      <form id="passwordform" novalidate>
-        <p>For this page and SSH. Changing it ends the other sessions of the page.</p>
-        <label class="formfield">
-          <span>Current password</span>
-          <input type="password" id="current" autocomplete="current-password" required>
-        </label>
-        <label class="formfield">
-          <span>New password <i>(at least 8 characters)</i></span>
-          <input type="password" id="newpassword" autocomplete="new-password" required minlength="8">
-        </label>
-        <label class="formfield">
-          <span>New password again</span>
-          <input type="password" id="again" autocomplete="new-password" required>
-        </label>
-        <p class="formerror" id="passworderror" hidden></p>
-        <div class="actions">
-          <button class="btn small primary" id="changepassword" type="submit">Change the password</button>
-        </div>
-      </form>
-    </section>
+      <section class="card" id="password">
+        <header>
+          <h2><svg class="icon"><use href="#i-lock"/></svg>Password</h2>
+        </header>
+        <form id="passwordform" novalidate>
+          <p>For this page and SSH. Changing it ends the other sessions of the page.</p>
+          <label class="formfield">
+            <span>Current password</span>
+            <input type="password" id="current" autocomplete="current-password" required>
+          </label>
+          <label class="formfield">
+            <span>New password <i>(at least 8 characters)</i></span>
+            <input type="password" id="newpassword" autocomplete="new-password" required minlength="8">
+          </label>
+          <label class="formfield">
+            <span>New password again</span>
+            <input type="password" id="again" autocomplete="new-password" required>
+          </label>
+          <p class="formerror" id="passworderror" hidden></p>
+          <div class="actions">
+            <button class="btn small primary" id="changepassword" type="submit">Change the password</button>
+          </div>
+        </form>
+      </section>
+    </div>
   </div>
 </main>
 
