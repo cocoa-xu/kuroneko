@@ -15,6 +15,9 @@ defmodule Kuroneko.USBNetwork do
   import Bitwise
 
   @ifname "usb0"
+  # The computer's one address, leased for two minutes: after its MAC address
+  # changes, the old lease is gone soon enough for the new one to get it.
+  @lease_seconds 120
 
   @doc """
   The NanoKVM's address with its prefix, the computer's, and whether they
@@ -58,16 +61,19 @@ defmodule Kuroneko.USBNetwork do
          :ok <- usable(address, prefix),
          :ok <- apart(address, prefix, others) do
       peer = computer(address, prefix)
-      last = to_int(broadcast(address, prefix)) - 1
-
-      pool_end =
-        min(to_int(peer) + 9, if(to_int(peer) > to_int(address), do: last, else: to_int(peer)))
+      lease = Base.encode16(<<@lease_seconds::32>>)
 
       {:ok,
        %{
          type: VintageNetEthernet,
          ipv4: %{method: :static, address: address, prefix_length: prefix},
-         dhcpd: %{start: peer, end: from_int(pool_end), options: %{subnet: mask(prefix)}}
+         dhcpd: %{
+           start: peer,
+           end: peer,
+           max_leases: 1,
+           # 51: the lease time
+           options: %{:subnet => mask(prefix), 51 => lease}
+         }
        }}
     end
   end

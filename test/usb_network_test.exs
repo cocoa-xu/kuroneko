@@ -22,8 +22,9 @@ defmodule Kuroneko.USBNetworkTest do
                 ipv4: %{method: :static, address: {10, 55, 0, 1}, prefix_length: 24},
                 dhcpd: %{
                   start: {10, 55, 0, 2},
-                  end: {10, 55, 0, 11},
-                  options: %{subnet: {255, 255, 255, 0}}
+                  end: {10, 55, 0, 2},
+                  max_leases: 1,
+                  options: %{:subnet => {255, 255, 255, 0}, 51 => "00000078"}
                 }
               }}
 
