@@ -63,7 +63,10 @@
   .btn.primary:hover { background: #82b7ff; }
   .btn.danger { color: #ffb4b4; }
   .btn.small { height: 28px; padding: 0 10px; border-radius: 8px; font-size: 13px; }
-  :is(.btn, input, textarea, .tabs a):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  :is(.btn, input, select, textarea, .tabs a):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  select { max-width: 100%; height: 28px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--line-2);
+    background-color: var(--panel-2); color: var(--text); font: inherit; font-size: 13px; }
+  select:disabled { opacity: 0.5; }
   input[type="text"], input[type="password"], textarea { width: 100%; border-radius: 9px;
     border: 1px solid var(--line-2); background-color: var(--panel-2); color: var(--text); font: inherit; }
   input[type="text"], input[type="password"] { height: 34px; padding: 0 12px; }
@@ -99,6 +102,7 @@
     margin: 0; }
   dl.facts dt { color: var(--text-3); }
   dl.facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  dl.facts.country { margin-top: 7px; align-items: center; }
   .tag { flex: none; padding: 2px 9px; border-radius: 7px; background: var(--panel-2); border: 1px solid var(--line-2);
     color: var(--text-2); font-size: 12.5px; white-space: nowrap; }
   .tag.ok { color: #9ee8c4; border-color: rgba(62, 207, 142, 0.3); background: rgba(62, 207, 142, 0.08); }
@@ -207,6 +211,10 @@
         <span class="badge" id="wifistate">–</span>
       </header>
       <dl class="facts" id="wififacts"></dl>
+      <dl class="facts country">
+        <dt><label for="country">Country</label></dt>
+        <dd><select id="country" disabled title="The country whose Wi-Fi rules apply"></select></dd>
+      </dl>
       <div class="actions">
         <button class="btn small" id="scan" type="button"><svg class="icon"><use href="#i-refresh"/></svg>Scan</button>
         <button class="btn small" id="other" type="button">Other network…</button>
@@ -214,9 +222,11 @@
         <button class="btn small danger" id="forget" type="button" hidden>Forget network</button>
       </div>
       <div class="rows" id="nets"></div>
-      <p class="note">With a passphrase the NanoKVM-Go takes WPA2, or WPA3 where a network offers nothing
-        else. Networks that need a user name too, and WEP, are not supported here. Over USB the page stays
-        reachable whatever the Wi-Fi does.</p>
+      <p class="note">The list keeps each network for five minutes after it was last seen, and looks again
+        every ten seconds while this page is open. The country sets the channels and transmit power the
+        Wi-Fi may use; changing it restarts the Wi-Fi. With a passphrase the NanoKVM-Go takes WPA2, or WPA3
+        where a network offers nothing else. Networks that need a user name too, and WEP, are not supported
+        here. Over USB the page stays reachable whatever the Wi-Fi does.</p>
     </section>
 
     <section class="card" id="ssh">
@@ -373,6 +383,33 @@ const SECURITY = { open: "Open", wpa2: "WPA2", wpa2_wpa3: "WPA2/WPA3", wpa3: "WP
 let wifi = null;
 let joining = null;
 
+// The countries the regulatory database (wireless-regdb 2026.09.03) has rules for.
+const COUNTRIES = ("AD AE AF AI AL AM AN AR AS AT AU AW AZ BA BB BD BE BF BG BH BL BM BN BO BR BS BT BW BY BZ " +
+  "CA CF CH CI CL CN CO CR CU CX CY CZ DE DK DM DO DZ EC EE EG ES ET FI FM FO FR GB GD GE GF GH GI GL GP GR " +
+  "GT GU GY HK HN HR HT HU ID IE IL IM IN IR IS IT JM JO JP KE KH KN KP KR KW KY KZ LB LC LI LK LS LT LU LV " +
+  "MA MC MD ME MF MH MK MN MO MP MQ MR MT MU MV MW MX MY NA NG NI NL NO NP NZ OM PA PE PF PG PH PK PL PM PR " +
+  "PT PW PY QA RE RO RS RU RW SA SE SG SI SK SM SN SR SV SX SY TC TD TG TH TN TR TT TW TZ UA UG US UY UZ VA " +
+  "VC VE VI VN VU WF WS YE YT ZA ZW").split(" ");
+const regionNames = (() => {
+  try { return new Intl.DisplayNames(["en"], { type: "region" }); } catch { return null; }
+})();
+const countryName = (code) => (regionNames && regionNames.of(code)) || code;
+
+function fillCountries() {
+  const options = COUNTRIES.map((code) => [code, countryName(code)]).sort((a, b) => a[1].localeCompare(b[1], "en"));
+  $("country").replaceChildren(h("option", { value: "00" }, "Not set"),
+    ...options.map(([code, name]) => h("option", { value: code }, name === code ? code : `${name} (${code})`)));
+}
+
+function renderCountry(w) {
+  const select = $("country");
+  select.disabled = !w.present || !!select.dataset.pending;
+  if (document.activeElement === select || select.dataset.pending) return;
+  const code = w.country || "00";
+  if (![...select.options].some((option) => option.value === code)) select.append(h("option", { value: code }, code));
+  select.value = code;
+}
+
 function wifiState(w) {
   if (!w.present) return ["No Wi-Fi", "bad"];
   if (!w.network) return ["Not set up", ""];
@@ -394,9 +431,10 @@ function renderWifi(w) {
   ]);
   $("forget").hidden = !w.network;
   $("scan").disabled = $("other").disabled = !w.present;
+  renderCountry(w);
 
   const empty = !w.present ? "The Wi-Fi chip did not come up: no networks to show." :
-    "No networks seen yet: scan to look for them.";
+    "Looking for networks…";
   $("nets").replaceChildren(...(w.networks.length ? w.networks.map(networkRow) : [h("p", { class: "empty" }, empty)]));
 }
 
@@ -417,9 +455,10 @@ function networkRow(n) {
     action);
 }
 
+// The page asks for a new scan each time; the device scans at most every ten seconds.
 async function refreshWifi() {
   try {
-    renderWifi(await request("/api/wifi"));
+    renderWifi(await request("/api/wifi?scan=1"));
   } catch (err) {
     toast(`Wi-Fi: ${err.message}`, true);
   }
@@ -476,6 +515,27 @@ $("scan").addEventListener("click", async () => {
     toast(`Scan: ${err.message}`, true);
   } finally {
     setTimeout(() => { $("scan").disabled = !(wifi && wifi.present); }, 3000);
+  }
+});
+
+$("country").addEventListener("change", async (e) => {
+  const select = e.target;
+  const code = select.value;
+  select.dataset.pending = "1";
+  select.disabled = true;
+  try {
+    await request("/api/wifi/country", { body: { country: code } });
+    toast(code === "00" ? "The Wi-Fi restarts without a country" :
+      `The Wi-Fi restarts with the rules of ${countryName(code)}`);
+    setTimeout(refreshWifi, 4000);
+  } catch (err) {
+    toast(`Country: ${err.message}`, true);
+    select.value = (wifi && wifi.country) || "00";
+  } finally {
+    setTimeout(() => {
+      delete select.dataset.pending;
+      select.disabled = !(wifi && wifi.present);
+    }, 3000);
   }
 });
 
@@ -562,13 +622,16 @@ $("passwordform").addEventListener("submit", async (e) => {
 // ---- Start
 
 (async () => {
+  fillCountries();
   try {
-    const [w, ssh] = await Promise.all([request("/api/wifi"), request("/api/ssh/keys")]);
+    const [w, ssh] = await Promise.all([request("/api/wifi?scan=1"), request("/api/ssh/keys")]);
     renderWifi(w);
     renderKeys(ssh.keys);
   } catch (err) {
     toast(err.message, true);
   }
+  // The first scan's networks, without waiting for the next refresh.
+  setTimeout(refreshWifi, 2500);
   setInterval(() => { if (!document.hidden) refreshWifi(); }, 5000);
 })();
 </script>

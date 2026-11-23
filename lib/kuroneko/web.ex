@@ -35,9 +35,11 @@ defmodule Kuroneko.Web do
     * `POST /api/reboot`
     * `/settings`: the settings page, Wi-Fi, SSH keys and the password;
       `GET /api/wifi`, the Wi-Fi's state and the networks in reach (see
-      `Kuroneko.WiFi`), `POST /api/wifi/scan`, `POST /api/wifi` `{"ssid":
+      `Kuroneko.WiFi`; `?scan=1` scans again when the last scan is ten
+      seconds old), `POST /api/wifi/scan`, `POST /api/wifi` `{"ssid":
       ..., "passphrase": ..., "hidden": false}` to join a network, `POST
-      /api/wifi/forget`; `GET /api/ssh/keys`, `POST /api/ssh/keys` `{"key":
+      /api/wifi/forget`, `POST /api/wifi/country` `{"country": "JP"}`;
+      `GET /api/ssh/keys`, `POST /api/ssh/keys` `{"key":
       ...}` (one or more lines) and `POST /api/ssh/keys/remove` `{"key":
       ...}` (see `Kuroneko.SSH`)
 
@@ -317,7 +319,10 @@ defmodule Kuroneko.Web do
     end
   end
 
-  get("/api/wifi", do: json(conn, 200, wifi().overview()))
+  get "/api/wifi" do
+    conn = fetch_query_params(conn)
+    json(conn, 200, wifi().overview(scan: conn.query_params["scan"] == "1"))
+  end
 
   post "/api/wifi/scan" do
     with {:ok, _data, conn} <- page_json(conn) do
@@ -349,6 +354,18 @@ defmodule Kuroneko.Web do
       later(fn -> wifi().forget() end, "Wi-Fi network not forgotten")
       json(conn, 202, %{forgetting: true})
     else
+      other -> refused(conn, other)
+    end
+  end
+
+  # The Wi-Fi restarts with the country's rules: the reply leaves first.
+  post "/api/wifi/country" do
+    with {:ok, %{"country" => code}, conn} <- page_json(conn),
+         {:ok, code} <- wifi().country_code(code) do
+      later(fn -> wifi().set_country(code) end, "Wi-Fi country not set")
+      json(conn, 202, %{country: code})
+    else
+      {:error, reason} when is_atom(reason) -> json(conn, 400, %{error: wifi_error(reason)})
       other -> refused(conn, other)
     end
   end
@@ -503,6 +520,7 @@ defmodule Kuroneko.Web do
   defp wifi_error(:password_too_long), do: "the passphrase is longer than 63 characters"
   defp wifi_error(:invalid_characters), do: "the passphrase takes ASCII characters only"
   defp wifi_error(:no_wifi), do: "this device has no Wi-Fi"
+  defp wifi_error(:invalid_country), do: "not a country code"
   defp wifi_error(reason), do: inspect(reason)
 
   defp websocket(conn, handler) do

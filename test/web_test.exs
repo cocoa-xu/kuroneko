@@ -85,6 +85,7 @@ defmodule Kuroneko.WebTest do
           post: "/api/wifi",
           post: "/api/wifi/scan",
           post: "/api/wifi/forget",
+          post: "/api/wifi/country",
           get: "/api/ssh/keys",
           post: "/api/ssh/keys",
           post: "/api/ssh/keys/remove"
@@ -403,10 +404,13 @@ defmodule Kuroneko.WebTest do
 
   describe "Wi-Fi" do
     defmodule FakeWiFi do
-      def overview do
+      def overview(opts) do
+        if opts[:scan], do: tell(:scanned)
+
         %{
           present: true,
           network: "home",
+          country: "JP",
           connection: :internet,
           address: "192.0.2.10",
           link: nil,
@@ -415,6 +419,8 @@ defmodule Kuroneko.WebTest do
       end
 
       def scan, do: tell(:scanned)
+      defdelegate country_code(code), to: Kuroneko.WiFi
+      def set_country(code), do: tell({:country, code})
       def config("", _passphrase, _opts), do: {:error, :ssid_too_short}
       def config(_ssid, "short", _opts), do: {:error, :password_too_short}
 
@@ -436,9 +442,33 @@ defmodule Kuroneko.WebTest do
       on_exit(fn -> Application.delete_env(:kuroneko, :wifi) end)
     end
 
-    test "the state and the networks in reach" do
-      assert %{"network" => "home", "networks" => [%{"ssid" => "home", "security" => "personal"}]} =
-               Jason.decode!(request(:get, "/api/wifi").resp_body)
+    test "the state and the networks in reach, scanning again when the page asks" do
+      assert %{
+               "network" => "home",
+               "country" => "JP",
+               "networks" => [%{"ssid" => "home", "security" => "personal"}]
+             } = Jason.decode!(request(:get, "/api/wifi").resp_body)
+
+      refute_receive :scanned, 100
+      assert request(:get, "/api/wifi?scan=1").status == 200
+      assert_receive :scanned
+    end
+
+    test "follows a country's rules after the reply, from the page only" do
+      evil = [{"origin", "http://evil.example"}, {"content-type", "application/json"}]
+      assert request(:post, "/api/wifi/country", ~s({"country":"jp"}), evil).status == 403
+
+      conn = request(:post, "/api/wifi/country", ~s({"country":"jp"}), @page)
+      assert {conn.status, Jason.decode!(conn.resp_body)} == {202, %{"country" => "JP"}}
+      assert_receive {:country, "JP"}, 2_000
+
+      conn = request(:post, "/api/wifi/country", ~s({"country":"Japan"}), @page)
+
+      assert {conn.status, Jason.decode!(conn.resp_body)} ==
+               {400, %{"error" => "not a country code"}}
+
+      assert request(:post, "/api/wifi/country", ~s({"code":"JP"}), @page).status == 400
+      refute_receive {:country, _code}, 700
     end
 
     test "joins a network after the reply, from the page only" do

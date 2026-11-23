@@ -12,7 +12,8 @@ defmodule Kuroneko.Application do
     children =
       [
         Kuroneko.LoginLimit,
-        Kuroneko.SetupCode
+        Kuroneko.SetupCode,
+        Kuroneko.WiFi.Scanner
       ] ++ target_children()
 
     # See https://elixir.hexdocs.pm/Supervisor.html

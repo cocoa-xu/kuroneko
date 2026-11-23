@@ -64,6 +64,36 @@ defmodule Kuroneko.WiFiTest do
   test "the host has no Wi-Fi" do
     assert WiFi.config("home", "passphrase") == {:error, :no_wifi}
     refute WiFi.configured?()
-    assert %{present: false, networks: [], network: nil} = WiFi.overview()
+    assert %{present: false, networks: [], network: nil, country: "00"} = WiFi.overview()
+    assert WiFi.set_country("JP") == {:error, :no_wifi}
+  end
+
+  test "a country is two letters, or 00 for rules that hold everywhere" do
+    assert WiFi.country_code("jp") == {:ok, "JP"}
+    assert WiFi.country_code("00") == {:ok, "00"}
+
+    for code <- ["J", "JPN", "J1", "", nil, 81] do
+      assert WiFi.country_code(code) == {:error, :invalid_country}, inspect(code)
+    end
+  end
+
+  test "the country goes with the network and stays when there is none" do
+    joined = %{
+      type: VintageNetWiFi,
+      vintage_net_wifi: %{networks: [%{ssid: "home"}]},
+      ipv4: %{method: :dhcp}
+    }
+
+    assert WiFi.with_country(joined, "JP") == %{
+             joined
+             | vintage_net_wifi: %{networks: [%{ssid: "home"}], regulatory_domain: "JP"}
+           }
+
+    none = %{type: VintageNetWiFi, vintage_net_wifi: %{networks: [], regulatory_domain: "JP"}}
+    assert WiFi.with_country(%{type: VintageNetWiFi}, "JP") == none
+    assert WiFi.with_country(%{type: VintageNet.Technology.Null}, "JP") == none
+
+    key = String.duplicate("0123456789abcdef", 4)
+    assert {:ok, %{vintage_net_wifi: %{regulatory_domain: "00"}}} = WiFi.config("home", key)
   end
 end

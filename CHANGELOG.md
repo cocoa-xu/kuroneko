@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+* The settings page scans on its own while it is open, every ten seconds,
+  and keeps each network for five minutes after it was last seen: a scan
+  that misses a network no longer hides it
+* The country whose Wi-Fi rules apply, on the settings page
+* The device page gives the input's frame rate in FPS
+
 ## v0.1.1 (2026-11-23)
 
 * The data partition takes the rest of the card, also on a card burned

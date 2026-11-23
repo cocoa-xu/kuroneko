@@ -75,7 +75,8 @@ changes nothing outside its own card.
 4. Choose a password, with the setup code. The password logs you in to the
    page and over SSH, with any user name.
 
-5. **Settings** joins the Wi-Fi and adds SSH keys.
+5. **Settings** joins the Wi-Fi, sets the country whose Wi-Fi rules apply,
+   and adds SSH keys.
 
 HTTPS, which the microphone needs, uses a certificate the device made
 itself: the browser asks once whether to trust it.
