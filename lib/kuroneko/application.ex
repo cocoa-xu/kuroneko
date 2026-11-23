@@ -69,7 +69,7 @@ defmodule Kuroneko.Application do
         {Task, &Kuroneko.Provisioning.run/0},
         Kuroneko.TrialGuard,
         {Kuroneko.Gadget, NanoKVMGo.USB.gadget_options() ++ [functions: usb_functions]},
-        {Task, &Kuroneko.USBNetwork.configure_more/0},
+        Supervisor.child_spec({Task, &Kuroneko.USBNetwork.configure_more/0}, id: :usb_networks),
         Kuroneko.VirtualDisk,
         {NanoKVMGo.Video,
          mjpeg_port: 8088, mjpeg_token: mjpeg_token, jpeg_quality: 60, h264_qp: 30},
