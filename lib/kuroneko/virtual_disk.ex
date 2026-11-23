@@ -1080,7 +1080,8 @@ defmodule Kuroneko.VirtualDisk do
   end
 
   defp medium(state, {storage, lun} = slot) do
-    case {state.media[slot], Storage.medium(at(slot))} do
+    case {state.media[slot],
+          with({:ok, inserted} <- Storage.medium(at(slot)), do: {:ok, count_tracks(inserted)})} do
       {%{image: image} = ours, {:ok, %{image: image} = inserted}} ->
         inserted
         |> Map.merge(Map.delete(ours, :drive))
@@ -1099,6 +1100,12 @@ defmodule Kuroneko.VirtualDisk do
         nil
     end
   end
+
+  # The drive tells each track; the page and the API, how many.
+  defp count_tracks(%{tracks: tracks} = medium) when is_list(tracks),
+    do: %{medium | tracks: length(tracks)}
+
+  defp count_tracks(medium), do: medium
 
   # A name is in use when it, or a folder holding it, is in a drive or being
   # made into a drive or copied back to.
