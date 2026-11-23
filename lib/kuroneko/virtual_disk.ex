@@ -27,6 +27,17 @@ defmodule Kuroneko.VirtualDisk do
   @writable_room 8 * 1024 * 1024 * 1024
   @keep_free 1024 * 1024 * 1024
   @mount_options "loop,utf8,shortname=mixed"
+  # What the computer's system leaves on a drive, which is not the folder's:
+  # it does not go back.
+  @system_files [
+    ".fseventsd",
+    ".Spotlight-V100",
+    ".Trashes",
+    ".TemporaryItems",
+    ".DS_Store",
+    "System Volume Information",
+    "$RECYCLE.BIN"
+  ]
 
   @doc false
   @spec start_link(keyword()) :: GenServer.on_start()
@@ -158,10 +169,11 @@ defmodule Kuroneko.VirtualDisk do
   @doc false
   # Copies files and folders, keeping modification times, and says how many
   # bytes are done after each file. Links and devices stay behind.
-  @spec copy_tree(Path.t(), Path.t(), (non_neg_integer() -> any())) :: :ok | {:error, term()}
-  def copy_tree(from, to, progress) do
+  @spec copy_tree(Path.t(), Path.t(), (non_neg_integer() -> any()), (String.t() -> boolean())) ::
+          :ok | {:error, term()}
+  def copy_tree(from, to, progress, skip \\ fn _name -> false end) do
     from
-    |> walk()
+    |> walk(skip)
     |> Enum.reduce_while({:ok, 0}, fn entry, {:ok, done} ->
       case copy_entry(entry, from, to) do
         {:ok, size} ->
@@ -365,7 +377,8 @@ defmodule Kuroneko.VirtualDisk do
     {bytes, _entries, _largest} = measure(mount)
     File.rm_rf(fresh)
 
-    with :ok <- File.mkdir_p(fresh), do: copy_tree(mount, fresh, progress(progress_to, bytes))
+    with :ok <- File.mkdir_p(fresh),
+         do: copy_tree(mount, fresh, progress(progress_to, bytes), &system_file?/1)
   after
     unmount(mount)
   end
@@ -517,14 +530,18 @@ defmodule Kuroneko.VirtualDisk do
     Enum.any?(names, &(&1 == relative or &1 == top or String.starts_with?(relative, &1 <> "/")))
   end
 
-  defp walk(folder) do
+  @doc false
+  @spec system_file?(String.t()) :: boolean()
+  def system_file?(name), do: name in @system_files or String.starts_with?(name, "._")
+
+  defp walk(folder, skip \\ fn _name -> false end) do
     case File.ls(folder) do
       {:ok, names} ->
         Enum.flat_map(names, fn name ->
           path = Path.join(folder, name)
 
-          case File.lstat(path) do
-            {:ok, %{type: :directory}} -> [{:dir, path} | walk(path)]
+          case if(skip.(name), do: :skip, else: File.lstat(path)) do
+            {:ok, %{type: :directory}} -> [{:dir, path} | walk(path, skip)]
             {:ok, %{type: :regular, size: size}} -> [{:file, path, size}]
             _link_or_device -> []
           end

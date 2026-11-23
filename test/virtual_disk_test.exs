@@ -63,6 +63,24 @@ defmodule Kuroneko.VirtualDiskTest do
     assert_receive {:done, 3005}
   end
 
+  test "what the computer's system leaves on a drive does not go back", %{tmp_dir: tmp} do
+    from = Path.join(tmp, "drive")
+    to = Path.join(tmp, "folder")
+    File.mkdir_p!(Path.join(from, ".fseventsd"))
+    File.write!(Path.join(from, ".fseventsd/log"), "x")
+    File.mkdir_p!(Path.join(from, "System Volume Information"))
+    File.write!(Path.join(from, "._a.txt"), "resource fork")
+    File.write!(Path.join(from, ".DS_Store"), "x")
+    File.write!(Path.join(from, "a.txt"), "mine")
+    File.write!(Path.join(from, ".env"), "also mine")
+    File.mkdir_p!(to)
+
+    assert VirtualDisk.copy_tree(from, to, fn _done -> :ok end, &VirtualDisk.system_file?/1) ==
+             :ok
+
+    assert Enum.sort(File.ls!(to)) == [".env", "a.txt"]
+  end
+
   describe "FAT32" do
     test "clusters and FATs by size, from 64 MiB" do
       assert FAT.layout(div(64 * 1024 * 1024, 512)) ==
