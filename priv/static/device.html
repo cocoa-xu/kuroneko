@@ -1198,7 +1198,9 @@ function renderUsb(usb) {
           .map((name) => h("span", { class: "tag" }, name)))
       : "Network only"],
     ["Virtual disk", !usb.functions || !usb.functions.includes("storage") ? null
-      : medium ? `${medium.name || medium.image.split("/").pop()}, ${medium.kind === "folder" ? "folder" : medium.cdrom ? "CD-ROM" : "drive"}${medium.read_only ? ", read-only" : ""}`
+      : medium ? `${medium.name || medium.image.split("/").pop()}, ${medium.kind === "folder"
+          ? `folder as ${{ exfat: "exFAT", fat32: "FAT32" }[medium.filesystem] || "a drive"}`
+          : medium.cdrom ? "CD-ROM" : "drive"}${medium.read_only ? ", read-only" : ""}`
       : "Empty"],
     ["Controller", c && h("span", { class: "mono" }, c.controller)],
   ]);

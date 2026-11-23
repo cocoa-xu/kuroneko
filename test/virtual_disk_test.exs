@@ -2,7 +2,7 @@ defmodule Kuroneko.VirtualDiskTest do
   use ExUnit.Case, async: true
 
   alias Kuroneko.VirtualDisk
-  alias Kuroneko.VirtualDisk.FAT
+  alias Kuroneko.VirtualDisk.{ExFAT, FAT}
 
   @moduletag :tmp_dir
   @gib 1024 * 1024 * 1024
@@ -37,6 +37,16 @@ defmodule Kuroneko.VirtualDiskTest do
     assert {:ok, smaller} = VirtualDisk.drive_size(10 * @gib, 100, true, 12 * @gib)
     assert smaller < 11 * @gib
     assert VirtualDisk.drive_size(10 * @gib, 100, false, 10 * @gib) == {:error, :no_room}
+  end
+
+  test "names no drive takes", %{tmp_dir: tmp} do
+    File.mkdir_p!(Path.join(tmp, "ok/照片"))
+    File.write!(Path.join(tmp, "ok/照片/a b (1).jpg"), "")
+    assert VirtualDisk.bad_name(Path.join(tmp, "ok")) == nil
+
+    File.mkdir_p!(Path.join(tmp, "odd/sub"))
+    File.write!(Path.join(tmp, "odd/sub/what?.txt"), "")
+    assert VirtualDisk.bad_name(Path.join(tmp, "odd")) == "sub/what?.txt"
   end
 
   test "copies a folder's files and folders with their times, not its links", %{tmp_dir: tmp} do
@@ -137,6 +147,69 @@ defmodule Kuroneko.VirtualDiskTest do
 
     test "no image under 64 MiB", %{tmp_dir: tmp} do
       assert FAT.format(Path.join(tmp, "small.img"), 16 * 1024 * 1024) == {:error, :too_small}
+    end
+  end
+
+  describe "exFAT" do
+    test "clusters of 4 KiB for small drives, else 32 KiB" do
+      assert ExFAT.cluster_size(FAT.min_size()) == 4096
+      assert ExFAT.cluster_size(40 * @gib) == 32 * 1024
+    end
+
+    # What mkfs.exfat leaves: the boot sector, and the root directory in the
+    # cluster heap with an empty volume label, the bitmap and the up-case table.
+    defp empty_exfat(path) do
+      boot =
+        <<0xEB, 0x76, 0x90, "EXFAT   ", 0::size(53 * 8), 0::64, 131_072::little-64,
+          2048::little-32, 16::little-32, 4096::little-32, 15_872::little-32, 5::little-32,
+          0x12345678::little-32, 0x0100::little-16, 0::little-16, 9, 3, 1, 0x80, 0,
+          0::size(7 * 8), 0::size(390 * 8), 0x55, 0xAA>>
+
+      root = (4096 + 3 * 8) * 512
+      entries = <<0x83, 0::size(31 * 8), 0x81, 0::size(31 * 8), 0x82, 0::size(31 * 8)>>
+      File.write!(path, boot)
+      {:ok, file} = File.open(path, [:read, :write, :binary])
+      :ok = :file.pwrite(file, root, entries <> <<0::size(4096 * 8 - bit_size(entries))>>)
+      File.close(file)
+      root
+    end
+
+    defp label_entry(path, root) do
+      {:ok, file} = File.open(path, [:read, :binary])
+      {:ok, entry} = :file.pread(file, root, 32)
+      File.close(file)
+      entry
+    end
+
+    test "the volume label in UTF-16, 11 characters at most", %{tmp_dir: tmp} do
+      image = Path.join(tmp, "x.img")
+      root = empty_exfat(image)
+
+      assert ExFAT.set_label(image, "照片 2026") == :ok
+      label = :unicode.characters_to_binary("照片 2026", :utf8, {:utf16, :little})
+      assert label_entry(image, root) == <<0x83, 7, label::binary, 0::size(8 * 8), 0::64>>
+
+      assert ExFAT.set_label(image, "Photos: from the trip😀") == :ok
+      label = :unicode.characters_to_binary("Photos from", :utf8, {:utf16, :little})
+      assert label_entry(image, root) == <<0x83, 11, label::binary, 0::64>>
+
+      assert ExFAT.set_label(image, "abcdefghij😀") == :ok
+      label = :unicode.characters_to_binary("abcdefghij", :utf8, {:utf16, :little})
+      assert label_entry(image, root) == <<0x83, 10, label::binary, 0::size(2 * 8), 0::64>>
+    end
+
+    test "no label for a name of nothing it takes", %{tmp_dir: tmp} do
+      image = Path.join(tmp, "x.img")
+      root = empty_exfat(image)
+      assert ExFAT.set_label(image, "???") == :ok
+      assert label_entry(image, root) == <<0x83, 0::size(31 * 8)>>
+      assert ExFAT.set_label(Path.join(tmp, "x.img"), nil) == :ok
+    end
+
+    test "only on exFAT", %{tmp_dir: tmp} do
+      image = Path.join(tmp, "fat.img")
+      assert FAT.format(image, FAT.min_size(), label: "x") == :ok
+      assert ExFAT.set_label(image, "y") == {:error, :not_exfat}
     end
   end
 end

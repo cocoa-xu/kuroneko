@@ -4,11 +4,12 @@ defmodule Kuroneko.VirtualDisk do
   image files and folders in `/data/images`.
 
     * An image file goes in as it is: a CD-ROM or a drive, read-only or not.
-    * A folder goes in as a FAT32 drive made from it. Read-only, the target
-      computer sees the folder as it was. Writable, what the computer changes
-      goes back to the folder when the drive is ejected, here or by the
-      computer, or at the next start when the NanoKVM restarted with it in.
-      FAT32 holds files of at most 4 GiB.
+    * A folder goes in as a drive made from it: exFAT, or FAT32 for firmware
+      (BIOS updates, UEFI) and older systems, which holds files of at most
+      4 GiB. Read-only, the target computer sees the folder as it was.
+      Writable, what the computer changes goes back to the folder when the
+      drive is ejected, here or by the computer, or at the next start when the
+      NanoKVM restarted with it in.
 
   Making a drive and copying changes back take a while: they run here, one at
   a time, and `state/0` says how far they are.
@@ -18,15 +19,18 @@ defmodule Kuroneko.VirtualDisk do
   require Logger
 
   alias Kuroneko.Gadget.Storage
-  alias Kuroneko.VirtualDisk.FAT
+  alias Kuroneko.VirtualDisk.{ExFAT, FAT}
 
   @work ".kuroneko"
-  @max_file 4 * 1024 * 1024 * 1024 - 1
+  @fat32_max_file 4 * 1024 * 1024 * 1024 - 1
   # Room the target computer can write to in a writable folder: the image is
   # sparse, so it costs only what is written.
   @writable_room 8 * 1024 * 1024 * 1024
   @keep_free 1024 * 1024 * 1024
-  @mount_options "loop,utf8,shortname=mixed"
+  # Without utf8, vfat stores names as Latin-1.
+  @mount %{exfat: {"exfat", "loop,iocharset=utf8"}, fat32: {"vfat", "loop,utf8,shortname=mixed"}}
+  # Characters no exFAT or FAT32 name holds.
+  @bad_chars Enum.map(0..31, &<<&1>>) ++ ~w(" * : < > ? \\ |)
   # What the computer's system leaves on a drive, which is not the folder's:
   # it does not go back.
   @system_files [
@@ -54,8 +58,9 @@ defmodule Kuroneko.VirtualDisk do
 
   @doc """
   Puts an image file or a folder of the library in the drive. Options:
-  `:cdrom` (image files only) and `:read_only`. A folder goes in once its
-  drive is made: see `state/0`.
+  `:cdrom` (image files only), `:read_only`, and `:filesystem` (folders only:
+  `:exfat`, the default, or `:fat32`). A folder goes in once its drive is
+  made: see `state/0`.
   """
   @spec insert(String.t(), keyword()) :: :ok | {:error, term()}
   def insert(name, opts \\ []), do: GenServer.call(__MODULE__, {:insert, name, opts}, 30_000)
@@ -138,9 +143,9 @@ defmodule Kuroneko.VirtualDisk do
   @spec drive_size(non_neg_integer(), non_neg_integer(), boolean(), non_neg_integer()) ::
           {:ok, pos_integer()} | {:error, :no_room}
   def drive_size(bytes, entries, writable, free) do
-    # A 32 KiB cluster, the largest, wasted at most per file, and directory
-    # entries for long names.
-    needed = bytes + entries * (32 * 1024 + 256) + 16 * 1024 * 1024
+    # A 32 KiB cluster, the largest, wasted at most per file, directory entries
+    # for long names, and the FATs: 4 bytes per cluster of 4 KiB or more, twice.
+    needed = bytes + entries * (32 * 1024 + 640) + div(bytes, 512) + 16 * 1024 * 1024
     wanted = max(FAT.min_size(), needed + if(writable, do: @writable_room, else: 0))
     available = free - @keep_free
 
@@ -163,6 +168,16 @@ defmodule Kuroneko.VirtualDisk do
 
       {:dir, _path}, {bytes, entries, largest} ->
         {bytes, entries + 1, largest}
+    end)
+  end
+
+  @doc false
+  # The first name under a folder that no drive takes, or nil.
+  @spec bad_name(Path.t()) :: Path.t() | nil
+  def bad_name(folder) do
+    Enum.find_value(walk(folder), fn entry ->
+      path = elem(entry, 1)
+      if String.contains?(Path.basename(path), @bad_chars), do: Path.relative_to(path, folder)
     end)
   end
 
@@ -234,7 +249,7 @@ defmodule Kuroneko.VirtualDisk do
          {:ok, kind} <- kind(path) do
       case kind do
         :image -> insert_image(state, relative, path, opts)
-        :folder -> make_drive(state, relative, path, Keyword.get(opts, :read_only, true))
+        :folder -> make_drive(state, relative, path, opts)
       end
     else
       error -> {:reply, error, state}
@@ -309,21 +324,32 @@ defmodule Kuroneko.VirtualDisk do
 
   # ---- Folders
 
-  defp make_drive(state, relative, folder, read_only) do
+  defp make_drive(state, relative, folder, opts) do
+    read_only = Keyword.get(opts, :read_only, true)
+    filesystem = Keyword.get(opts, :filesystem, :exfat)
     {bytes, entries, largest} = measure(folder)
 
-    with :ok <- if(largest > @max_file, do: {:error, :file_too_large}, else: :ok),
+    with :ok <- holds(filesystem, largest),
+         :ok <- if(name = bad_name(folder), do: {:error, {:bad_name, name}}, else: :ok),
          {:ok, size} <- drive_size(bytes, entries, not read_only, free_space()),
          :ok <- File.mkdir_p(Path.join(dir(), @work)) do
       state = forget_folder_image(state)
       id = Base.url_encode64(:crypto.strong_rand_bytes(6), padding: false)
       image = Path.join([dir(), @work, "#{id}.img"])
-      medium = %{name: relative, kind: :folder, read_only: read_only, image: image}
+
+      medium = %{
+        name: relative,
+        kind: :folder,
+        filesystem: filesystem,
+        read_only: read_only,
+        image: image
+      }
+
       progress = progress(self(), bytes)
 
       task =
         Task.async(fn ->
-          with :ok <- build(folder, image, size, Path.basename(relative), progress),
+          with :ok <- build(folder, image, size, medium, progress),
                :ok <- write_marker(medium),
                :ok <- Storage.insert(image, cdrom: false, read_only: read_only) do
             {:inserted, %{medium | image: in_drive(image)}}
@@ -341,12 +367,17 @@ defmodule Kuroneko.VirtualDisk do
     end
   end
 
-  defp build(folder, image, size, label, progress) do
-    mount = image <> ".mnt"
+  defp holds(:exfat, _largest), do: if(ExFAT.available?(), do: :ok, else: {:error, :no_exfat})
+  defp holds(:fat32, largest) when largest > @fat32_max_file, do: {:error, :file_too_large}
+  defp holds(:fat32, _largest), do: :ok
 
-    with :ok <- FAT.format(image, size, label: label),
+  defp build(folder, image, size, medium, progress) do
+    mount = image <> ".mnt"
+    label = Path.basename(medium.name)
+
+    with :ok <- format(medium.filesystem, image, size, label),
          :ok <- File.mkdir_p(mount),
-         :ok <- mount(image, mount, false) do
+         :ok <- mount(image, mount, medium.filesystem, false) do
       try do
         copy_tree(folder, mount, progress)
       after
@@ -355,15 +386,18 @@ defmodule Kuroneko.VirtualDisk do
     end
   end
 
+  defp format(:exfat, image, size, label), do: ExFAT.format(image, size, label: label)
+  defp format(:fat32, image, size, label), do: FAT.format(image, size, label: label)
+
   # What a writable folder's drive holds goes back to the folder: copied out
   # beside it first, then put in its place, so that a failure keeps the
   # folder as it was.
-  defp copy_back(%{image: image, name: relative}, progress_to) do
+  defp copy_back(%{image: image, name: relative, filesystem: filesystem}, progress_to) do
     folder = Path.join(dir(), relative)
     {mount, fresh, old} = {image <> ".mnt", image <> ".copy", image <> ".old"}
 
     with :ok <- File.mkdir_p(mount),
-         :ok <- mount(image, mount, true),
+         :ok <- mount(image, mount, filesystem, true),
          :ok <- copy_out(mount, fresh, progress_to),
          :ok <- if(File.exists?(folder), do: File.rename(folder, old), else: :ok),
          :ok <- File.mkdir_p(Path.dirname(folder)),
@@ -451,18 +485,21 @@ defmodule Kuroneko.VirtualDisk do
   defp markers do
     for marker <- Path.wildcard(Path.join([dir(), @work, "*.img.json"])),
         {:ok, json} <- [File.read(marker)],
-        {:ok, %{"name" => name, "read_only" => read_only}} <- [Jason.decode(json)] do
+        {:ok, %{"name" => name, "read_only" => read_only} = fields} <- [Jason.decode(json)] do
       %{
         name: name,
         kind: :folder,
+        filesystem: if(fields["filesystem"] == "fat32", do: :fat32, else: :exfat),
         read_only: read_only,
         image: String.trim_trailing(marker, ".json")
       }
     end
   end
 
-  defp write_marker(medium),
-    do: File.write(medium.image <> ".json", Jason.encode!(Map.take(medium, [:name, :read_only])))
+  defp write_marker(medium) do
+    fields = Map.take(medium, [:name, :filesystem, :read_only])
+    File.write(medium.image <> ".json", Jason.encode!(fields))
+  end
 
   defp remove_image(image) do
     File.rm(image)
@@ -593,15 +630,18 @@ defmodule Kuroneko.VirtualDisk do
          {:ok, %{mtime: mtime}} <- File.stat(path, time: :posix),
          :ok <- File.touch(target, mtime) do
       {:ok, size}
+    else
+      {:error, reason} -> {:error, {:copy, Path.relative_to(path, from), reason}}
     end
   end
 
   defp progress(server, total), do: fn done -> send(server, {:progress, done, total}) end
 
-  defp mount(image, mount, read_only) do
-    options = if read_only, do: @mount_options <> ",ro", else: @mount_options
+  defp mount(image, mount, filesystem, read_only) do
+    {type, options} = Map.fetch!(@mount, filesystem)
+    options = if read_only, do: options <> ",ro", else: options
 
-    case System.cmd("mount", ["-o", options, "-t", "vfat", image, mount], stderr_to_stdout: true) do
+    case System.cmd("mount", ["-o", options, "-t", type, image, mount], stderr_to_stdout: true) do
       {_output, 0} -> :ok
       {output, _status} -> {:error, {:mount, String.trim(output)}}
     end
@@ -632,6 +672,11 @@ defmodule Kuroneko.VirtualDisk do
     do: if(File.exists?(path), do: path, else: existing_parent(Path.dirname(path)))
 
   defp describe({:error, {:mount, output}}), do: "the drive could not be mounted: #{output}"
+  defp describe({:error, {:mkfs, output}}), do: "the drive could not be made: #{output}"
+
+  defp describe({:error, {:copy, path, reason}}),
+    do: "#{path} could not be copied: #{:file.format_error(reason)}"
+
   defp describe({:error, reason}), do: inspect(reason)
   defp describe(other), do: inspect(other)
 

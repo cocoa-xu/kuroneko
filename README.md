@@ -145,10 +145,11 @@ password are then set on the device. Build firmware for others that way.
 **Disk…** on the KVM page holds the images and folders the target sees as
 a USB drive, in `/data/images` on the device: upload them there from the
 page, or over SFTP. An image file goes in as a CD-ROM or a drive,
-read-only or writable. A folder goes in as a FAT32 drive made from it:
+read-only or writable. A folder goes in as a drive made from it:
 read-only, the target sees the folder as it was; writable, what the target
-changes comes back to the folder when the drive is ejected. FAT32 holds
-files of at most 4 GiB.
+changes comes back to the folder when the drive is ejected. The drive is
+exFAT, which holds files of any size, or FAT32 for BIOS updates, UEFI and
+older systems, with files of at most 4 GiB.
 
 The USB network puts the device in a /30 of 172.31.0.0/16 made from its
 name. Where that is taken, the device page sets another address, such as

@@ -35,7 +35,8 @@ defmodule Kuroneko.Web do
       `Kuroneko.DeviceSocket`)
     * `GET /api/disk`: the virtual disk's library and drive (see
       `Kuroneko.VirtualDisk`); `POST /api/disk/insert` `{"name": ...,
-      "cdrom": false, "read_only": true}`, `POST /api/disk/eject`, `POST
+      "cdrom": false, "read_only": true, "filesystem": "exfat"}` (or
+      `"fat32"`, for a folder), `POST /api/disk/eject`, `POST
       /api/disk/delete` `{"name": ...}`, `PUT /api/disk/files?name=...` with
       the file as the body (`folder/file` for a folder's files, `&replace=1`
       to replace one)
@@ -586,9 +587,13 @@ defmodule Kuroneko.Web do
   defp usb_network, do: Application.get_env(:kuroneko, :usb_network, Kuroneko.USBNetwork)
 
   defp disk_options(data) do
-    for {key, field} <- [cdrom: "cdrom", read_only: "read_only"],
-        is_boolean(data[field]),
-        do: {key, data[field]}
+    flags = for key <- [:cdrom, :read_only], is_boolean(data["#{key}"]), do: {key, data["#{key}"]}
+
+    case data["filesystem"] do
+      "exfat" -> [{:filesystem, :exfat} | flags]
+      "fat32" -> [{:filesystem, :fat32} | flags]
+      _other -> flags
+    end
   end
 
   # The page explains the reasons it knows.
@@ -599,12 +604,14 @@ defmodule Kuroneko.Web do
         r when r in [:invalid_name, :file_too_large] -> 400
         :enoent -> 404
         :no_room -> 507
-        :no_storage -> 503
+        r when r in [:no_storage, :no_exfat] -> 503
         _other -> 500
       end
 
     json(conn, status, %{error: reason})
   end
+
+  defp disk_refused(conn, {:bad_name, name}), do: json(conn, 400, %{error: :bad_name, name: name})
 
   defp disk_refused(conn, reason), do: json(conn, 500, %{error: inspect(reason)})
 

@@ -566,6 +566,7 @@ defmodule Kuroneko.WebTest do
         do: %{items: [%{name: "debian.iso", kind: :image, size: 3}], medium: nil, busy: nil}
 
       def insert("busy.iso", _opts), do: {:error, :busy}
+      def insert("Odd", _opts), do: {:error, {:bad_name, "Odd/a:b.txt"}}
       def insert(name, opts), do: tell({:insert, name, opts})
       def eject, do: tell(:ejected)
       def delete(name), do: tell({:deleted, name})
@@ -616,6 +617,18 @@ defmodule Kuroneko.WebTest do
 
       conn = request(:post, "/api/disk/insert", ~s({"name":"busy.iso"}), @page)
       assert {conn.status, Jason.decode!(conn.resp_body)} == {409, %{"error" => "busy"}}
+
+      folder = ~s({"name":"Photos","read_only":false,"filesystem":"fat32"})
+      assert request(:post, "/api/disk/insert", folder, @page).status == 202
+      assert_receive {:insert, "Photos", [filesystem: :fat32, read_only: false]}
+      odd = ~s({"name":"Photos","filesystem":"ntfs"})
+      assert request(:post, "/api/disk/insert", odd, @page).status == 202
+      assert_receive {:insert, "Photos", []}
+
+      conn = request(:post, "/api/disk/insert", ~s({"name":"Odd"}), @page)
+
+      assert {conn.status, Jason.decode!(conn.resp_body)} ==
+               {400, %{"error" => "bad_name", "name" => "Odd/a:b.txt"}}
 
       assert request(:post, "/api/disk/eject", "{}", @page).status == 202
       assert_receive :ejected
