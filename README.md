@@ -142,6 +142,18 @@ password are then set on the device. Build firmware for others that way.
 
 ## Using it
 
+**Disk…** on the KVM page holds the images and folders the target sees as
+a USB drive, in `/data/images` on the device: upload them there from the
+page, or over SFTP. An image file goes in as a CD-ROM or a drive,
+read-only or writable. A folder goes in as a FAT32 drive made from it:
+read-only, the target sees the folder as it was; writable, what the target
+changes comes back to the folder when the drive is ejected. FAT32 holds
+files of at most 4 GiB.
+
+The USB network puts the device in a /30 of 172.31.0.0/16 made from its
+name. Where that is taken, the device page sets another address, such as
+`10.55.0.1/24`: the target gets the next one.
+
 The memory for video and the NPU (192 and 64 MiB) changes at the next boot,
 over SSH: `NanoKVMGo.CMA.put_sizes(%{video: 160, npu: 96})`. With
 `trial: true` the next boot runs the new sizes on trial, kept the same way

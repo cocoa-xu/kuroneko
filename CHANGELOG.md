@@ -7,6 +7,14 @@
   that misses a network no longer hides it
 * The country whose Wi-Fi rules apply, on the settings page
 * The device page gives the input's frame rate in FPS
+* Disk… on the KVM page: images and folders for the target's USB drive,
+  uploaded from the page. A folder goes in as a FAT32 drive, read-only or
+  writable, and a writable one's changes come back to it when ejected
+* The USB network's addresses can move, on the device page, where
+  172.31.0.0/16 is taken
+* A network's signal in dBm when the pointer rests on its bars, and a
+  button to the Wi-Fi settings on the device page while there is no Wi-Fi
+* The settings page's password card follows the SSH card, without a gap
 
 ## v0.1.1 (2026-11-23)
 
