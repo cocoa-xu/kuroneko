@@ -35,8 +35,10 @@ defmodule Kuroneko.Web do
       `Kuroneko.DeviceSocket`)
     * `GET /api/disk`: the virtual disk's library and drive (see
       `Kuroneko.VirtualDisk`); `POST /api/disk/insert` `{"name": ...,
-      "cdrom": false, "read_only": true, "filesystem": "exfat"}` (or
-      `"fat32"`, for a folder), `POST /api/disk/eject`, `POST
+      "media": "auto", "read_only": true}` for an image (`"cd"`, `"dvd"`,
+      `"bd"` or `"drive"` force one), `{"name": ..., "filesystem":
+      "exfat", "read_only": true}` (or `"fat32"`) for a folder, `POST
+      /api/disk/eject`, `POST
       /api/disk/delete` `{"name": ...}`, `PUT /api/disk/files?name=...` with
       the file as the body (`folder/file` for a folder's files, `&replace=1`
       to replace one)
@@ -586,14 +588,21 @@ defmodule Kuroneko.Web do
   defp disk, do: Application.get_env(:kuroneko, :virtual_disk, Kuroneko.VirtualDisk)
   defp usb_network, do: Application.get_env(:kuroneko, :usb_network, Kuroneko.USBNetwork)
 
-  defp disk_options(data) do
-    flags = for key <- [:cdrom, :read_only], is_boolean(data["#{key}"]), do: {key, data["#{key}"]}
+  @disk_choices %{
+    "media" => %{"auto" => :auto, "cd" => :cd, "dvd" => :dvd, "bd" => :bd, "drive" => :drive},
+    "filesystem" => %{"exfat" => :exfat, "fat32" => :fat32}
+  }
 
-    case data["filesystem"] do
-      "exfat" -> [{:filesystem, :exfat} | flags]
-      "fat32" -> [{:filesystem, :fat32} | flags]
-      _other -> flags
-    end
+  defp disk_options(data) do
+    choices =
+      for {field, values} <- @disk_choices,
+          value = values[data[field]],
+          value != nil,
+          do: {String.to_existing_atom(field), value}
+
+    if is_boolean(data["read_only"]),
+      do: choices ++ [read_only: data["read_only"]],
+      else: choices
   end
 
   # The page explains the reasons it knows.
@@ -604,7 +613,7 @@ defmodule Kuroneko.Web do
         r when r in [:invalid_name, :file_too_large] -> 400
         :enoent -> 404
         :no_room -> 507
-        r when r in [:no_storage, :no_exfat] -> 503
+        r when r in [:no_storage, :no_exfat, :disc_unsupported] -> 503
         _other -> 500
       end
 

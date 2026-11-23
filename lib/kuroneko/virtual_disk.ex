@@ -3,7 +3,9 @@ defmodule Kuroneko.VirtualDisk do
   The virtual disk's library and what is in its drive (`Kuroneko.Gadget.Storage`):
   image files and folders in `/data/images`.
 
-    * An image file goes in as it is: a CD-ROM or a drive, read-only or not.
+    * An image file goes in as it is: on the disc its format belongs on, a CD,
+      a DVD or a BD (see `Kuroneko.VirtualDisk.Image`), or as a USB drive,
+      read-only or not. Any of these can be asked for instead.
     * A folder goes in as a drive made from it: exFAT, or FAT32 for firmware
       (BIOS updates, UEFI) and older systems, which holds files of at most
       4 GiB. Read-only, the target computer sees the folder as it was.
@@ -19,7 +21,7 @@ defmodule Kuroneko.VirtualDisk do
   require Logger
 
   alias Kuroneko.Gadget.Storage
-  alias Kuroneko.VirtualDisk.{ExFAT, FAT}
+  alias Kuroneko.VirtualDisk.{ExFAT, FAT, Image}
 
   @work ".kuroneko"
   @fat32_max_file 4 * 1024 * 1024 * 1024 - 1
@@ -49,18 +51,25 @@ defmodule Kuroneko.VirtualDisk do
 
   @doc """
   The library, what is in the drive and what is under way: `%{items:
-  [%{name, kind: :image | :folder, size}], medium: nil | %{name, kind,
-  cdrom, read_only, image}, busy: nil | %{action: :making | :copying_back,
-  name, done, total}, free: bytes, error: nil | text}`.
+  [%{name, kind: :image | :folder, size, format}], medium: nil | %{name,
+  kind, cdrom, disc, read_only, image}, busy: nil | %{action: :making |
+  :copying_back, name, done, total}, free: bytes, error: nil | text}`. An
+  image's `format` is what `Kuroneko.VirtualDisk.Image.probe/1` finds.
   """
   @spec state() :: map()
   def state, do: GenServer.call(__MODULE__, :state, 30_000)
 
   @doc """
   Puts an image file or a folder of the library in the drive. Options:
-  `:cdrom` (image files only), `:read_only`, and `:filesystem` (folders only:
-  `:exfat`, the default, or `:fat32`). A folder goes in once its drive is
-  made: see `state/0`.
+
+    * `:media` (image files): `:auto`, the default, puts an optical disc
+      image on its disc and any other image in a USB drive; `:cd`, `:dvd`,
+      `:bd` and `:drive` force one
+    * `:read_only`: for drives; discs are read-only. By default an optical
+      disc image in a USB drive is read-only, other images are not
+    * `:filesystem` (folders): `:exfat`, the default, or `:fat32`
+
+  A folder goes in once its drive is made: see `state/0`.
   """
   @spec insert(String.t(), keyword()) :: :ok | {:error, term()}
   def insert(name, opts \\ []), do: GenServer.call(__MODULE__, {:insert, name, opts}, 30_000)
@@ -209,7 +218,7 @@ defmodule Kuroneko.VirtualDisk do
 
   @impl GenServer
   def init(_opts),
-    do: {:ok, %{medium: nil, busy: nil, task: nil, error: nil}, {:continue, :start}}
+    do: {:ok, %{medium: nil, busy: nil, task: nil, error: nil, formats: %{}}, {:continue, :start}}
 
   @impl GenServer
   def handle_continue(:start, state) do
@@ -220,9 +229,10 @@ defmodule Kuroneko.VirtualDisk do
   @impl GenServer
   def handle_call(:state, _from, state) do
     state = check_drive(state)
+    {items, state} = items(state)
 
     reply = %{
-      items: items(),
+      items: items,
       medium: medium(state),
       busy: state.busy,
       free: free_space(),
@@ -308,17 +318,54 @@ defmodule Kuroneko.VirtualDisk do
   # ---- Image files
 
   defp insert_image(state, relative, path, opts) do
-    cdrom = Keyword.get(opts, :cdrom, String.downcase(Path.extname(path)) == ".iso")
-    read_only = Keyword.get(opts, :read_only, cdrom)
+    {format, entry} = cached_format(state.formats, path)
+    state = put_in(state.formats[path], entry)
+    disc = disc(Keyword.get(opts, :media, :auto), format)
+    read_only = disc != nil or Keyword.get(opts, :read_only, format.disc != nil)
 
-    case Storage.insert(path, cdrom: cdrom, read_only: read_only) do
+    case Storage.insert(path, cdrom: disc != nil, disc: disc, read_only: read_only) do
       :ok ->
         state = forget_folder_image(state)
-        medium = %{name: relative, kind: :image, read_only: read_only, image: in_drive(path)}
+
+        medium = %{
+          name: relative,
+          kind: :image,
+          cdrom: disc != nil,
+          disc: disc,
+          read_only: read_only,
+          image: in_drive(path)
+        }
+
         {:reply, :ok, %{state | medium: medium, error: nil}}
 
       error ->
         {:reply, error, state}
+    end
+  end
+
+  # The disc an image goes in on, nil for a USB drive.
+  defp disc(:auto, format), do: format.disc
+  defp disc(:drive, _format), do: nil
+  defp disc(disc, _format) when disc in [:cd, :dvd, :bd], do: disc
+
+  # What an image holds, and the cache entry for it: read again only when
+  # the file changed.
+  defp cached_format(formats, path) do
+    case {File.stat(path, time: :posix), formats[path]} do
+      {{:ok, %{mtime: mtime, size: size}}, {mtime, size, format} = entry} ->
+        {format, entry}
+
+      {{:ok, %{mtime: mtime, size: size}}, _stale} ->
+        format =
+          case Image.probe(path) do
+            {:ok, format} -> format
+            {:error, _reason} -> %{disc: nil}
+          end
+
+        {format, {mtime, size, format}}
+
+      {{:error, _reason}, _cached} ->
+        {%{disc: nil}, nil}
     end
   end
 
@@ -551,20 +598,32 @@ defmodule Kuroneko.VirtualDisk do
 
   # ---- Library
 
-  defp items do
-    case File.ls(dir()) do
-      {:ok, names} ->
-        for name <- Enum.sort(names),
-            not String.starts_with?(name, "."),
-            path = Path.join(dir(), name),
-            {:ok, kind} <- [kind(path)] do
-          size = if kind == :folder, do: elem(measure(path), 0), else: File.stat!(path).size
-          %{name: name, kind: kind, size: size}
-        end
+  defp items(state) do
+    names =
+      case File.ls(dir()) do
+        {:ok, names} -> Enum.sort(names)
+        {:error, _reason} -> []
+      end
 
-      {:error, _reason} ->
-        []
-    end
+    entries =
+      for name <- names,
+          not String.starts_with?(name, "."),
+          path = Path.join(dir(), name),
+          {:ok, kind} <- [kind(path)],
+          do: {name, path, kind}
+
+    {items, formats} =
+      Enum.map_reduce(entries, %{}, fn
+        {name, path, :folder}, formats ->
+          {%{name: name, kind: :folder, size: elem(measure(path), 0)}, formats}
+
+        {name, path, :image}, formats ->
+          {format, entry} = cached_format(state.formats, path)
+          item = %{name: name, kind: :image, size: File.stat!(path).size, format: format}
+          {item, Map.put(formats, path, entry)}
+      end)
+
+    {items, %{state | formats: formats}}
   end
 
   defp kind(path) do

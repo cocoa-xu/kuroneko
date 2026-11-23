@@ -8,9 +8,12 @@
 * The country whose Wi-Fi rules apply, on the settings page
 * The device page gives the input's frame rate in FPS
 * Disk… on the KVM page: images and folders for the target's USB drive,
-  uploaded from the page. A folder goes in as an exFAT drive, or FAT32 for
-  BIOS updates, UEFI and older systems, read-only or writable, and a
-  writable one's changes come back to it when ejected
+  uploaded from the page. An image goes in as what it holds, read from its
+  file systems: a CD, a DVD (Windows installers too, past the CD's 2.3 GB)
+  or a Blu-ray disc, or a USB drive, and any of these can be forced. A
+  folder goes in as an exFAT drive, or FAT32 for BIOS updates, UEFI and
+  older systems, read-only or writable, and a writable one's changes come
+  back to it when ejected
 * The USB network's addresses can move, on the device page, where
   172.31.0.0/16 is taken
 * A network's signal in dBm when the pointer rests on its bars, and a

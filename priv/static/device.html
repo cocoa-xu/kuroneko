@@ -1200,7 +1200,8 @@ function renderUsb(usb) {
     ["Virtual disk", !usb.functions || !usb.functions.includes("storage") ? null
       : medium ? `${medium.name || medium.image.split("/").pop()}, ${medium.kind === "folder"
           ? `folder as ${{ exfat: "exFAT", fat32: "FAT32" }[medium.filesystem] || "a drive"}`
-          : medium.cdrom ? "CD-ROM" : "drive"}${medium.read_only ? ", read-only" : ""}`
+          : medium.cdrom ? { cd: "CD-ROM", dvd: "DVD-ROM", bd: "BD-ROM" }[medium.disc] || "CD-ROM"
+          : "USB drive"}${medium.read_only ? ", read-only" : ""}`
       : "Empty"],
     ["Controller", c && h("span", { class: "mono" }, c.controller)],
   ]);

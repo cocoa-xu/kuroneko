@@ -609,11 +609,15 @@ defmodule Kuroneko.WebTest do
 
     test "inserts, ejects and deletes for the page only, and says why not" do
       evil = [{"origin", "http://evil.example"}, {"content-type", "application/json"}]
-      body = ~s({"name":"debian.iso","cdrom":true,"read_only":true})
+      body = ~s({"name":"debian.iso","media":"dvd"})
       assert request(:post, "/api/disk/insert", body, evil).status == 403
 
       assert request(:post, "/api/disk/insert", body, @page).status == 202
-      assert_receive {:insert, "debian.iso", [cdrom: true, read_only: true]}
+      assert_receive {:insert, "debian.iso", [media: :dvd]}
+
+      body = ~s({"name":"debian.iso","media":"drive","read_only":false})
+      assert request(:post, "/api/disk/insert", body, @page).status == 202
+      assert_receive {:insert, "debian.iso", [media: :drive, read_only: false]}
 
       conn = request(:post, "/api/disk/insert", ~s({"name":"busy.iso"}), @page)
       assert {conn.status, Jason.decode!(conn.resp_body)} == {409, %{"error" => "busy"}}

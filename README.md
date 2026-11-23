@@ -144,8 +144,12 @@ password are then set on the device. Build firmware for others that way.
 
 **Disk…** on the KVM page holds the images and folders the target sees as
 a USB drive, in `/data/images` on the device: upload them there from the
-page, or over SFTP. An image file goes in as a CD-ROM or a drive,
-read-only or writable. A folder goes in as a drive made from it:
+page, or over SFTP. An image goes in as what it holds, read from its own
+structures: a disc image on the disc its format belongs on (ISO 9660 alone
+a CD, UDF a DVD, UDF 2.50 and later a Blu-ray disc, any of them larger when
+a smaller disc cannot hold it), any other image as a USB drive. The page
+shows what it found under each image, and any of these can be forced. A
+folder goes in as a drive made from it:
 read-only, the target sees the folder as it was; writable, what the target
 changes comes back to the folder when the drive is ejected. The drive is
 exFAT, which holds files of any size, or FAT32 for BIOS updates, UEFI and

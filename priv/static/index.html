@@ -70,7 +70,8 @@
   .diskdrive span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .disklist { margin: 10px 0 0; max-height: 40vh; overflow: auto; border: 1px solid #2c3036; border-radius: 6px; }
   .disklist:empty { display: none; }
-  .diskrow { display: flex; align-items: center; gap: 8px; padding: 6px 10px; }
+  .diskrow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 6px 10px; }
+  .diskrow .diskinfo { flex-basis: 100%; white-space: normal; }
   .diskrow + .diskrow { border-top: 1px solid #2c3036; }
   .diskrow .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     color: #e6e8eb; }
@@ -206,12 +207,13 @@
       <input type="file" id="diskfiles" multiple hidden>
       <input type="file" id="diskfolder" webkitdirectory hidden>
     </div>
-    <p class="note">An ISO image goes in as a CD-ROM, another image as a drive. A folder goes in as a drive
-      made from it: read-only, the computer sees the folder as it was; writable, what the computer changes
-      comes back to the folder when the drive is ejected. Folders are exFAT drives, or FAT32 for BIOS
-      updates, UEFI and older systems, which holds files of at most 4 GiB. Eject the drive on the computer
-      before ejecting it here. The library is <code>/data/images</code> on the NanoKVM, which SFTP reaches
-      too. <span id="diskfree"></span></p>
+    <p class="note">An image goes in as what it holds: a disc image on the disc its format belongs on (CD,
+      DVD or Blu-ray), any other image as a USB drive; the line under each image says what was found, and
+      the choice can be forced. A folder goes in as a drive made from it: read-only, the computer sees the
+      folder as it was; writable, what the computer changes comes back to the folder when the drive is
+      ejected. Folders are exFAT drives, or FAT32 for BIOS updates, UEFI and older systems, which holds
+      files of at most 4 GiB. Eject the drive on the computer before ejecting it here. The library is
+      <code>/data/images</code> on the NanoKVM, which SFTP reaches too. <span id="diskfree"></span></p>
     <p class="note error" id="diskerror" hidden></p>
     <menu><button type="button" id="diskclose">Close</button></menu>
   </form>
@@ -1119,18 +1121,60 @@
     enoent: "That is not in the library any more.",
     file_too_large: "A file is larger than 4 GiB, more than FAT32 holds: choose exFAT.",
     no_exfat: "This NanoKVM's system has no exFAT: update it, or choose FAT32.",
+    disc_unsupported: "This NanoKVM's system has CD drives only: update it, or choose CD-ROM.",
     bad_name: (data) => `“${data.name}” has a character drives do not take (" * : < > ? \\ |): rename it first.`,
     no_room: "Not enough free space on the NanoKVM.",
     no_storage: "The virtual disk is off: turn it on in USB…",
   };
-  const MODES = {
-    iso: [["cdrom", "CD-ROM"], ["ro", "Drive, read-only"], ["rw", "Drive, writable"]],
-    image: [["rw", "Drive, writable"], ["ro", "Drive, read-only"], ["cdrom", "CD-ROM"]],
-    folder: [["exfat-ro", "exFAT, read-only"], ["exfat-rw", "exFAT, writable"],
-             ["fat32-ro", "FAT32, read-only"], ["fat32-rw", "FAT32, writable"]],
-  };
   const FILESYSTEMS = { exfat: "exFAT", fat32: "FAT32" };
-  const diskModes = {};
+  const DRIVES = { cd: "CD-ROM", dvd: "DVD-ROM", bd: "BD-ROM" };
+  const DISCS = { cd: "CD", dvd: "DVD", bd: "Blu-ray" };
+  const BOOTS = { bios: "BIOS", uefi: "UEFI", other: "other firmware" };
+
+  // How an item can go in, the first being the default.
+  function diskModes(item) {
+    if (item.kind === "folder") {
+      return [["exfat-ro", "exFAT, read-only"], ["exfat-rw", "exFAT, writable"],
+              ["fat32-ro", "FAT32, read-only"], ["fat32-rw", "FAT32, writable"]];
+    }
+    const disc = item.format && item.format.disc;
+    return [["auto", disc ? `Auto: ${DRIVES[disc]}` : "Auto: USB drive, writable"],
+            ["cd", "CD-ROM"], ["dvd", "DVD-ROM"], ["bd", "BD-ROM"],
+            ["drive-ro", "USB drive, read-only"], ["drive-rw", "USB drive, writable"]];
+  }
+
+  // What an image holds, from its own structures.
+  function formatText(f) {
+    if (!f) return "";
+    const parts = [];
+    const systems = [f.iso9660 && "ISO 9660", f.joliet && "Joliet", f.udf && `UDF ${f.udf}`].filter(Boolean);
+    if (f.disc) {
+      parts.push(`${DISCS[f.disc]} format` + (systems.length ? ` (${systems.join(", ")})` : "") +
+        (f.layers === 2 ? ", two layers" : ""));
+    }
+    if (f.boot && f.boot.length) parts.push(`boots ${f.boot.map((b) => BOOTS[b] || b).join(" and ")}`);
+    if (f.partitions) {
+      parts.push(`${f.partitions.toUpperCase()} partition table` + (f.disc ? ": boots as a USB drive too" : ""));
+    } else if (!f.disc) {
+      parts.push("no disc format or partition table found");
+    }
+    return parts.join("; ");
+  }
+
+  function insertBody(item, mode) {
+    const body = { name: item.name };
+    if (item.kind === "folder") {
+      body.filesystem = mode.split("-")[0];
+      body.read_only = !mode.endsWith("rw");
+    } else if (mode.startsWith("drive")) {
+      body.media = "drive";
+      body.read_only = mode.endsWith("ro");
+    } else {
+      body.media = mode;
+    }
+    return body;
+  }
+  const diskChoices = {};
   let diskTimer = null, diskShown = "", disk = null, uploading = null;
 
   const node = (tag, props, ...children) => {
@@ -1171,7 +1215,7 @@
   function describeMedium(m) {
     const access = m.read_only ? "read-only" : "writable";
     return m.kind === "folder" ? `folder as ${FILESYSTEMS[m.filesystem] || "a drive"}, ${access}`
-      : `${m.cdrom ? "CD-ROM" : "drive"}, ${access}`;
+      : `${m.cdrom ? DRIVES[m.disc] || "CD-ROM" : "USB drive"}, ${access}`;
   }
 
   // The list is drawn anew only when it changes, so that a choice being made stays.
@@ -1198,16 +1242,14 @@
   function diskRow(item, s) {
     const inDrive = !!s.medium && s.medium.name === item.name;
     const busyHere = !!s.busy && s.busy.name === item.name;
-    const kind = item.kind === "folder" ? "folder" : /\.iso$/i.test(item.name) ? "iso" : "image";
-    const mode = node("select", { title: kind === "folder"
+    const mode = node("select", { title: item.kind === "folder"
         ? "How the computer sees it. exFAT holds files of any size; FAT32 is for BIOS updates, UEFI and older systems."
-        : "How the computer sees it",
-      onchange: (e) => { diskModes[item.name] = e.target.value; } },
-      ...MODES[kind].map(([value, label]) => new Option(label, value)));
-    if (diskModes[item.name]) mode.value = diskModes[item.name];
+        : "How the computer sees it. Auto follows what the image holds; the others force it.",
+      onchange: (e) => { diskChoices[item.name] = e.target.value; } },
+      ...diskModes(item).map(([value, label]) => new Option(label, value)));
+    if (diskChoices[item.name]) mode.value = diskChoices[item.name];
     const insert = node("button", { type: "button", textContent: "Insert", disabled: !!s.busy, onclick: () =>
-      diskAction("/api/disk/insert", { name: item.name, cdrom: mode.value === "cdrom",
-        read_only: !mode.value.endsWith("rw"), filesystem: kind === "folder" ? mode.value.split("-")[0] : undefined }) });
+      diskAction("/api/disk/insert", insertBody(item, mode.value)) });
     const remove = node("button", { type: "button", textContent: "Delete", disabled: inDrive || busyHere,
       onclick: () => confirm(`Delete “${item.name}” from the NanoKVM?`) && diskAction("/api/disk/delete", { name: item.name }) });
     return node("div", { className: "diskrow" },
@@ -1216,7 +1258,8 @@
       node("span", { className: "muted", textContent: bytesText(item.size) }),
       inDrive ? node("span", { className: "muted", textContent: "In the drive" }) : mode,
       inDrive ? null : insert,
-      remove);
+      remove,
+      item.format ? node("span", { className: "muted diskinfo", textContent: formatText(item.format) }) : null);
   }
 
   function uploadOne(file, name, replace, onProgress) {
