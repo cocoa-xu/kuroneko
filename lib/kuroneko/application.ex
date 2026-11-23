@@ -69,6 +69,7 @@ defmodule Kuroneko.Application do
         {Task, &Kuroneko.Provisioning.run/0},
         Kuroneko.TrialGuard,
         {Kuroneko.Gadget, NanoKVMGo.USB.gadget_options() ++ [functions: usb_functions]},
+        Kuroneko.VirtualDisk,
         {NanoKVMGo.Video,
          mjpeg_port: 8088, mjpeg_token: mjpeg_token, jpeg_quality: 60, h264_qp: 30},
         NanoKVMGo.Audio,

@@ -65,6 +65,18 @@
   dialog menu { display: flex; justify-content: flex-end; gap: 8px; margin: 14px 0 0; padding: 0; }
   dialog button.primary { border-color: #3fa45b; color: #e6e8eb; }
   dialog button:disabled { opacity: 0.5; cursor: default; }
+  .diskdrive { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid #2c3036;
+    border-radius: 6px; }
+  .diskdrive span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .disklist { margin: 10px 0 0; max-height: 40vh; overflow: auto; border: 1px solid #2c3036; border-radius: 6px; }
+  .disklist:empty { display: none; }
+  .diskrow { display: flex; align-items: center; gap: 8px; padding: 6px 10px; }
+  .diskrow + .diskrow { border-top: 1px solid #2c3036; }
+  .diskrow .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: #e6e8eb; }
+  .diskrow .muted { color: #7d838b; font-size: 12px; white-space: nowrap; }
+  .diskupload { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0 0; }
+  .diskupload .muted { color: #9aa0a8; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -120,6 +132,7 @@
     <option value="duplex">USB microphone + speaker</option>
   </select>
   <button id="usb" title="The USB devices the target sees">USB…</button>
+  <button id="disk" title="Images and folders the target sees as a USB drive">Disk…</button>
   <a id="devicelink" class="button" href="/device" target="kuroneko-device"
      title="The NanoKVM itself: its hardware, status, screen and firmware">Device</a>
 </div>
@@ -177,6 +190,29 @@
       <button type="button" id="usbcancel">Cancel</button>
       <button type="button" id="usbapply" class="primary">Apply</button>
     </menu>
+  </form>
+</dialog>
+<dialog id="diskdialog">
+  <form method="dialog">
+    <h3>Virtual disk</h3>
+    <div class="diskdrive" id="diskdrive"></div>
+    <p class="note" id="diskbusy" hidden></p>
+    <div class="disklist" id="disklist"></div>
+    <div class="diskupload">
+      <button type="button" id="diskaddfiles">Upload images…</button>
+      <button type="button" id="diskaddfolder">Upload a folder…</button>
+      <button type="button" id="diskstop" hidden>Stop</button>
+      <span class="muted" id="diskprogress"></span>
+      <input type="file" id="diskfiles" multiple hidden>
+      <input type="file" id="diskfolder" webkitdirectory hidden>
+    </div>
+    <p class="note">An ISO image goes in as a CD-ROM, another image as a drive. A folder goes in as a FAT32
+      drive made from it: read-only, the computer sees the folder as it was; writable, what the computer
+      changes comes back to the folder when the drive is ejected. FAT32 holds files of at most 4 GiB. Eject
+      the drive on the computer before ejecting it here. The library is <code>/data/images</code> on the
+      NanoKVM, which SFTP reaches too. <span id="diskfree"></span></p>
+    <p class="note error" id="diskerror" hidden></p>
+    <menu><button type="button" id="diskclose">Close</button></menu>
   </form>
 </dialog>
 <canvas id="canvas" class="screen" tabindex="0" hidden></canvas>
@@ -1069,6 +1105,197 @@
     }
     view.focus();
   };
+
+  // ---- Virtual disk ----
+  const diskDialog = document.getElementById("diskdialog");
+  const diskError = document.getElementById("diskerror");
+  const DISK_ERRORS = {
+    busy: "The virtual disk is busy: wait until it is done.",
+    eject_first: "Eject the writable folder first: its changes go back to it then.",
+    in_use: "That is in the drive or in use.",
+    exists: "There is one of that name already.",
+    invalid_name: "The library does not take that name.",
+    enoent: "That is not in the library any more.",
+    file_too_large: "A file is larger than 4 GiB, more than FAT32 holds.",
+    no_room: "Not enough free space on the NanoKVM.",
+    no_storage: "The virtual disk is off: turn it on in USB…",
+  };
+  const MODES = {
+    iso: [["cdrom", "CD-ROM"], ["ro", "Drive, read-only"], ["rw", "Drive, writable"]],
+    image: [["rw", "Drive, writable"], ["ro", "Drive, read-only"], ["cdrom", "CD-ROM"]],
+    folder: [["ro", "Read-only"], ["rw", "Writable"]],
+  };
+  const diskModes = {};
+  let diskTimer = null, diskShown = "", disk = null, uploading = null;
+
+  const node = (tag, props, ...children) => {
+    const e = Object.assign(document.createElement(tag), props || {});
+    e.append(...children.filter((c) => c != null));
+    return e;
+  };
+  const bytesText = (n) => n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB`
+    : n >= 1e3 ? `${Math.round(n / 1e3)} kB` : `${n} B`;
+  const diskText = (code) => DISK_ERRORS[code] || code;
+  const showDiskError = (message) => { diskError.textContent = message || ""; diskError.hidden = !message; };
+
+  async function refreshDisk() {
+    try {
+      disk = await (await fetch("/api/disk")).json();
+      renderDisk(disk);
+    } catch (e) {
+      showDiskError(`Virtual disk: ${e.message}`);
+    }
+  }
+
+  async function diskAction(path, body) {
+    showDiskError("");
+    try {
+      const reply = await fetch(path, { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify(body) });
+      const data = await reply.json().catch(() => ({}));
+      if (!reply.ok) showDiskError(diskText(data.error) || `HTTP ${reply.status}`);
+    } catch (e) {
+      showDiskError(e.message);
+    }
+    refreshDisk();
+  }
+
+  function describeMedium(m) {
+    const access = m.read_only ? "read-only" : "writable";
+    return m.kind === "folder" ? `folder, ${access}` : `${m.cdrom ? "CD-ROM" : "drive"}, ${access}`;
+  }
+
+  // The list is drawn anew only when it changes, so that a choice being made stays.
+  function renderDisk(s) {
+    const m = s.medium, busy = s.busy;
+    if (busy) {
+      const percent = busy.total ? ` ${Math.floor((100 * busy.done) / busy.total)}%` : "";
+      document.getElementById("diskbusy").textContent = busy.action === "making"
+        ? `Making a drive from ${busy.name}:${percent}` : `Copying the changes back to ${busy.name}:${percent}`;
+    }
+    document.getElementById("diskbusy").hidden = !busy;
+    document.getElementById("diskfree").textContent = `${bytesText(s.free)} free on the NanoKVM.`;
+    if (s.error) showDiskError(s.error);
+    const shown = JSON.stringify([s.items, m, busy && [busy.action, busy.name]]);
+    if (shown === diskShown) return;
+    diskShown = shown;
+    document.getElementById("diskdrive").replaceChildren(
+      node("span", { textContent: m ? `In the drive: ${m.name} (${describeMedium(m)})` : "The drive is empty." }),
+      m ? node("button", { type: "button", textContent: "Eject", disabled: !!busy,
+        onclick: () => diskAction("/api/disk/eject", {}) }) : null);
+    document.getElementById("disklist").replaceChildren(...s.items.map((item) => diskRow(item, s)));
+  }
+
+  function diskRow(item, s) {
+    const inDrive = !!s.medium && s.medium.name === item.name;
+    const busyHere = !!s.busy && s.busy.name === item.name;
+    const kind = item.kind === "folder" ? "folder" : /\.iso$/i.test(item.name) ? "iso" : "image";
+    const mode = node("select", { title: "How the computer sees it",
+      onchange: (e) => { diskModes[item.name] = e.target.value; } },
+      ...MODES[kind].map(([value, label]) => new Option(label, value)));
+    if (diskModes[item.name]) mode.value = diskModes[item.name];
+    const insert = node("button", { type: "button", textContent: "Insert", disabled: !!s.busy, onclick: () =>
+      diskAction("/api/disk/insert", { name: item.name, cdrom: mode.value === "cdrom", read_only: mode.value !== "rw" }) });
+    const remove = node("button", { type: "button", textContent: "Delete", disabled: inDrive || busyHere,
+      onclick: () => confirm(`Delete “${item.name}” from the NanoKVM?`) && diskAction("/api/disk/delete", { name: item.name }) });
+    return node("div", { className: "diskrow" },
+      node("span", { className: "name", textContent: item.name, title: item.name }),
+      node("span", { className: "muted", textContent: item.kind === "folder" ? "Folder" : "Image" }),
+      node("span", { className: "muted", textContent: bytesText(item.size) }),
+      inDrive ? node("span", { className: "muted", textContent: "In the drive" }) : mode,
+      inDrive ? null : insert,
+      remove);
+  }
+
+  function uploadOne(file, name, replace, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      uploading = xhr;
+      xhr.open("PUT", `/api/disk/files?name=${encodeURIComponent(name)}${replace ? "&replace=1" : ""}`);
+      xhr.setRequestHeader("content-type", "application/octet-stream");
+      xhr.upload.onprogress = (e) => onProgress(e.loaded);
+      xhr.onload = () => {
+        let data = {};
+        try { data = JSON.parse(xhr.responseText); } catch (_) {}
+        if (xhr.status < 300) resolve();
+        else reject(Object.assign(new Error(diskText(data.error) || `HTTP ${xhr.status}`), { code: data.error }));
+      };
+      xhr.onerror = () => reject(new Error("the upload broke off"));
+      xhr.onabort = () => reject(Object.assign(new Error("stopped"), { code: "stopped" }));
+      xhr.send(file);
+    });
+  }
+
+  async function uploadAll(entries, replace) {
+    if (!entries.length) return;
+    const total = entries.reduce((sum, e) => sum + e.file.size, 0);
+    const progressText = document.getElementById("diskprogress");
+    const buttons = ["diskaddfiles", "diskaddfolder"].map((id) => document.getElementById(id));
+    buttons.forEach((b) => { b.disabled = true; });
+    document.getElementById("diskstop").hidden = false;
+    showDiskError("");
+    let sent = 0;
+    try {
+      for (const [i, e] of entries.entries()) {
+        const onProgress = (loaded) => {
+          progressText.textContent = `${e.name}, ${i + 1} of ${entries.length}: ` +
+            `${Math.floor((100 * (sent + loaded)) / Math.max(total, 1))}%`;
+        };
+        try {
+          await uploadOne(e.file, e.name, replace, onProgress);
+        } catch (err) {
+          if (err.code !== "exists" || !confirm(`“${e.name}” is on the NanoKVM already. Replace it?`)) throw err;
+          await uploadOne(e.file, e.name, true, onProgress);
+        }
+        sent += e.file.size;
+        refreshDisk();
+      }
+    } catch (err) {
+      if (err.code !== "stopped") showDiskError(`Upload: ${err.message}`);
+    } finally {
+      uploading = null;
+      progressText.textContent = "";
+      buttons.forEach((b) => { b.disabled = false; });
+      document.getElementById("diskstop").hidden = true;
+      refreshDisk();
+    }
+  }
+
+  const filesInput = document.getElementById("diskfiles"), folderInput = document.getElementById("diskfolder");
+  document.getElementById("diskaddfiles").onclick = () => filesInput.click();
+  document.getElementById("diskaddfolder").onclick = () => folderInput.click();
+  document.getElementById("diskstop").onclick = () => uploading && uploading.abort();
+  filesInput.onchange = () => {
+    const entries = [...filesInput.files].map((file) => ({ file, name: file.name }));
+    filesInput.value = "";
+    uploadAll(entries, false);
+  };
+  // A folder's files, without hidden ones such as .DS_Store, which the library does not take.
+  folderInput.onchange = () => {
+    const entries = [...folderInput.files].map((file) => ({ file, name: file.webkitRelativePath }))
+      .filter((e) => !e.name.split("/").some((part) => part.startsWith(".")));
+    folderInput.value = "";
+    if (!entries.length) return;
+    const top = entries[0].name.split("/")[0];
+    const there = disk && disk.items.some((item) => item.name === top);
+    if (there && !confirm(`“${top}” is on the NanoKVM already. Add to it, replacing files of the same name?`)) return;
+    uploadAll(entries, there);
+  };
+
+  document.getElementById("disk").onclick = async () => {
+    showDiskError("");
+    diskShown = "";
+    await refreshDisk();
+    diskDialog.showModal();
+    clearInterval(diskTimer);
+    diskTimer = setInterval(refreshDisk, 1500);
+  };
+  document.getElementById("diskclose").onclick = () => diskDialog.close();
+  diskDialog.addEventListener("close", () => {
+    clearInterval(diskTimer);
+    diskTimer = null;
+    view.focus();
+  });
 
   updateMicButton();
   mouseMode = prefs.get("mouseMode", "absolute") === "relative" ? "relative" : "absolute";
