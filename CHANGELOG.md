@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+* Makers get Kuroneko's FAT32 formatter in their context, `format_fat`,
+  so that a maker needs no dependency on Kuroneko, and tell how their
+  image goes in with `as:` (`:disk`, `:cd`, `:dvd` or `:bd`), as
+  `Kuroneko.Gadget.MassStorage.insert/2` takes it, instead of `cdrom:`
+  and `disc:`
+
 ## v0.1.2 (2026-11-23)
 
 * The settings page scans on its own while it is open, every ten seconds,
