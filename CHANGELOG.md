@@ -16,6 +16,12 @@
   back to it when ejected. What is in a drive goes in again after a
   restart, unless inserted with `remember: false`. Up to 16 drives at
   once, set in USB…, each with its own image or folder
+* CUE sheets in Disk…: audio CDs and mixed-mode CDs, such as game discs,
+  from BIN, WAVE or AIFF files. A sheet of one BIN goes in as it is, any
+  other is laid out as one image first. Needs the Nerves system v0.1.3
+* Eject asks the target to eject a disc it has locked, as a drive's button
+  does; when it does not, the disc is taken out and the drive appears to
+  the target anew, as it does when it turns from CD to USB drive or back
 * USB… adds storage devices and USB networks, each by name, as many as
   the device's USB endpoints take, and counts the endpoints as you choose;
   the USB network can be turned off too.
