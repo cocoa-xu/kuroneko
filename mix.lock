@@ -7,7 +7,7 @@
   "hpax": {:hex, :hpax, "1.1.0", "782931867cc23217c68fb5f68fe1a11f5e7544c7fda82c8a7019a5df5a4a1cdf", [:mix], [], "hexpm", "0b8d0f05832f55571d65ac720f79bf8994138ffbb133209dc4685eae0ad456a8"},
   "interactive_cmd": {:hex, :interactive_cmd, "0.1.4", "398b517b88fc0e4a7dc4ece883bf952995b859a406331626f3c94a1f680657e4", [:mix], [], "hexpm", "d2089b3827f6b21e48ac85a59441211dacda5c0702ab6f590f2117990968a571"},
   "jason": {:hex, :jason, "1.4.5", "2e3a008590b0b8d7388c20293e9dcc9cf3e5d642fd2a114e4cbbb52e595d940a", [:mix], [{:decimal, "~> 1.0 or ~> 2.0 or ~> 3.0", [hex: :decimal, repo: "hexpm", optional: true]}], "hexpm", "b0c823996102bcd0239b3c2444eb00409b72f6a140c1950bc8b457d836b30684"},
-  "kuroneko_gadget": {:git, "https://github.com/cocoa-xu/kuroneko_gadget.git", "e719941c6c6e98e77e540a5dc340029ed2ad45d5", [tag: "v0.2.0"]},
+  "kuroneko_gadget": {:git, "https://github.com/cocoa-xu/kuroneko_gadget.git", "c86bdefe663aa3525b7fbe7edc42b5a19da27e51", [tag: "v0.3.0"]},
   "logger_backends": {:hex, :logger_backends, "1.0.1", "08a9bd09eed271eac41ff35dd7603b6abf9e0f8b6ffe40359846cb0bfd37704f", [:mix], [], "hexpm", "d7903244fe8d84eeb3d3d42f8d7de080fd0409b613040df54c78b3591672d652"},
   "mdns_lite": {:hex, :mdns_lite, "0.9.3", "cfdf948f172c8a1e4b764cc98592ae3cb0c993ecef6d22e5e7974fc15511f9d5", [:mix], [{:igniter, "~> 0.5", [hex: :igniter, repo: "hexpm", optional: true]}, {:vintage_net, "~> 0.7", [hex: :vintage_net, repo: "hexpm", optional: true]}], "hexpm", "87e64ea648f08203356c0adb2b86277eff2641ea541a00cf382eb59d3aaeb4bd"},
   "mime": {:hex, :mime, "2.0.7", "b8d739037be7cd402aee1ba0306edfdef982687ee7e9859bee6198c1e7e2f128", [:mix], [], "hexpm", "6171188e399ee16023ffc5b76ce445eb6d9672e2e241d2df6050f3c771e80ccd"},

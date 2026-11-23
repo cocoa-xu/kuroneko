@@ -41,7 +41,7 @@ defmodule Kuroneko.MixProject do
       {:toolshed, "~> 0.5.0"},
       {:muontrap, "~> 2.0"},
       sibling(:nano_kvm_go, "v0.2.1"),
-      sibling(:kuroneko_gadget, "v0.2.0"),
+      sibling(:kuroneko_gadget, "v0.3.0"),
       {:bandit, "~> 1.6"},
       {:websock_adapter, "~> 0.5"},
       {:jason, "~> 1.4"},
