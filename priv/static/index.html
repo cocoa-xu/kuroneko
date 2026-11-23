@@ -981,10 +981,10 @@
     invalid_sample_bits: (d) => `The ${d} cannot have that sample size.`,
     not_enough_endpoints: (_d, body) => `These take ${body.need.in} IN and ${body.need.out} OUT endpoints; ` +
       `the NanoKVM has ${body.have.in} and ${body.have.out}. Turn something off.`,
-    "invalid networks": () => "Give each network a name of its own, other than usb0: letters, digits, " +
-      "\"-\" and \"_\", up to 32. Up to 4 networks.",
-    "invalid storages": () => "Give each storage device a name of its own, other than disk: letters, digits, " +
-      "\"-\" and \"_\", up to 32. Up to 4 storage devices.",
+    "invalid networks": () => "Give each network its own name, not usb0, of up to 32 letters, digits, " +
+      "\"-\" and \"_\". Up to 4 networks.",
+    "invalid storages": () => "Give each storage device its own name, not disk, of up to 32 letters, digits, " +
+      "\"-\" and \"_\". Up to 4 storage devices.",
   };
 
   async function postUsb(changes) {
@@ -1104,7 +1104,7 @@
         node("span", { textContent: "Storage device" }),
         node("input", { type: "text", value: st.name, title: "Its name",
           oninput: (e) => { st.name = e.target.value.trim(); } }),
-        node("span", { textContent: "with" }), drives, node("span", { textContent: "drives" }),
+        node("span", { textContent: "drives:" }), drives,
         node("button", { type: "button", textContent: "Remove",
           onclick: () => { usbMore.storages.splice(i, 1); renderUsbMore(); } }));
     }));
