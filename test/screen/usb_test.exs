@@ -36,10 +36,11 @@ defmodule Kuroneko.Screen.USBTest do
     assert length(two["storages"]) == 3
     assert none["storages"] == []
 
-    networks = Enum.map(steps(USBSettings.defaults(), :networks, 5), & &1["networks"])
-    assert hd(networks) == ["usb1"]
-    assert Enum.at(networks, 3) == ["usb1", "usb2", "usb3", "usb4"]
-    assert List.last(networks) == []
+    networks = steps(USBSettings.defaults(), :networks, 6)
+    assert Enum.map(networks, &USB.networks/1) == [2, 3, 4, 5, 0, 1]
+    assert hd(networks)["networks"] == ["usb1"]
+    assert Enum.at(networks, 4)["network"] == false
+    assert List.last(networks)["network"] == true
   end
 
   test "Apply sends what the page changes, and the settings take it" do
@@ -47,7 +48,7 @@ defmodule Kuroneko.Screen.USBTest do
     changes = USB.changes(settings)
 
     assert Map.keys(changes) |> Enum.sort() ==
-             ["audio", "drives", "hid", "networks", "storage", "storages"]
+             ["audio", "drives", "hid", "network", "networks", "storage", "storages"]
 
     assert {:ok, %{"networks" => ["usb1"]}} =
              USBSettings.merge(USBSettings.defaults(), Map.put(changes, "hid", false))

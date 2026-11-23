@@ -17,7 +17,8 @@
   restart, unless inserted with `remember: false`. Up to 16 drives at
   once, set in USB…, each with its own image or folder
 * USB… adds storage devices and USB networks, each by name, as many as
-  the device's USB endpoints take, and counts the endpoints as you choose.
+  the device's USB endpoints take, and counts the endpoints as you choose;
+  the USB network can be turned off too.
   The drives in Disk… span every storage device, `GET /api/usb` tells each
   USB device with what each kind takes, and each further network gets a
   /30 of its own

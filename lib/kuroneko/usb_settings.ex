@@ -6,7 +6,8 @@ defmodule Kuroneko.USBSettings do
     * `"pointer"` - the absolute pointer: `"absolute"` (a mouse), `"stylus"`
       (a pen, for Android and iPadOS) or `"touch"` (a touch screen); the
       relative mouse is always there with it
-    * `"networks"` - USB networks besides the system's (`usb0`), by name:
+    * `"network"` - the system's USB network, `usb0`
+    * `"networks"` - USB networks besides the system's, by name:
       `["usb1"]`; the kernel names their interfaces
       (`Kuroneko.Gadget.instances/1`), VintageNetDirect gives them addresses
       (`Kuroneko.USBNetwork.configure_more/0`)
@@ -25,8 +26,7 @@ defmodule Kuroneko.USBSettings do
       first), `"sample_bits"`
 
   Settings are JSON-shaped maps, as the page sends them. The functions must
-  fit the device controller's endpoints (`Kuroneko.Gadget.endpoints/1`); the
-  system's USB network is always one of them.
+  fit the device controller's endpoints (`Kuroneko.Gadget.endpoints/1`).
   """
 
   @modes %{"off" => [], "mic" => [:microphone], "duplex" => [:microphone, :speaker]}
@@ -37,6 +37,7 @@ defmodule Kuroneko.USBSettings do
     "hid" => true,
     "pointer" => "absolute",
     "jiggler" => false,
+    "network" => true,
     "networks" => [],
     "storage" => true,
     "drives" => 1,
@@ -101,9 +102,9 @@ defmodule Kuroneko.USBSettings do
         for %{"name" => name, "drives" => luns} <- settings["storages"],
             do: {:storage, name: name, luns: luns}
 
-    networks = [
-      {:network, name: "usb0"} | for(name <- settings["networks"], do: {:network, name: name})
-    ]
+    networks =
+      if(settings["network"], do: [{:network, name: "usb0"}], else: []) ++
+        for(name <- settings["networks"], do: {:network, name: name})
 
     networks ++
       hid ++ storage ++ Enum.map(@modes[settings["audio"]], &{&1, audio_options(settings, &1)})
@@ -201,7 +202,7 @@ defmodule Kuroneko.USBSettings do
   end
 
   defp put(settings, key, value)
-       when key in ["hid", "storage", "jiggler"] and is_boolean(value),
+       when key in ["hid", "storage", "jiggler", "network"] and is_boolean(value),
        do: {:ok, %{settings | key => value}}
 
   defp put(settings, "drives", drives) when drives in 1..16,

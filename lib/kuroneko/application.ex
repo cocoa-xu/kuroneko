@@ -68,7 +68,8 @@ defmodule Kuroneko.Application do
         # The Wi-Fi and SSH keys the card was burned with.
         {Task, &Kuroneko.Provisioning.run/0},
         Kuroneko.TrialGuard,
-        {Kuroneko.Gadget, NanoKVMGo.USB.gadget_options() ++ [functions: usb_functions]},
+        {Kuroneko.Gadget,
+         NanoKVMGo.USB.gadget_options() ++ [functions: usb_functions, manage_networks: true]},
         Supervisor.child_spec({Task, &Kuroneko.USBNetwork.configure_more/0}, id: :usb_networks),
         Kuroneko.VirtualDisk,
         {NanoKVMGo.Video,

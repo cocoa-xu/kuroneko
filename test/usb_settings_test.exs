@@ -62,6 +62,8 @@ defmodule Kuroneko.USBSettingsTest do
     drives = %{off | "storage" => true, "drives" => 3}
     assert USBSettings.functions(drives) == [{:network, name: "usb0"}, {:storage, luns: 3}]
 
+    assert USBSettings.functions(%{off | "network" => false}) == []
+
     more = %{off | "networks" => ["usb1"], "storages" => [%{"name" => "boot", "drives" => 2}]}
 
     assert USBSettings.functions(more) == [
@@ -118,7 +120,7 @@ defmodule Kuroneko.USBSettingsTest do
     assert {:error, {:invalid, "networks"}} =
              USBSettings.merge(defaults, %{"networks" => ["usb0"]})
 
-    assert {:error, {:invalid, "network"}} = USBSettings.merge(defaults, %{"network" => false})
+    assert {:ok, %{"network" => false}} = USBSettings.merge(defaults, %{"network" => false})
 
     # Seven IN endpoints: the network (2), three HID, the disk, the microphone,
     # and no room for another storage device.

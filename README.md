@@ -169,8 +169,8 @@ The device has seven USB endpoints each way besides the control one, which
 the USB devices share: a network takes two IN and one OUT, the keyboard and
 each mouse one IN, a storage device one each way whatever its drives, the
 microphone one IN and the speaker one OUT. **USB…** counts them as you
-choose, and what does not fit is refused: drop the sound card or the mice
-for more storage devices.
+choose, and what does not fit is refused: drop the sound card, the mice or
+even the USB network for more storage devices.
 
 The memory for video and the NPU (192 and 64 MiB) changes at the next boot,
 over SSH: `NanoKVMGo.CMA.put_sizes(%{video: 160, npu: 96})`. With

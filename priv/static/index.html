@@ -200,6 +200,7 @@
       gain on this browser's microphone</label>
     <fieldset id="usbmore">
       <legend>More USB devices</legend>
+      <label><input type="checkbox" name="network"> USB network <code>usb0</code></label>
       <div id="usbnetworks"></div>
       <div id="usbstorages"></div>
       <div class="usbadd">
@@ -208,8 +209,7 @@
       </div>
       <p class="note">Each USB device takes some of the NanoKVM's endpoints: a network two IN and one
         OUT, the keyboard and mice one IN each, a storage device one of each however many drives it
-        has, the microphone one IN, the speaker one OUT. The USB network <code>usb0</code> is always
-        there. <strong id="usbendpoints"></strong></p>
+        has, the microphone one IN, the speaker one OUT. <strong id="usbendpoints"></strong></p>
     </fieldset>
     <p class="note error" id="usberror" hidden></p>
     <menu>
@@ -1055,6 +1055,7 @@
       usbForm.storage.checked = s.storage;
       usbForm.drives.value = String(s.drives || 1);
       usbForm.audio.value = s.audio;
+      usbForm.network.checked = s.network !== false;
       usbMore = { networks: [...(s.networks || [])], storages: (s.storages || []).map((x) => ({ ...x })) };
       usbEndpoints = usb.endpoints || null;
       usbInstances = usb.instances || [];
@@ -1135,7 +1136,7 @@
       return;
     }
     const audio = usbForm.audio.value;
-    const kinds = ["network", ...usbMore.networks.map(() => "network"),
+    const kinds = [...(usbForm.network.checked ? ["network"] : []), ...usbMore.networks.map(() => "network"),
       ...(usbForm.hid.checked ? ["keyboard", "mouse", "relative_mouse"] : []),
       ...(usbForm.storage.checked ? ["storage"] : []), ...usbMore.storages.map(() => "storage"),
       ...(audio === "off" ? [] : ["microphone"]), ...(audio === "duplex" ? ["speaker"] : [])];
@@ -1147,13 +1148,13 @@
     usbApply.disabled = !!over;
   }
 
-  for (const name of ["hid", "storage", "audio"]) usbForm[name].addEventListener("change", countEndpoints);
+  for (const name of ["hid", "storage", "audio", "network"]) usbForm[name].addEventListener("change", countEndpoints);
 
   usbApply.onclick = async () => {
     const changes = { hid: usbForm.hid.checked, pointer: usbForm.pointer.value,
                       jiggler: usbForm.jiggler.checked, storage: usbForm.storage.checked,
                       drives: +usbForm.drives.value, audio: usbForm.audio.value,
-                      networks: usbMore.networks, storages: usbMore.storages };
+                      network: usbForm.network.checked, networks: usbMore.networks, storages: usbMore.storages };
     for (const fieldset of fieldsets) {
       changes[fieldset.dataset.direction] = {
         channels: +fieldset.querySelector("[name=channels]").value,

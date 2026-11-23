@@ -175,7 +175,7 @@ defmodule Kuroneko.Screen.Pages do
     |> usb_tile(:sound, "Sound", sound_mode(settings["audio"]))
     |> usb_tile(:drives, "Disk drives", disk_drives(settings))
     |> usb_tile(:disks, "More disks", "#{length(settings["storages"])}")
-    |> usb_tile(:networks, "More networks", "#{length(settings["networks"])}")
+    |> usb_tile(:networks, "Networks", "#{Kuroneko.Screen.USB.networks(settings)}")
     |> apply_tile(
       cond do
         info.applying -> {"Reconnecting", "...", @panel}

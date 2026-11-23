@@ -15,9 +15,9 @@ defmodule Kuroneko.Screen.USB do
   @doc """
   Settings with a tile's setting at its next step: the keyboard and mice on
   or off, the sound card's next mode, the virtual disk's drives (1, 2, 3, 4,
-  8, 16, then off), or one more storage device or network, none again after
-  four. Those a tap adds take names of their own, `"disk2"` and `"usb1"`, and
-  one drive.
+  8, 16, then off), one more storage device, none again after four, or one
+  more USB network, the system's first, none after five. Those a tap adds
+  take names of their own, `"disk2"` and `"usb1"`, and one drive.
   """
   @spec step(Kuroneko.USBSettings.t(), tile()) :: Kuroneko.USBSettings.t()
   def step(settings, :input), do: %{settings | "hid" => not settings["hid"]}
@@ -41,16 +41,27 @@ defmodule Kuroneko.Screen.USB do
     %{settings | "storages" => storages ++ [%{"name" => name, "drives" => 1}]}
   end
 
+  def step(%{"network" => false, "networks" => []} = settings, :networks),
+    do: %{settings | "network" => true}
+
   def step(%{"networks" => networks} = settings, :networks) when length(networks) >= @most,
-    do: %{settings | "networks" => []}
+    do: %{settings | "network" => false, "networks" => []}
+
+  def step(%{"network" => false} = settings, :networks), do: %{settings | "network" => true}
 
   def step(%{"networks" => networks} = settings, :networks),
     do: %{settings | "networks" => networks ++ [free_name("usb", ["usb0" | networks], 1)]}
 
+  @doc "The USB networks of settings, the system's among them."
+  @spec networks(Kuroneko.USBSettings.t()) :: non_neg_integer()
+  def networks(settings),
+    do: if(settings["network"], do: 1, else: 0) + length(settings["networks"])
+
   @doc "What of settings the USB page changes, as `Kuroneko.USBSettings.update/1` takes it."
   @spec changes(Kuroneko.USBSettings.t()) :: map()
   def changes(settings),
-    do: Map.take(settings, ["hid", "audio", "storage", "drives", "storages", "networks"])
+    do:
+      Map.take(settings, ["hid", "audio", "storage", "drives", "storages", "network", "networks"])
 
   defp next(steps, value) do
     case Enum.drop_while(steps, &(&1 != value)) do
