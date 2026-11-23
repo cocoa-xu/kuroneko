@@ -81,6 +81,20 @@ defmodule Kuroneko.VirtualDiskTest do
     assert Enum.sort(File.ls!(to)) == [".env", "a.txt"]
   end
 
+  test "a path as the drive reports it, links resolved", %{tmp_dir: tmp} do
+    File.mkdir_p!(Path.join(tmp, "root/images"))
+    File.ln_s!("root", Path.join(tmp, "data"))
+    File.ln_s!("images", Path.join(tmp, "root/library"))
+
+    real = VirtualDisk.real_path(tmp)
+
+    assert VirtualDisk.real_path(Path.join(tmp, "data/images/a.img")) ==
+             Path.join(real, "root/images/a.img")
+
+    assert VirtualDisk.real_path(Path.join(tmp, "data/library/x")) ==
+             Path.join(real, "root/images/x")
+  end
+
   describe "FAT32" do
     test "clusters and FATs by size, from 64 MiB" do
       assert FAT.layout(div(64 * 1024 * 1024, 512)) ==

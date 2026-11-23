@@ -299,7 +299,7 @@ defmodule Kuroneko.VirtualDisk do
     case Storage.insert(path, cdrom: cdrom, read_only: read_only) do
       :ok ->
         state = forget_folder_image(state)
-        medium = %{name: relative, kind: :image, read_only: read_only, image: path}
+        medium = %{name: relative, kind: :image, read_only: read_only, image: in_drive(path)}
         {:reply, :ok, %{state | medium: medium, error: nil}}
 
       error ->
@@ -326,7 +326,7 @@ defmodule Kuroneko.VirtualDisk do
           with :ok <- build(folder, image, size, Path.basename(relative), progress),
                :ok <- write_marker(medium),
                :ok <- Storage.insert(image, cdrom: false, read_only: read_only) do
-            {:inserted, medium}
+            {:inserted, %{medium | image: in_drive(image)}}
           else
             error ->
               remove_image(image)
@@ -431,8 +431,8 @@ defmodule Kuroneko.VirtualDisk do
 
     Enum.reduce(markers(), state, fn medium, state ->
       cond do
-        medium.image == in_drive ->
-          %{state | medium: medium}
+        real_path(medium.image) == in_drive ->
+          %{state | medium: %{medium | image: in_drive}}
 
         medium.read_only ->
           remove_image(medium.image)
@@ -479,6 +479,36 @@ defmodule Kuroneko.VirtualDisk do
         String.ends_with?(path, ".copy") -> File.rm_rf(path)
         true -> :ok
       end
+    end
+  end
+
+  # The drive reports the file it holds by the path the kernel opened, with
+  # links resolved: /root/images for /data/images on Nerves.
+  defp in_drive(fallback) do
+    case Storage.medium() do
+      {:ok, %{image: image}} -> image
+      _empty -> fallback
+    end
+  end
+
+  @doc false
+  @spec real_path(Path.t()) :: Path.t()
+  def real_path(path, depth \\ 0) do
+    [root | parts] = path |> Path.expand() |> Path.split()
+    resolve(parts, root, depth)
+  end
+
+  defp resolve([], resolved, _depth), do: resolved
+
+  defp resolve([part | rest], resolved, depth) do
+    path = Path.join(resolved, part)
+
+    case File.read_link(path) do
+      {:ok, target} when depth < 20 ->
+        real_path(Path.join([Path.expand(target, resolved) | rest]), depth + 1)
+
+      _not_a_link ->
+        resolve(rest, path, depth)
     end
   end
 
