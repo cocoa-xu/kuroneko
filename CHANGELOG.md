@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+* The device page has a USB section: the endpoints each USB device takes,
+  of the seven IN and seven OUT the controller has, as bars that follow
+  the changes being made; the devices the target sees, with the keyboard
+  and mice, networks, storage devices and the sound card's formats, which
+  apply together once they fit; and the drives, each with what is in it,
+  to change or eject. USB… on the KVM page opens it, and the KVM page's
+  echo cancellation for the microphone is in the Keys… menu
+* One Disk… dialog for both pages: the device page opens it for a drive
 * Makers get Kuroneko's FAT32 formatter in their context, `format_fat`,
   so that a maker needs no dependency on Kuroneko, and tell how their
   image goes in with `as:` (`:disk`, `:cd`, `:dvd` or `:bd`), as

@@ -213,6 +213,60 @@
   .address { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
   .tag.custom { color: #b9d5ff; border-color: rgba(106, 168, 255, 0.35); background: rgba(106, 168, 255, 0.08); }
 
+  /* USB */
+  .eprow { display: grid; grid-template-columns: 38px minmax(0, 1fr) 72px; align-items: center; gap: 12px;
+    margin: 0 0 10px; }
+  .eplabel { color: var(--text-3); font-size: 12px; font-weight: 650; letter-spacing: 0.07em; }
+  .epcount { color: var(--text-2); font-size: 12.5px; text-align: right; font-variant-numeric: tabular-nums; }
+  .epcount.over { color: #ffc2c2; }
+  .epbar { display: grid; height: 34px; border-radius: 10px; overflow: hidden; background: var(--panel-2);
+    border: 1px solid var(--line); }
+  .epbar > div { display: flex; align-items: center; justify-content: center; min-width: 0;
+    border-right: 1px solid var(--bg); color: rgba(8, 10, 14, 0.9); font-size: 12px; font-weight: 650;
+    white-space: nowrap; overflow: hidden; container-type: inline-size; }
+  .epbar > div:last-child { border-right: 0; }
+  .epbar > .free { background: repeating-linear-gradient(135deg, var(--panel-2) 0 7px, #1b2028 7px 14px);
+    color: var(--text-3); font-weight: 550; }
+  .epbar > .over { box-shadow: inset 0 0 0 2px var(--bad); }
+  .epbar span { padding: 0 6px; overflow: hidden; text-overflow: ellipsis; }
+  @container (max-width: 44px) { .epbar span { display: none; } }
+  #usb .legend { margin-top: 14px; }
+  #usb .control { grid-template-columns: 170px minmax(0, 1fr); align-items: start; }
+  #usb .control > .label { padding-top: 6px; }
+  #usb .control > :not(.label) { grid-column: 2; }
+  #usb .control > .more:empty { display: none; }
+  #epsummary.over { color: #ffc2c2; }
+  .check { display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); }
+  .more { display: grid; gap: 8px; }
+  .more .item { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+  .more input[type="text"] { width: 150px; font-family: var(--mono); font-size: 13px; }
+  .formats { gap: 12px; }
+  .format { padding: 12px 14px; border-radius: 11px; background: var(--panel-2); border: 1px solid var(--line); }
+  .format > header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 10px; }
+  .format > header b { font-weight: 650; }
+  .format > header small { color: var(--text-3); font-size: 12.5px; }
+  .format .field { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 8px; }
+  .rates { display: flex; flex: 1 1 100%; flex-wrap: wrap; gap: 6px; min-width: 0; }
+  .rates label { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 8px;
+    background: var(--panel); border: 1px solid var(--line-2); color: var(--text-2); font-size: 12.5px;
+    cursor: pointer; font-variant-numeric: tabular-nums; }
+  .rates label:has(input:checked) { color: var(--text); border-color: rgba(106, 168, 255, 0.5);
+    background: rgba(106, 168, 255, 0.1); }
+  .usbapply { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px;
+    margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .usbapply .note { flex: 1; min-width: 240px; margin: 0; }
+  .drives { display: grid; gap: 8px; }
+  .driverow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 10px 14px;
+    border-radius: 11px; background: var(--panel-2); border: 1px solid var(--line); }
+  .driverow b { font-weight: 650; white-space: nowrap; }
+  .driverow .what { flex: 1; min-width: 200px; overflow-wrap: anywhere; }
+  .driverow .what small { display: block; color: var(--text-3); font-size: 12.5px; }
+  @media (max-width: 700px) {
+    #usb .control { grid-template-columns: minmax(0, 1fr); }
+    #usb .control > :not(.label) { grid-column: 1; }
+    #usb .control > .label { padding-top: 0; }
+  }
+
   /* Auxiliary port */
   .xlines { display: grid; gap: 12px; margin-top: 12px; }
   .xline { padding: 12px 14px; border-radius: 11px; background: var(--panel-2); border: 1px solid var(--line); }
@@ -307,11 +361,12 @@
     /* One column, the cards in reading order. */
     .column { display: contents; }
     #screen { order: 1; } #video { order: 2; } #usb { order: 3; } #network { order: 4; }
-    #firmware { order: 5; } #software { order: 6; } #storage { order: 7; } #hardware { order: 8; }
+    #expansion { order: 5; } #firmware { order: 6; } #software { order: 7; } #storage { order: 8; }
+    #hardware { order: 9; }
   }
   @media (max-width: 620px) {
     .top { gap: 12px; padding: 0 16px; }
-    .brand span, .live span { display: none; }
+    .brand span, .live span, #restart span { display: none; }
     main { padding: 22px 16px 56px; }
     .hero h1 { font-size: 25px; }
     .tiles { grid-template-columns: minmax(0, 1fr); }
@@ -334,6 +389,7 @@
     #toast, .bars span i { transition: none; }
   }
 </style>
+<link rel="stylesheet" href="/disk.css">
 </head>
 <body>
 <svg width="0" height="0" style="position: absolute" aria-hidden="true">
@@ -364,7 +420,7 @@
   </nav>
   <div class="spacer"></div>
   <span class="live" id="live"><span>Connecting</span></span>
-  <button class="btn danger small" id="restart" type="button"><svg class="icon"><use href="#i-power"/></svg>Restart</button>
+  <button class="btn danger small" id="restart" type="button" aria-label="Restart"><svg class="icon"><use href="#i-power"/></svg><span>Restart</span></button>
 </header>
 
 <main id="device">
@@ -476,14 +532,6 @@
       <p class="note" id="noscreen" hidden>The screen is not running.</p>
     </section>
 
-    <section class="card" id="usb">
-      <header>
-        <h2><svg class="icon"><use href="#i-usb"/></svg>USB to the target</h2>
-        <span class="badge" id="usbbadge">–</span>
-      </header>
-      <dl class="facts" id="usbfacts"></dl>
-    </section>
-
     <section class="card" id="expansion">
       <header>
         <h2><svg class="icon"><use href="#i-usb"/></svg>Auxiliary port</h2>
@@ -539,6 +587,92 @@
       </div>
     </section>
     </div>
+
+    <section class="card wide" id="usb">
+      <header>
+        <h2><svg class="icon"><use href="#i-usb"/></svg>USB to the target</h2>
+        <span class="badge" id="usbbadge">–</span>
+      </header>
+      <dl class="facts" id="usbfacts"></dl>
+
+      <div class="subsection">
+        <header><h3>Endpoints</h3><span class="muted" id="epsummary"></span></header>
+        <div class="eprow"><span class="eplabel">IN</span><div class="epbar" id="epin"></div><span class="epcount" id="epincount"></span></div>
+        <div class="eprow"><span class="eplabel">OUT</span><div class="epbar" id="epout"></div><span class="epcount" id="epoutcount"></span></div>
+        <div class="legend" id="eplegend"></div>
+        <p class="note">Each device takes some of the USB controller's endpoints, besides endpoint 0: a network
+          two IN and one OUT, the keyboard and each mouse one IN, a storage device one of each however many
+          drives it has, the microphone one IN, the speaker one OUT. The bars count what the devices below
+          take, changes included.</p>
+      </div>
+
+      <div class="subsection" id="usbdevices" hidden>
+        <header><h3>Devices</h3></header>
+        <div class="control">
+          <span class="label" id="hidlabel">Keyboard and mice</span>
+          <div class="field">
+            <div class="segmented" role="group" aria-labelledby="hidlabel" data-setting="hid">
+              <button type="button" data-value="false">Off</button>
+              <button type="button" data-value="true">On</button>
+            </div>
+            <select id="usbpointer" aria-label="The absolute pointer">
+              <option value="absolute">Absolute mouse</option>
+              <option value="stylus">Pen (Android, iPad)</option>
+              <option value="touch">Touch screen</option>
+            </select>
+            <label class="check"><input type="checkbox" id="usbjiggler"> Mouse jiggler: a pixel and back
+              each minute, so that the target stays awake</label>
+          </div>
+        </div>
+        <div class="control">
+          <span class="label" id="netlabel">Network</span>
+          <div class="field">
+            <div class="segmented" role="group" aria-labelledby="netlabel" data-setting="network">
+              <button type="button" data-value="false">Off</button>
+              <button type="button" data-value="true">On</button>
+            </div>
+            <span class="muted"><code>usb0</code>, the NanoKVM's own</span>
+          </div>
+          <div class="more" id="usbnetworks"></div>
+          <div class="field"><button class="btn small" id="usbaddnetwork" type="button">Add a network</button></div>
+        </div>
+        <div class="control">
+          <span class="label" id="disklabel">Virtual disk</span>
+          <div class="field">
+            <div class="segmented" role="group" aria-labelledby="disklabel" data-setting="storage">
+              <button type="button" data-value="false">Off</button>
+              <button type="button" data-value="true">On</button>
+            </div>
+            <label class="check">Drives <select id="usbdrives" aria-label="Drives of the virtual disk"></select></label>
+          </div>
+          <div class="more" id="usbstorages"></div>
+          <div class="field"><button class="btn small" id="usbaddstorage" type="button">Add a storage device</button></div>
+        </div>
+        <div class="control">
+          <span class="label" id="audiolabel">Sound card</span>
+          <div class="field">
+            <div class="segmented" role="group" aria-labelledby="audiolabel" data-setting="audio">
+              <button type="button" data-value="off">Off</button>
+              <button type="button" data-value="mic">Mic</button>
+              <button type="button" data-value="duplex">Mic and speaker</button>
+            </div>
+          </div>
+          <div class="more formats" id="usbformats"></div>
+        </div>
+        <div class="usbapply">
+          <p class="note">Applying reconnects the NanoKVM's USB devices on the target: the keyboard and mice go
+            away for a moment.</p>
+          <button class="btn" id="usbrevert" type="button" disabled>Revert</button>
+          <button class="btn primary" id="usbapply" type="button" disabled>Apply</button>
+        </div>
+        <p class="formerror" id="usberror" hidden></p>
+      </div>
+
+      <div class="subsection">
+        <header><h3>Drives</h3><button class="btn small" id="usbdisk" type="button">Virtual disk…</button></header>
+        <div class="drives" id="usbdrivelist"></div>
+      </div>
+    </section>
 
     <section class="card wide" id="storage">
       <header>
@@ -648,6 +782,7 @@
   </div>
 </div>
 
+<script src="/disk.js"></script>
 <script>
 "use strict";
 
@@ -942,10 +1077,6 @@ const SPEEDS = {
   super_speed: "USB 3 SuperSpeed, 5 Gb/s",
   super_speed_plus: "USB 3 SuperSpeed+, 10 Gb/s",
 };
-const FUNCTIONS = {
-  keyboard: "Keyboard", mouse: "Mouse", relative_mouse: "Relative mouse", storage: "Virtual disk",
-  microphone: "Microphone", speaker: "Speaker",
-};
 
 function render() {
   const o = state.overview;
@@ -1186,30 +1317,338 @@ function renderVideo(video) {
   ]);
 }
 
+// ---- USB to the target: the devices it sees, the endpoints they take, the drives
+
+const POINTERS = { absolute: "Absolute mouse", stylus: "Pen", touch: "Touch screen" };
+const EP_COLORS = {
+  network: "#3ecf8e", keyboard: "#6aa8ff", mouse: "#8fb3ff", relative_mouse: "#b18cff",
+  storage: "#f5b84b", microphone: "#ff9f5a", speaker: "#ff7eb6",
+};
+const RATES = [8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000];
+const CHANNELS = { microphone: [1, 2], speaker: [1, 2, 6, 8] };
+const CHANNEL_NAMES = { 1: "Mono", 2: "Stereo", 6: "5.1", 8: "7.1" };
+const SAMPLE_BITS = [16, 24, 32];
+const DRIVE_COUNTS = Array.from({ length: 16 }, (_, i) => i + 1);
+const kHz = (rate) => `${+(rate / 1000).toFixed(3)} kHz`;
+const INVALID_SETTINGS = {
+  networks: "Give each network its own name, not usb0, of up to 32 letters, digits, \"-\" and \"_\". Up to 4 networks.",
+  storages: "Give each storage device its own name, not disk, of up to 32 letters, digits, \"-\" and \"_\". Up to 4 storage devices.",
+};
+const USB_ERRORS = {
+  invalid: (_d, body) => INVALID_SETTINGS[body.setting] || `The ${body.setting} setting is not one the NanoKVM takes.`,
+  invalid_rates: (d) => `Tick 1 to 10 sample rates for the ${d}.`,
+  too_much_bandwidth: (d) =>
+    `The ${d} format is more than USB carries: fewer channels, a smaller sample size or lower rates.`,
+  invalid_channels: (d) => `The ${d} cannot have that many channels.`,
+  invalid_sample_bits: (d) => `The ${d} cannot have that sample size.`,
+  not_enough_endpoints: (_d, body) => `These take ${body.need.in} IN and ${body.need.out} OUT endpoints; ` +
+    `the NanoKVM has ${body.have.in} and ${body.have.out}. Turn something off.`,
+};
+
+// What /api/usb says (the saved settings, the instances, what each kind of
+// device takes, the formats the target uses) and the settings being edited.
+let usbConfig = null, usbDraft = null, usbBusy = false;
+// What the live status last said, to notice changes made elsewhere.
+let usbFunctions = null, drivesShown = null;
+const usbDirty = () => !!usbConfig && JSON.stringify(usbDraft) !== JSON.stringify(usbConfig.settings);
+
+async function loadUsb() {
+  try {
+    const reply = await fetch("/api/usb");
+    if (reply.status === 401) return location.reload();
+    if (!reply.ok) throw new Error(`HTTP ${reply.status}`);
+    usbConfig = await reply.json();
+    usbDraft = structuredClone(usbConfig.settings);
+    $("usbdevices").hidden = false;
+    renderUsbDraft();
+  } catch (e) {
+    toast(`USB: ${e.message}`, true);
+  }
+}
+
 function renderUsb(usb) {
   const c = usb.connection;
   const [text, kind] = c ? (USB_STATES[c.state] || [c.state, ""]) : ["No controller", "bad"];
   badge($("usbbadge"), text, kind);
-  const media = usb.media || [];
-  const describeMedium = (m) => `${m.name || m.image.split("/").pop()}, ${m.kind === "folder"
-    ? `folder as ${{ exfat: "exFAT", fat32: "FAT32" }[m.filesystem] || "a drive"}`
-    : m.cdrom ? { cd: "CD-ROM", dvd: "DVD-ROM", bd: "BD-ROM" }[m.disc] || "CD-ROM"
-    : "USB drive"}${m.read_only ? ", read-only" : ""}`;
   facts($("usbfacts"), [
     ["Link", c ? (c.state === "configured" ? SPEEDS[c.speed] || "Connected" : text) : "The USB controller is not bound"],
-    ["Devices", usb.functions == null ? null
-      : usb.functions.length ? h("div", { class: "tags" }, ["Network", ...usb.functions.map((f) => FUNCTIONS[f] || f)]
-          .map((name) => h("span", { class: "tag" }, name)))
-      : "Network only"],
-    ["Virtual disk", !usb.functions || !usb.functions.includes("storage") ? null
-      : media.length === 1 ? (media[0] ? describeMedium(media[0]) : "Empty")
-      : h("div", {}, media.map((m, i) => h("div", {}, `Drive ${i + 1}: ${m ? describeMedium(m) : "empty"}`)))],
-    ["Endpoints", usb.endpoints && (usb.endpoints.have
-      ? `IN ${usb.endpoints.in} of ${usb.endpoints.have.in}, OUT ${usb.endpoints.out} of ${usb.endpoints.have.out}`
-      : `IN ${usb.endpoints.in}, OUT ${usb.endpoints.out}`)],
     ["Controller", c && h("span", { class: "mono" }, c.controller)],
   ]);
+  // Devices changed elsewhere, such as the sound card from the KVM page:
+  // taken in unless they are being edited here.
+  const functions = JSON.stringify(usb.functions);
+  if (usbFunctions !== null && functions !== usbFunctions && !usbDirty() && !usbBusy) loadUsb();
+  usbFunctions = functions;
+  const media = JSON.stringify(usb.media);
+  if (media !== drivesShown) {
+    drivesShown = media;
+    refreshDrives();
+  }
 }
+
+// The devices of settings, in the order the gadget has them, each with the
+// endpoints a device of its kind takes.
+function usbDevices(d) {
+  const drives = (n) => `${n} drive${n > 1 ? "s" : ""}`;
+  return [
+    ...(d.network ? [["network", "Network usb0", "usb0"]] : []),
+    ...d.networks.map((name) => ["network", `Network ${name}`, name]),
+    ...(d.hid ? [["keyboard", "Keyboard", "Keyboard"], ["mouse", POINTERS[d.pointer], POINTERS[d.pointer]],
+                 ["relative_mouse", "Relative mouse", "Relative mouse"]] : []),
+    ...(d.storage ? [["storage", `Virtual disk, ${drives(d.drives)}`, "Disk"]] : []),
+    ...d.storages.map((st) => ["storage", `Storage ${st.name}, ${drives(st.drives)}`, st.name]),
+    ...(d.audio === "off" ? [] : [["microphone", "Microphone", "Mic"]]),
+    ...(d.audio === "duplex" ? [["speaker", "Speaker", "Speaker"]] : []),
+  ].map(([kind, name, short]) => ({ kind, name, short, cost: usbConfig.endpoints.costs[kind] }));
+}
+
+// Each direction's endpoints as a bar, the devices in turn; what does not
+// fit outlined. Whether they all fit.
+function renderEndpoints(devices) {
+  const have = usbConfig.endpoints.have;
+  const use = devices.reduce((u, x) => ({ in: u.in + x.cost.in, out: u.out + x.cost.out }), { in: 0, out: 0 });
+  for (const dir of ["in", "out"]) {
+    const limit = have ? have[dir] : use[dir];
+    let taken = 0;
+    const cells = devices.filter((x) => x.cost[dir] > 0).map((x) => {
+      taken += x.cost[dir];
+      return h("div", { class: taken > limit ? "over" : null, title: `${x.name}: ${x.cost[dir]} ${dir.toUpperCase()}`,
+                        style: `grid-column: span ${x.cost[dir]}; background: ${EP_COLORS[x.kind]}` },
+        h("span", null, x.short));
+    });
+    if (limit > taken) {
+      cells.push(h("div", { class: "free", style: `grid-column: span ${limit - taken}` }, h("span", null, "free")));
+    }
+    $(`ep${dir}`).style.gridTemplateColumns = `repeat(${Math.max(limit, taken, 1)}, minmax(0, 1fr))`;
+    $(`ep${dir}`).replaceChildren(...cells);
+    const count = $(`ep${dir}count`);
+    count.textContent = have ? `${use[dir]} of ${have[dir]}` : String(use[dir]);
+    count.classList.toggle("over", !!have && use[dir] > have[dir]);
+  }
+  $("eplegend").replaceChildren(...devices.map((x) => h("div", null,
+    h("span", { class: "swatch", style: `background:${EP_COLORS[x.kind]}` }), h("b", null, x.name),
+    h("small", null, [x.cost.in && `${x.cost.in} IN`, x.cost.out && `${x.cost.out} OUT`].filter(Boolean).join(", ")))));
+  const fits = !have || (use.in <= have.in && use.out <= have.out);
+  $("epsummary").textContent = fits ? "" : "Too many: turn something off or remove it.";
+  $("epsummary").classList.toggle("over", !fits);
+  return fits;
+}
+
+// The bars and the buttons, after any change.
+function refreshUsb() {
+  const fits = renderEndpoints(usbDevices(usbDraft));
+  const dirty = usbDirty();
+  $("usbrevert").disabled = !dirty || usbBusy;
+  $("usbapply").disabled = !dirty || !fits || usbBusy;
+}
+
+// Everything, after a change that adds or removes a control.
+function renderUsbDraft() {
+  const d = usbDraft;
+  for (const group of $("usbdevices").querySelectorAll("[data-setting]")) {
+    for (const button of group.children) {
+      button.setAttribute("aria-pressed", String(button.dataset.value === String(d[group.dataset.setting])));
+    }
+  }
+  $("usbpointer").value = d.pointer;
+  $("usbpointer").disabled = !d.hid;
+  $("usbjiggler").checked = d.jiggler;
+  $("usbjiggler").disabled = !d.hid;
+  $("usbdrives").value = String(d.drives);
+  $("usbdrives").disabled = !d.storage;
+  renderMoreDevices();
+  renderFormats();
+  refreshUsb();
+}
+
+function textField(value, label, onInput) {
+  const input = h("input", { type: "text", value, "aria-label": label, title: label, maxlength: 32,
+                             spellcheck: "false", autocomplete: "off" });
+  input.addEventListener("input", () => onInput(input.value.trim()));
+  return input;
+}
+
+function choice(options, value, label, onChange) {
+  const select = h("select", { "aria-label": label }, ...options.map(([v, text]) => h("option", { value: v }, text)));
+  select.value = String(value);
+  select.addEventListener("change", () => onChange(+select.value));
+  return select;
+}
+
+function smallButton(text, onClick) {
+  const button = h("button", { class: "btn small", type: "button" }, text);
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+const driveOptions = DRIVE_COUNTS.map((n) => [n, String(n)]);
+
+// Networks and storage devices besides the usual, each by name.
+function renderMoreDevices() {
+  const instances = usbConfig.instances || [];
+  $("usbnetworks").replaceChildren(...usbDraft.networks.map((name, i) => {
+    const found = instances.find((x) => x.kind === "network" && x.name === name);
+    return h("div", { class: "item" },
+      textField(name, "The network's name; the NanoKVM names its interface", (value) => {
+        usbDraft.networks[i] = value;
+        refreshUsb();
+      }),
+      found && found.interface ? h("span", { class: "muted" }, `interface ${found.interface}`) : null,
+      smallButton("Remove", () => { usbDraft.networks.splice(i, 1); renderUsbDraft(); }));
+  }));
+  $("usbstorages").replaceChildren(...usbDraft.storages.map((st, i) => h("div", { class: "item" },
+    textField(st.name, "The storage device's name", (value) => { st.name = value; refreshUsb(); }),
+    h("label", { class: "check" }, "Drives ",
+      choice(driveOptions, st.drives, "Its drives", (n) => { st.drives = n; refreshUsb(); })),
+    smallButton("Remove", () => { usbDraft.storages.splice(i, 1); renderUsbDraft(); }))));
+}
+
+function describeFormat(f) {
+  const bits = { s16_le: 16, s24_3le: 24, s24_le: 24, s32_le: 32 }[f.sample_format] || 16;
+  return `${kHz(f.rate)} ${(CHANNEL_NAMES[f.channels] || `${f.channels} channels`).toLowerCase()} ${bits}-bit`;
+}
+
+// The format of each direction the sound card has: the rates the target
+// chooses from, starting with the first.
+function renderFormats() {
+  const directions = { off: [], mic: ["microphone"], duplex: ["microphone", "speaker"] }[usbDraft.audio];
+  $("usbformats").replaceChildren(...directions.map((direction) => {
+    const f = usbDraft[direction];
+    const using = usbConfig.formats && usbConfig.formats[direction];
+    const startOptions = () => f.rates.map((rate) => [rate, kHz(rate)]);
+    const start = choice(startOptions(), f.rates[0], "The rate the target starts at", (rate) => {
+      f.rates = [rate, ...f.rates.filter((r) => r !== rate)];
+      refreshUsb();
+    });
+    const showStart = () => {
+      start.replaceChildren(...startOptions().map(([v, text]) => h("option", { value: v }, text)));
+      start.value = String(f.rates[0]);
+      start.disabled = f.rates.length < 2;
+    };
+    showStart();
+    const rates = h("div", { class: "rates" }, ...RATES.map((rate) => {
+      const box = h("input", { type: "checkbox" });
+      box.checked = f.rates.includes(rate);
+      box.addEventListener("change", () => {
+        const first = f.rates[0];
+        const ticked = RATES.filter((r) => (r === rate ? box.checked : f.rates.includes(r)));
+        f.rates = ticked.includes(first) ? [first, ...ticked.filter((r) => r !== first)] : ticked;
+        showStart();
+        refreshUsb();
+      });
+      return h("label", null, box, kHz(rate));
+    }));
+    return h("div", { class: "format" },
+      h("header", null, h("b", null, direction === "microphone" ? "Microphone" : "Speaker"),
+        h("small", null, direction === "microphone" ? "the browser's, to the target" : "the target's, to the browser")),
+      h("div", { class: "field" },
+        h("label", { class: "check" }, "Channels ",
+          choice(CHANNELS[direction].map((n) => [n, CHANNEL_NAMES[n]]), f.channels, "Channels",
+                 (n) => { f.channels = n; refreshUsb(); })),
+        h("label", { class: "check" }, "Samples ",
+          choice(SAMPLE_BITS.map((b) => [b, `${b}-bit`]), f.sample_bits, "Sample size",
+                 (b) => { f.sample_bits = b; refreshUsb(); })),
+        h("label", { class: "check" }, "Starts at ", start)),
+      h("div", { class: "field" }, rates),
+      using ? h("p", { class: "note" }, `The target uses ${describeFormat(using)}.`) : null);
+  }));
+}
+
+const nextName = (prefix, taken, from) => {
+  for (let i = from; ; i++) if (!taken.includes(`${prefix}${i}`)) return `${prefix}${i}`;
+};
+
+$("usbdrives").replaceChildren(...driveOptions.map(([v, text]) => h("option", { value: v }, text)));
+$("usbdevices").addEventListener("click", (e) => {
+  const button = e.target.closest("[data-setting] > button");
+  if (!button || !usbDraft) return;
+  const setting = button.parentElement.dataset.setting;
+  usbDraft[setting] = setting === "audio" ? button.dataset.value : button.dataset.value === "true";
+  renderUsbDraft();
+});
+$("usbpointer").addEventListener("change", () => { usbDraft.pointer = $("usbpointer").value; refreshUsb(); });
+$("usbjiggler").addEventListener("change", () => { usbDraft.jiggler = $("usbjiggler").checked; refreshUsb(); });
+$("usbdrives").addEventListener("change", () => { usbDraft.drives = +$("usbdrives").value; refreshUsb(); });
+$("usbaddnetwork").addEventListener("click", () => {
+  usbDraft.networks.push(nextName("usb", ["usb0", ...usbDraft.networks], 1));
+  renderUsbDraft();
+});
+$("usbaddstorage").addEventListener("click", () => {
+  usbDraft.storages.push({ name: nextName("disk", ["disk", ...usbDraft.storages.map((x) => x.name)], 2), drives: 1 });
+  renderUsbDraft();
+});
+$("usbrevert").addEventListener("click", () => {
+  usbDraft = structuredClone(usbConfig.settings);
+  $("usberror").hidden = true;
+  renderUsbDraft();
+});
+$("usbapply").addEventListener("click", async () => {
+  usbBusy = true;
+  refreshUsb();
+  $("usberror").hidden = true;
+  try {
+    usbConfig = await post("/api/usb", usbDraft);
+    usbDraft = structuredClone(usbConfig.settings);
+    toast("USB devices set");
+  } catch (e) {
+    const data = e.data || {};
+    const explain = USB_ERRORS[data.error];
+    $("usberror").textContent = explain ? explain(data.direction, data) : `USB: ${e.message}`;
+    $("usberror").hidden = false;
+  } finally {
+    usbBusy = false;
+    renderUsbDraft();
+    refreshDrives();
+  }
+});
+
+// The drives: what is in each, as the virtual disk tells it.
+let diskState = null;
+async function refreshDrives() {
+  try {
+    const reply = await fetch("/api/disk");
+    if (reply.status === 401) return location.reload();
+    if (!reply.ok) throw new Error(`HTTP ${reply.status}`);
+    diskState = await reply.json();
+    renderDrives(diskState);
+  } catch (e) {
+    $("usbdrivelist").replaceChildren(h("p", { class: "note" }, `The virtual disk: ${e.message}`));
+  }
+}
+
+async function ejectDrive(drive) {
+  try {
+    await post("/api/disk/eject", { drive });
+  } catch (e) {
+    toast(`Eject: ${e.message}`, true);
+  }
+  refreshDrives();
+}
+
+function renderDrives(s) {
+  if (!s.drives.length) {
+    $("usbdrivelist").replaceChildren(h("p", { class: "note" }, "The virtual disk is off: turn it on above."));
+    return;
+  }
+  const several = new Set(s.drives.map((d) => d.storage)).size > 1;
+  $("usbdrivelist").replaceChildren(...s.drives.map((d) => {
+    const m = d.medium;
+    const making = s.busy && s.busy.drive === d.drive && s.busy.action === "making";
+    const percent = making && s.busy.total ? ` ${Math.floor((100 * s.busy.done) / s.busy.total)}%` : "";
+    const change = h("button", { class: "btn small", type: "button", disabled: !!s.busy }, m ? "Change…" : "Insert…");
+    change.addEventListener("click", () => KuronekoDisk.open({ drive: d.drive, onClose: refreshDrives }));
+    const eject = m ? h("button", { class: "btn small", type: "button", disabled: !!s.busy }, "Eject") : null;
+    if (eject) eject.addEventListener("click", () => ejectDrive(d.drive));
+    return h("div", { class: "driverow" },
+      h("b", null, `Drive ${d.drive + 1}${several ? ` (${d.storage})` : ""}`),
+      h("div", { class: "what" },
+        making ? `Making a drive from ${s.busy.name}:${percent}` : m ? m.name : h("span", { class: "muted" }, "Empty"),
+        m && !making ? h("small", null, KuronekoDisk.describe(m)) : null),
+      change, eject);
+  }));
+}
+
+$("usbdisk").addEventListener("click", () => KuronekoDisk.open({ onClose: refreshDrives }));
 
 // ---- Auxiliary port: its two lines, NanoKVMGo.Expansion
 
@@ -1761,6 +2200,7 @@ $("keep").addEventListener("click", async () => {
 
 showBrightness();
 load().catch((e) => toast(`Device: ${e.message}`, true)).finally(connect);
+loadUsb();
 </script>
 </body>
 </html>

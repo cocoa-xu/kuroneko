@@ -94,7 +94,9 @@ defmodule Kuroneko.WebTest do
           post: "/api/usb/addresses",
           get: "/api/ssh/keys",
           post: "/api/ssh/keys",
-          post: "/api/ssh/keys/remove"
+          post: "/api/ssh/keys/remove",
+          get: "/disk.js",
+          get: "/disk.css"
         ] do
       assert request(method, path, "{}", @page, false).status == 401, "#{method} #{path}"
     end
@@ -110,6 +112,14 @@ defmodule Kuroneko.WebTest do
     assert request(:get, "/device").resp_body =~ ~s(<main id="device")
     assert request(:get, "/settings", "", [], false).resp_body =~ "Log in to control the computer"
     assert request(:get, "/settings").resp_body =~ ~s(<main id="settings")
+
+    for {path, type} <- [{"/disk.js", "text/javascript"}, {"/disk.css", "text/css"}] do
+      asset = request(:get, path)
+      assert asset.status == 200
+      assert [content_type] = get_resp_header(asset, "content-type")
+      assert String.starts_with?(content_type, type)
+    end
+
     refute_receive :rebooted, 100
   end
 
@@ -255,6 +265,17 @@ defmodule Kuroneko.WebTest do
     assert request(:post, "/api/usb", ~s({"audio":"duplex"}), origin_only).status == 403
     assert request(:post, "/api/usb", ~s({"audio":"loud"}), @page).status == 400
     assert request(:post, "/api/usb", ~s({"volume":11}), @page).status == 400
+
+    invalid = request(:post, "/api/usb", ~s({"networks":["usb0"]}), @page)
+    assert invalid.status == 400
+    assert Jason.decode!(invalid.resp_body) == %{"error" => "invalid", "setting" => "networks"}
+
+    bad_format = request(:post, "/api/usb", ~s({"microphone":{"rates":[]}}), @page)
+    assert bad_format.status == 400
+
+    assert %{"error" => "invalid_rates", "direction" => "microphone"} =
+             Jason.decode!(bad_format.resp_body)
+
     assert request(:post, "/api/usb", ~s({"microphone":{"sample_bits":20}}), @page).status == 400
     assert request(:post, "/api/usb", ~s([1]), @page).status == 400
     assert request(:post, "/api/usb", "audio=duplex", @page).status == 400

@@ -116,6 +116,8 @@ defmodule Kuroneko.Web do
   get("/", do: page(conn, "index.html"))
   get("/device", do: page(conn, "device.html"))
   get("/settings", do: page(conn, "settings.html"))
+  get("/disk.js", do: asset(conn, "disk.js", "text/javascript"))
+  get("/disk.css", do: asset(conn, "disk.css", "text/css"))
 
   get "/api/auth" do
     json(conn, 200, %{password_set: Auth.password_set?(), logged_in: logged_in?(conn)})
@@ -547,6 +549,13 @@ defmodule Kuroneko.Web do
     |> send_file(200, Application.app_dir(:kuroneko, "priv/static/" <> page))
   end
 
+  # What the pages share, for a session only.
+  defp asset(conn, file, type) do
+    conn
+    |> put_resp_content_type(type)
+    |> send_file(200, Application.app_dir(:kuroneko, "priv/static/" <> file))
+  end
+
   defp https_only(%{scheme: :http, method: "GET"} = conn, _opts) do
     if Application.get_env(:kuroneko, :https_redirect, false) do
       conn
@@ -758,6 +767,8 @@ defmodule Kuroneko.Web do
   # The page explains these.
   defp usb_error({reason, direction, _detail}) when direction in [:microphone, :speaker],
     do: %{error: reason, direction: direction}
+
+  defp usb_error({:invalid, setting}), do: %{error: :invalid, setting: setting}
 
   defp usb_error(reason), do: %{error: inspect(reason)}
 

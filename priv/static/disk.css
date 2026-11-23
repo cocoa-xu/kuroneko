@@ -1,0 +1,23 @@
+/* The virtual disk's dialog (disk.js), in the colors of the page that opens it. */
+#diskdialog { width: min(640px, calc(100vw - 32px)); box-sizing: border-box; }
+#diskdialog label { display: inline-flex; align-items: center; gap: 6px; margin: 4px 14px 4px 0;
+  line-height: 1.4; }
+#diskdialog .note { color: var(--text-3, #7d838b); font-size: 12px; line-height: 1.45; margin: 8px 0 0; }
+#diskdialog .error { color: var(--bad, #e0786f); }
+#diskdialog code { font-family: var(--mono, ui-monospace, monospace); }
+.diskdrive { display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+  border: 1px solid var(--line-2, #2c3036); border-radius: 6px; }
+.diskdrive span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.diskdrive + .diskdrive { margin-top: 6px; }
+.disklist { margin: 10px 0 0; max-height: 40vh; overflow: auto; border: 1px solid var(--line-2, #2c3036);
+  border-radius: 6px; }
+.disklist:empty { display: none; }
+.diskrow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 6px 10px; }
+.diskrow + .diskrow { border-top: 1px solid var(--line-2, #2c3036); }
+.diskrow .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--text, #e6e8eb); }
+.diskrow .muted { color: var(--text-3, #7d838b); font-size: 12px; white-space: nowrap; }
+.diskrow .diskinfo { flex-basis: 100%; white-space: normal; }
+.disktarget { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.diskupload { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0 0; }
+.diskupload .muted { color: var(--text-2, #9aa0a8); font-size: 12px; }

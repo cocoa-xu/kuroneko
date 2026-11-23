@@ -51,40 +51,12 @@
     padding: 16px 20px; width: min(600px, calc(100vw - 32px)); box-sizing: border-box; }
   dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
   dialog h3 { margin: 0 0 10px; font-size: 15px; color: #e6e8eb; }
-  .usbrow { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
-  .usbrow input[type=text] { width: 9em; }
-  .usbadd { display: flex; gap: 8px; margin: 8px 0 0; }
-  #usbendpoints.over { color: #e5484d; }
-  dialog fieldset { border: 1px solid #2c3036; border-radius: 6px; margin: 12px 0 0;
-    padding: 6px 12px 10px; }
-  dialog legend { padding: 0 4px; color: #e6e8eb; }
-  dialog label { display: inline-flex; align-items: center; gap: 6px; margin: 4px 14px 4px 0;
-    line-height: 1.4; }
-  dialog .rates { display: flex; flex-wrap: wrap; gap: 0 4px; }
-  dialog .note, dialog .inuse { color: #7d838b; font-size: 12px; line-height: 1.45; margin: 8px 0 0; }
-  dialog .inuse:empty { display: none; }
-  dialog .error { color: #e0786f; }
   dialog select, dialog button { font: inherit; padding: 2px 10px; border-radius: 4px;
     border: 1px solid #343941; background: #1f2226; color: #c9ccd1; cursor: pointer; }
   dialog menu { display: flex; justify-content: flex-end; gap: 8px; margin: 14px 0 0; padding: 0; }
-  dialog button.primary { border-color: #3fa45b; color: #e6e8eb; }
   dialog button:disabled { opacity: 0.5; cursor: default; }
-  .diskdrive { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid #2c3036;
-    border-radius: 6px; }
-  .diskdrive span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  .disklist { margin: 10px 0 0; max-height: 40vh; overflow: auto; border: 1px solid #2c3036; border-radius: 6px; }
-  .disklist:empty { display: none; }
-  .diskrow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 6px 10px; }
-  .diskrow .diskinfo { flex-basis: 100%; white-space: normal; }
-  .diskdrive + .diskdrive { margin-top: 6px; }
-  .disktarget { display: flex; flex-wrap: wrap; gap: 4px 16px; }
-  .diskrow + .diskrow { border-top: 1px solid #2c3036; }
-  .diskrow .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    color: #e6e8eb; }
-  .diskrow .muted { color: #7d838b; font-size: 12px; white-space: nowrap; }
-  .diskupload { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0 0; }
-  .diskupload .muted { color: #9aa0a8; font-size: 12px; }
 </style>
+<link rel="stylesheet" href="/disk.css">
 </head>
 <body>
 <div id="bar">
@@ -122,6 +94,7 @@
     </optgroup>
     <optgroup label="More">
       <option value="type">Type text…</option>
+      <option value="voice" id="voice"></option>
       <option value="wake">Wake on LAN…</option>
       <option value="screen">NanoKVM screen…</option>
       <option value="device">NanoKVM status and hardware…</option>
@@ -138,119 +111,15 @@
     <option value="mic">USB microphone</option>
     <option value="duplex">USB microphone + speaker</option>
   </select>
-  <button id="usb" title="The USB devices the target sees">USB…</button>
+  <button id="usb" title="The USB devices the target sees, on the device page">USB…</button>
   <button id="disk" title="Images and folders the target sees as a USB drive">Disk…</button>
   <a id="devicelink" class="button" href="/device" target="kuroneko-device"
      title="The NanoKVM itself: its hardware, status, screen and firmware">Device</a>
 </div>
-<dialog id="usbdialog">
-  <form id="usbform" method="dialog">
-    <h3>USB devices the target sees</h3>
-    <label><input type="checkbox" name="hid"> Keyboard and mouse</label>
-    <label>Pointer
-      <select name="pointer">
-        <option value="absolute">Absolute mouse</option>
-        <option value="stylus">Pen (Android, iPad)</option>
-        <option value="touch">Touch screen</option>
-      </select>
-    </label>
-    <label><input type="checkbox" name="jiggler"> Mouse jiggler: a pixel and back each
-      minute, so that the target stays awake</label>
-    <label><input type="checkbox" name="storage"> Virtual disk with
-      <select name="drives" title="Drives share one function's endpoints">
-        <option>1</option><option>2</option><option>3</option><option>4</option>
-        <option>5</option><option>6</option><option>7</option><option>8</option>
-        <option>9</option><option>10</option><option>11</option><option>12</option>
-        <option>13</option><option>14</option><option>15</option><option>16</option>
-      </select> drives</label>
-    <label>Sound card
-      <select name="audio">
-        <option value="off">Off</option>
-        <option value="mic">Microphone</option>
-        <option value="duplex">Microphone and speaker</option>
-      </select>
-    </label>
-    <fieldset data-direction="microphone">
-      <legend>Microphone: the browser's, to the target</legend>
-      <label>Channels <select name="channels">
-        <option value="1">Mono</option><option value="2">Stereo</option></select></label>
-      <label>Samples <select name="sample_bits">
-        <option value="16">16-bit</option><option value="24">24-bit</option>
-        <option value="32">32-bit</option></select></label>
-      <div class="rates"></div>
-      <label>Starts at <select name="start"></select></label>
-      <p class="inuse"></p>
-    </fieldset>
-    <fieldset data-direction="speaker">
-      <legend>Speaker: the target's, to the browser</legend>
-      <label>Channels <select name="channels">
-        <option value="1">Mono</option><option value="2">Stereo</option>
-        <option value="6">5.1</option><option value="8">7.1</option></select></label>
-      <label>Samples <select name="sample_bits">
-        <option value="16">16-bit</option><option value="24">24-bit</option>
-        <option value="32">32-bit</option></select></label>
-      <div class="rates"></div>
-      <label>Starts at <select name="start"></select></label>
-      <p class="inuse"></p>
-    </fieldset>
-    <p class="note">The target starts at the rate chosen here and can switch among the ones
-      ticked: a Mac in Audio MIDI Setup, Windows in the sound device's properties. Applying
-      reconnects the NanoKVM's USB devices on the target.</p>
-    <label><input type="checkbox" id="voice"> Echo cancellation, noise suppression and automatic
-      gain on this browser's microphone</label>
-    <fieldset id="usbmore">
-      <legend>More USB devices</legend>
-      <label><input type="checkbox" name="network"> USB network <code>usb0</code></label>
-      <div id="usbnetworks"></div>
-      <div id="usbstorages"></div>
-      <div class="usbadd">
-        <button type="button" id="usbaddnetwork">Add a network</button>
-        <button type="button" id="usbaddstorage">Add a storage device</button>
-      </div>
-      <p class="note">Each USB device takes some of the NanoKVM's endpoints: a network two IN and one
-        OUT, the keyboard and mice one IN each, a storage device one of each however many drives it
-        has, the microphone one IN, the speaker one OUT. <strong id="usbendpoints"></strong></p>
-    </fieldset>
-    <p class="note error" id="usberror" hidden></p>
-    <menu>
-      <button type="button" id="usbcancel">Cancel</button>
-      <button type="button" id="usbapply" class="primary">Apply</button>
-    </menu>
-  </form>
-</dialog>
-<dialog id="diskdialog">
-  <form method="dialog">
-    <h3>Virtual disk</h3>
-    <div id="diskdrive"></div>
-    <p class="note" id="diskbusy" hidden></p>
-    <div class="disklist" id="disklist"></div>
-    <div class="note disktarget">
-      <label id="disktargetlabel" hidden>Insert into <select id="disktarget"></select></label>
-      <label><input type="checkbox" id="diskremember" checked> Insert it again after the NanoKVM
-        restarts</label>
-    </div>
-    <div class="diskupload">
-      <button type="button" id="diskaddfiles">Upload images…</button>
-      <button type="button" id="diskaddfolder">Upload a folder…</button>
-      <button type="button" id="diskstop" hidden>Stop</button>
-      <span class="muted" id="diskprogress"></span>
-      <input type="file" id="diskfiles" multiple hidden>
-      <input type="file" id="diskfolder" webkitdirectory hidden>
-    </div>
-    <p class="note">An image goes in as what it holds: a disc image on the disc its format belongs on (CD,
-      DVD or Blu-ray), any other image as a USB drive; the line under each image says what was found, and
-      the choice can be forced. A folder goes in as a drive made from it: read-only, the computer sees the
-      folder as it was; writable, what the computer changes comes back to the folder when the drive is
-      ejected. Folders are exFAT drives, or FAT32 for BIOS updates, UEFI and older systems, which holds
-      files of at most 4 GiB. Eject the drive on the computer before ejecting it here. The library is
-      <code>/data/images</code> on the NanoKVM, which SFTP reaches too. <span id="diskfree"></span></p>
-    <p class="note error" id="diskerror" hidden></p>
-    <menu><button type="button" id="diskclose">Close</button></menu>
-  </form>
-</dialog>
 <canvas id="canvas" class="screen" tabindex="0" hidden></canvas>
 <img id="mjpeg" class="screen" tabindex="0" alt="" hidden>
 <div id="notice" hidden></div>
+<script src="/disk.js"></script>
 <script>
   const canvas = document.getElementById("canvas");
   const img = document.getElementById("mjpeg");
@@ -965,8 +834,6 @@
   }
 
   // ---- USB devices ----
-  const RATES = [8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200, 96000, 176400, 192000,
-                 352800, 384000];
   const kHz = (rate) => `${+(rate / 1000).toFixed(3)} kHz`;
   const CHANNEL_NAMES = { 1: "mono", 2: "stereo", 6: "5.1", 8: "7.1" };
   function describe(f) {
@@ -974,17 +841,8 @@
     return `${kHz(f.rate)} ${CHANNEL_NAMES[f.channels] || `${f.channels} channels`} ${bits}-bit`;
   }
   const USB_ERRORS = {
-    invalid_rates: (d) => `Tick 1 to 10 sample rates for the ${d}.`,
-    too_much_bandwidth: (d) =>
-      `The ${d} format is more than USB carries: fewer channels, a smaller sample size or lower rates.`,
-    invalid_channels: (d) => `The ${d} cannot have that many channels.`,
-    invalid_sample_bits: (d) => `The ${d} cannot have that sample size.`,
     not_enough_endpoints: (_d, body) => `These take ${body.need.in} IN and ${body.need.out} OUT endpoints; ` +
-      `the NanoKVM has ${body.have.in} and ${body.have.out}. Turn something off.`,
-    "invalid networks": () => "Give each network its own name, not usb0, of up to 32 letters, digits, " +
-      "\"-\" and \"_\". Up to 4 networks.",
-    "invalid storages": () => "Give each storage device its own name, not disk, of up to 32 letters, digits, " +
-      "\"-\" and \"_\". Up to 4 storage devices.",
+      `the NanoKVM has ${body.have.in} and ${body.have.out}. Turn something off under USB on the device page.`,
   };
 
   async function postUsb(changes) {
@@ -1011,173 +869,14 @@
     }
   };
 
-  const usbDialog = document.getElementById("usbdialog");
-  const usbForm = document.getElementById("usbform");
-  const usbError = document.getElementById("usberror");
-  const usbApply = document.getElementById("usbapply");
-  const fieldsets = [...usbForm.querySelectorAll("fieldset")];
-  for (const fieldset of fieldsets) {
-    for (const rate of RATES) {
-      const label = document.createElement("label");
-      const box = document.createElement("input");
-      box.type = "checkbox";
-      box.value = rate;
-      label.append(box, kHz(rate));
-      fieldset.querySelector(".rates").append(label);
-    }
-  }
+  document.getElementById("usb").onclick = () => openDevice("usb");
 
-  // The ticked rates to start with.
-  function refreshStart(fieldset, preferred) {
-    const select = fieldset.querySelector("[name=start]");
-    const keep = preferred ?? +select.value;
-    const ticked = [...fieldset.querySelectorAll(".rates input:checked")].map((box) => +box.value);
-    select.replaceChildren(...ticked.map((rate) => new Option(kHz(rate), rate)));
-    if (ticked.includes(keep)) select.value = String(keep);
-    select.disabled = ticked.length < 2;
-  }
-  for (const fieldset of fieldsets) {
-    fieldset.querySelector(".rates").addEventListener("change", () => refreshStart(fieldset));
-  }
-
-  function setSelect(select, value) {
-    if (![...select.options].some((o) => +o.value === value)) select.add(new Option(value, value));
-    select.value = String(value);
-  }
-
-  document.getElementById("usb").onclick = async () => {
-    try {
-      const usb = await (await fetch("/api/usb")).json();
-      const s = usb.settings;
-      usbForm.hid.checked = s.hid;
-      usbForm.pointer.value = s.pointer;
-      usbForm.jiggler.checked = s.jiggler;
-      usbForm.storage.checked = s.storage;
-      usbForm.drives.value = String(s.drives || 1);
-      usbForm.audio.value = s.audio;
-      usbForm.network.checked = s.network !== false;
-      usbMore = { networks: [...(s.networks || [])], storages: (s.storages || []).map((x) => ({ ...x })) };
-      usbEndpoints = usb.endpoints || null;
-      usbInstances = usb.instances || [];
-      renderUsbMore();
-      for (const fieldset of fieldsets) {
-        const direction = fieldset.dataset.direction, f = s[direction];
-        setSelect(fieldset.querySelector("[name=channels]"), f.channels);
-        setSelect(fieldset.querySelector("[name=sample_bits]"), f.sample_bits);
-        for (const box of fieldset.querySelectorAll(".rates input")) box.checked = f.rates.includes(+box.value);
-        refreshStart(fieldset, f.rates[0]);
-        const using = usb.formats[direction];
-        fieldset.querySelector(".inuse").textContent = using ? `The target uses ${describe(using)}.` : "";
-      }
-      document.getElementById("voice").checked = prefs.get("voice", true);
-      usbError.hidden = true;
-      usbDialog.showModal();
-    } catch (e) {
-      alert(`USB: ${e.message}`);
-    }
+  // The browser's own processing of the microphone, kept in this browser.
+  const voiceOption = document.getElementById("voice");
+  const showVoice = () => {
+    voiceOption.textContent = `Mic echo cancellation: ${prefs.get("voice", true) ? "on" : "off"}`;
   };
-
-  document.getElementById("usbcancel").onclick = () => usbDialog.close();
-
-  // More USB devices: networks and storage devices besides the usual, each by
-  // name, within the endpoints the NanoKVM has.
-  let usbMore = { networks: [], storages: [] }, usbEndpoints = null, usbInstances = [];
-  const DRIVE_COUNTS = Array.from({ length: 16 }, (_, i) => i + 1);
-
-  function nextName(prefix, taken, from) {
-    for (let i = from; ; i++) if (!taken.includes(`${prefix}${i}`)) return `${prefix}${i}`;
-  }
-
-  function renderUsbMore() {
-    document.getElementById("usbnetworks").replaceChildren(...usbMore.networks.map((name, i) =>
-      node("div", { className: "usbrow" },
-        node("span", { textContent: "Network" }),
-        node("input", { type: "text", value: name, title: "Its name; the NanoKVM names its interface",
-          oninput: (e) => { usbMore.networks[i] = e.target.value.trim(); } }),
-        node("span", { className: "note", textContent: networkInterface(name) }),
-        node("button", { type: "button", textContent: "Remove",
-          onclick: () => { usbMore.networks.splice(i, 1); renderUsbMore(); } }))));
-    document.getElementById("usbstorages").replaceChildren(...usbMore.storages.map((st, i) => {
-      const drives = node("select", { onchange: (e) => { st.drives = +e.target.value; } },
-        ...DRIVE_COUNTS.map((n) => new Option(String(n), String(n))));
-      drives.value = String(st.drives);
-      return node("div", { className: "usbrow" },
-        node("span", { textContent: "Storage device" }),
-        node("input", { type: "text", value: st.name, title: "Its name",
-          oninput: (e) => { st.name = e.target.value.trim(); } }),
-        node("span", { textContent: "drives:" }), drives,
-        node("button", { type: "button", textContent: "Remove",
-          onclick: () => { usbMore.storages.splice(i, 1); renderUsbMore(); } }));
-    }));
-    countEndpoints();
-  }
-
-  document.getElementById("usbaddnetwork").onclick = () => {
-    usbMore.networks.push(nextName("usb", usbMore.networks, 1));
-    renderUsbMore();
-  };
-  document.getElementById("usbaddstorage").onclick = () => {
-    usbMore.storages.push({ name: nextName("disk", usbMore.storages.map((x) => x.name), 2), drives: 1 });
-    renderUsbMore();
-  };
-
-  function networkInterface(name) {
-    const found = usbInstances.find((i) => i.kind === "network" && i.name === name);
-    return found && found.interface ? `interface ${found.interface}` : "";
-  }
-
-  // The endpoints the devices chosen take, at what the NanoKVM says each kind takes.
-  function countEndpoints() {
-    const line = document.getElementById("usbendpoints");
-    const costs = usbEndpoints && usbEndpoints.costs, have = usbEndpoints && usbEndpoints.have;
-    if (!costs) {
-      line.textContent = "";
-      usbApply.disabled = false;
-      return;
-    }
-    const audio = usbForm.audio.value;
-    const kinds = [...(usbForm.network.checked ? ["network"] : []), ...usbMore.networks.map(() => "network"),
-      ...(usbForm.hid.checked ? ["keyboard", "mouse", "relative_mouse"] : []),
-      ...(usbForm.storage.checked ? ["storage"] : []), ...usbMore.storages.map(() => "storage"),
-      ...(audio === "off" ? [] : ["microphone"]), ...(audio === "duplex" ? ["speaker"] : [])];
-    const use = kinds.reduce((u, k) => ({ in: u.in + costs[k].in, out: u.out + costs[k].out }), { in: 0, out: 0 });
-    const over = have && (use.in > have.in || use.out > have.out);
-    line.textContent = have ? `In use: IN ${use.in} of ${have.in}, OUT ${use.out} of ${have.out}.` +
-      (over ? " Too many: remove or turn something off." : "") : `In use: IN ${use.in}, OUT ${use.out}.`;
-    line.classList.toggle("over", !!over);
-    usbApply.disabled = !!over;
-  }
-
-  for (const name of ["hid", "storage", "audio", "network"]) usbForm[name].addEventListener("change", countEndpoints);
-
-  usbApply.onclick = async () => {
-    const changes = { hid: usbForm.hid.checked, pointer: usbForm.pointer.value,
-                      jiggler: usbForm.jiggler.checked, storage: usbForm.storage.checked,
-                      drives: +usbForm.drives.value, audio: usbForm.audio.value,
-                      network: usbForm.network.checked, networks: usbMore.networks, storages: usbMore.storages };
-    for (const fieldset of fieldsets) {
-      changes[fieldset.dataset.direction] = {
-        channels: +fieldset.querySelector("[name=channels]").value,
-        sample_bits: +fieldset.querySelector("[name=sample_bits]").value,
-        rates: [...fieldset.querySelectorAll(".rates input:checked")].map((box) => +box.value),
-      };
-      const start = +fieldset.querySelector("[name=start]").value;
-      const rates = changes[fieldset.dataset.direction].rates;
-      if (rates.includes(start)) rates.sort((a, b) => (b === start) - (a === start));
-    }
-    prefs.set("voice", document.getElementById("voice").checked);
-    usbApply.disabled = true;
-    try {
-      audioMode = (await postUsb(changes)).settings.audio;
-      showAudioMode(audioMode);
-      usbDialog.close();
-    } catch (e) {
-      usbError.textContent = e.message;
-      usbError.hidden = false;
-    } finally {
-      usbApply.disabled = false;
-    }
-  };
+  showVoice();
 
   // Keys the browser does not let the page take, typed text, Wake-on-LAN.
   const actions = document.getElementById("actions");
@@ -1195,6 +894,9 @@
         headers: { "content-type": "application/json" }, body: JSON.stringify({ mac }) });
       const body = await reply.json().catch(() => ({}));
       alert(reply.ok ? `Sent the magic packet to ${mac}.` : `Wake on LAN: ${body.error || reply.status}`);
+    } else if (value === "voice") {
+      prefs.set("voice", !prefs.get("voice", true));
+      showVoice();
     } else if (value === "screen" || value === "device") {
       return openDevice(value === "screen" ? "screen" : "");
     } else if (value === "settings") {
@@ -1224,292 +926,7 @@
   };
 
   // ---- Virtual disk ----
-  const diskDialog = document.getElementById("diskdialog");
-  const diskError = document.getElementById("diskerror");
-  const DISK_ERRORS = {
-    busy: "The virtual disk is busy: wait until it is done.",
-    eject_first: "Eject the writable folder first: its changes go back to it then.",
-    in_use: "That is in the drive or in use.",
-    exists: "There is one of that name already.",
-    invalid_name: "The library does not take that name.",
-    enoent: "That is not in the library any more.",
-    file_too_large: "A file is larger than 4 GiB, more than FAT32 holds: choose exFAT.",
-    no_exfat: "This NanoKVM's system has no exFAT: update it, or choose FAT32.",
-    disc_unsupported: "This NanoKVM's system has CD drives only: update it, or choose CD-ROM.",
-    bad_name: (data) => `“${data.name}” has a character drives do not take (" * : < > ? \\ |): rename it first.`,
-    no_room: "Not enough free space on the NanoKVM.",
-    no_storage: "The virtual disk is off: turn it on in USB…",
-    cd_only: "A CUE sheet is a CD: insert it as Auto or CD-ROM.",
-    cue: (data) => `The CUE sheet cannot go in: ${data.detail}.`,
-    tracks_unsupported: "This NanoKVM's system has no CDs of tracks: update it.",
-    no_maker: "That maker is not on this NanoKVM any more.",
-    not_offered: "That maker does not offer this mode for it.",
-  };
-  const FILESYSTEMS = { exfat: "exFAT", fat32: "FAT32" };
-  const DRIVES = { cd: "CD-ROM", dvd: "DVD-ROM", bd: "BD-ROM" };
-  const DISCS = { cd: "CD", dvd: "DVD", bd: "Blu-ray" };
-  const BOOTS = { bios: "BIOS", uefi: "UEFI", other: "other firmware" };
-
-  // How an item can go in, the first being the default; then what makers offer.
-  function diskModes(item) {
-    const made = (item.makers || []).map((o) => [`maker:${o.maker}:${o.mode}`, o.label]);
-    if (item.kind === "folder") {
-      return [["exfat-ro", "exFAT, read-only"], ["exfat-rw", "exFAT, writable"],
-              ["fat32-ro", "FAT32, read-only"], ["fat32-rw", "FAT32, writable"], ...made];
-    }
-    const disc = item.format && item.format.disc;
-    if (item.format && item.format.cue) return [["auto", "Auto: CD-ROM"], ...made];
-    return [["auto", disc ? `Auto: ${DRIVES[disc]}` : "Auto: USB drive, writable"],
-            ["cd", "CD-ROM"], ["dvd", "DVD-ROM"], ["bd", "BD-ROM"],
-            ["drive-ro", "USB drive, read-only"], ["drive-rw", "USB drive, writable"], ...made];
-  }
-
-  // What an image holds, from its own structures.
-  function formatText(f) {
-    if (!f) return "";
-    if (f.cue) {
-      if (f.cue.error) return `CUE sheet the drive cannot take: ${f.cue.error}`;
-      const tracks = [f.cue.data && `${f.cue.data} data`, f.cue.audio && `${f.cue.audio} audio`].filter(Boolean);
-      return `CUE sheet: a CD of ${tracks.join(" and ")} track${f.cue.data + f.cue.audio > 1 ? "s" : ""}`;
-    }
-    const parts = [];
-    const systems = [f.iso9660 && "ISO 9660", f.joliet && "Joliet", f.udf && `UDF ${f.udf}`].filter(Boolean);
-    if (f.disc) {
-      parts.push(`${DISCS[f.disc]} format` + (systems.length ? ` (${systems.join(", ")})` : "") +
-        (f.layers === 2 ? ", two layers" : ""));
-    }
-    if (f.boot && f.boot.length) parts.push(`boots ${f.boot.map((b) => BOOTS[b] || b).join(" and ")}`);
-    if (f.partitions) {
-      parts.push(`${f.partitions.toUpperCase()} partition table` + (f.disc ? ": boots as a USB drive too" : ""));
-    } else if (!f.disc) {
-      parts.push("no disc format or partition table found");
-    }
-    return parts.join("; ");
-  }
-
-  function insertBody(item, mode) {
-    const body = { name: item.name, remember: document.getElementById("diskremember").checked };
-    if (!document.getElementById("disktargetlabel").hidden) body.drive = +document.getElementById("disktarget").value;
-    const offer = (item.makers || []).find((o) => mode === `maker:${o.maker}:${o.mode}`);
-    if (offer) {
-      body.maker = offer.maker;
-      body.mode = offer.mode;
-    } else if (item.kind === "folder") {
-      body.filesystem = mode.split("-")[0];
-      body.read_only = !mode.endsWith("rw");
-    } else if (mode.startsWith("drive")) {
-      body.media = "drive";
-      body.read_only = mode.endsWith("ro");
-    } else {
-      body.media = mode;
-    }
-    return body;
-  }
-  const diskChoices = {};
-  let diskTimer = null, diskShown = "", disk = null, uploading = null;
-
-  const node = (tag, props, ...children) => {
-    const e = Object.assign(document.createElement(tag), props || {});
-    e.append(...children.filter((c) => c != null));
-    return e;
-  };
-  const bytesText = (n) => n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB`
-    : n >= 1e3 ? `${Math.round(n / 1e3)} kB` : `${n} B`;
-  const diskText = (code, data) => {
-    const text = DISK_ERRORS[code];
-    return typeof text === "function" ? text(data || {}) : text || code;
-  };
-  const showDiskError = (message) => { diskError.textContent = message || ""; diskError.hidden = !message; };
-
-  async function refreshDisk() {
-    try {
-      disk = await (await fetch("/api/disk")).json();
-      renderDisk(disk);
-    } catch (e) {
-      showDiskError(`Virtual disk: ${e.message}`);
-    }
-  }
-
-  async function diskAction(path, body) {
-    showDiskError("");
-    try {
-      const reply = await fetch(path, { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify(body) });
-      const data = await reply.json().catch(() => ({}));
-      if (!reply.ok) showDiskError(diskText(data.error, data) || `HTTP ${reply.status}`);
-    } catch (e) {
-      showDiskError(e.message);
-    }
-    refreshDisk();
-  }
-
-  function describeMedium(m) {
-    const access = m.read_only ? "read-only" : "writable";
-    const kept = m.remember ? ", in again after a restart" : "";
-    if (m.label) return `${m.label}, ${access}${kept}`;
-    return m.kind === "folder" ? `folder as ${FILESYSTEMS[m.filesystem] || "a drive"}, ${access}${kept}`
-      : `${m.cdrom ? DRIVES[m.disc] || "CD-ROM" : "USB drive"}${m.tracks ? ` of ${m.tracks} tracks` : ""}, ${access}${kept}`;
-  }
-
-  // The list is drawn anew only when it changes, so that a choice being made stays.
-  // A drive by number, and by its storage device when there are several.
-  const driveName = (s, d) => s.drives.length < 2 ? "The drive"
-    : new Set(s.drives.map((x) => x.storage)).size > 1 ? `Drive ${d.drive + 1} (${d.storage})` : `Drive ${d.drive + 1}`;
-
-  function renderDisk(s) {
-    const busy = s.busy;
-    if (busy) {
-      const percent = busy.total ? ` ${Math.floor((100 * busy.done) / busy.total)}%` : "";
-      const into = s.drives.length > 1 ? ` for drive ${busy.drive + 1}` : "";
-      document.getElementById("diskbusy").textContent = busy.action === "making"
-        ? `Making a drive from ${busy.name}${into}:${percent}` : `Copying the changes back to ${busy.name}:${percent}`;
-    }
-    document.getElementById("diskbusy").hidden = !busy;
-    document.getElementById("diskfree").textContent = `${bytesText(s.free)} free on the NanoKVM.`;
-    if (s.error) showDiskError(s.error);
-    const shown = JSON.stringify([s.items, s.drives, busy && [busy.action, busy.name]]);
-    if (shown === diskShown) return;
-    diskShown = shown;
-    document.getElementById("diskdrive").replaceChildren(...(s.drives.length ? s.drives : [null]).map((d) => {
-      if (!d) return node("span", { textContent: "There is no drive: turn the virtual disk on in USB…" });
-      const m = d.medium;
-      return node("div", { className: "diskdrive" },
-        node("span", { textContent: m ? `${driveName(s, d)}: ${m.name} (${describeMedium(m)})`
-          : `${driveName(s, d)} is empty.` }),
-        m ? node("button", { type: "button", textContent: "Eject", disabled: !!busy,
-          onclick: () => diskAction("/api/disk/eject", { drive: d.drive }) }) : null);
-    }));
-    renderTarget(s);
-    document.getElementById("disklist").replaceChildren(...s.items.map((item) => diskRow(item, s)));
-  }
-
-  // Where Insert puts an item when there are several drives: the first empty
-  // one unless chosen.
-  function renderTarget(s) {
-    const target = document.getElementById("disktarget");
-    const chosen = target.value;
-    document.getElementById("disktargetlabel").hidden = s.drives.length < 2;
-    target.replaceChildren(...s.drives.map((d) =>
-      new Option(`${driveName(s, d)}${d.medium ? `, ${d.medium.name}` : ", empty"}`, String(d.drive))));
-    const empty = s.drives.find((d) => !d.medium);
-    target.value = chosen && s.drives.some((d) => String(d.drive) === chosen) ? chosen
-      : String(empty ? empty.drive : 0);
-  }
-
-  function diskRow(item, s) {
-    const holder = s.drives.find((d) => d.medium && d.medium.name === item.name);
-    const inDrive = !!holder;
-    const busyHere = !!s.busy && s.busy.name === item.name;
-    const mode = node("select", { title: item.kind === "folder"
-        ? "How the computer sees it. exFAT holds files of any size; FAT32 is for BIOS updates, UEFI and older systems."
-        : "How the computer sees it. Auto follows what the image holds; the others force it.",
-      onchange: (e) => { diskChoices[item.name] = e.target.value; } },
-      ...diskModes(item).map(([value, label]) => new Option(label, value)));
-    if (diskChoices[item.name]) mode.value = diskChoices[item.name];
-    const insert = node("button", { type: "button", textContent: "Insert", disabled: !!s.busy, onclick: () =>
-      diskAction("/api/disk/insert", insertBody(item, mode.value)) });
-    const remove = node("button", { type: "button", textContent: "Delete", disabled: inDrive || busyHere,
-      onclick: () => confirm(`Delete “${item.name}” from the NanoKVM?`) && diskAction("/api/disk/delete", { name: item.name }) });
-    return node("div", { className: "diskrow" },
-      node("span", { className: "name", textContent: item.name, title: item.name }),
-      node("span", { className: "muted", textContent: item.kind === "folder" ? "Folder" : "Image" }),
-      node("span", { className: "muted", textContent: bytesText(item.size) }),
-      inDrive ? node("span", { className: "muted",
-        textContent: s.drives.length > 1 ? `In drive ${holder.drive + 1}` : "In the drive" }) : mode,
-      inDrive ? null : insert,
-      remove,
-      item.format ? node("span", { className: "muted diskinfo", textContent: formatText(item.format) }) : null);
-  }
-
-  function uploadOne(file, name, replace, onProgress) {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      uploading = xhr;
-      xhr.open("PUT", `/api/disk/files?name=${encodeURIComponent(name)}${replace ? "&replace=1" : ""}`);
-      xhr.setRequestHeader("content-type", "application/octet-stream");
-      xhr.upload.onprogress = (e) => onProgress(e.loaded);
-      xhr.onload = () => {
-        let data = {};
-        try { data = JSON.parse(xhr.responseText); } catch (_) {}
-        if (xhr.status < 300) resolve();
-        else reject(Object.assign(new Error(diskText(data.error) || `HTTP ${xhr.status}`), { code: data.error }));
-      };
-      xhr.onerror = () => reject(new Error("the upload broke off"));
-      xhr.onabort = () => reject(Object.assign(new Error("stopped"), { code: "stopped" }));
-      xhr.send(file);
-    });
-  }
-
-  async function uploadAll(entries, replace) {
-    if (!entries.length) return;
-    const total = entries.reduce((sum, e) => sum + e.file.size, 0);
-    const progressText = document.getElementById("diskprogress");
-    const buttons = ["diskaddfiles", "diskaddfolder"].map((id) => document.getElementById(id));
-    buttons.forEach((b) => { b.disabled = true; });
-    document.getElementById("diskstop").hidden = false;
-    showDiskError("");
-    let sent = 0;
-    try {
-      for (const [i, e] of entries.entries()) {
-        const onProgress = (loaded) => {
-          progressText.textContent = `${e.name}, ${i + 1} of ${entries.length}: ` +
-            `${Math.floor((100 * (sent + loaded)) / Math.max(total, 1))}%`;
-        };
-        try {
-          await uploadOne(e.file, e.name, replace, onProgress);
-        } catch (err) {
-          if (err.code !== "exists" || !confirm(`“${e.name}” is on the NanoKVM already. Replace it?`)) throw err;
-          await uploadOne(e.file, e.name, true, onProgress);
-        }
-        sent += e.file.size;
-        refreshDisk();
-      }
-    } catch (err) {
-      if (err.code !== "stopped") showDiskError(`Upload: ${err.message}`);
-    } finally {
-      uploading = null;
-      progressText.textContent = "";
-      buttons.forEach((b) => { b.disabled = false; });
-      document.getElementById("diskstop").hidden = true;
-      refreshDisk();
-    }
-  }
-
-  const filesInput = document.getElementById("diskfiles"), folderInput = document.getElementById("diskfolder");
-  document.getElementById("diskaddfiles").onclick = () => filesInput.click();
-  document.getElementById("diskaddfolder").onclick = () => folderInput.click();
-  document.getElementById("diskstop").onclick = () => uploading && uploading.abort();
-  filesInput.onchange = () => {
-    const entries = [...filesInput.files].map((file) => ({ file, name: file.name }));
-    filesInput.value = "";
-    uploadAll(entries, false);
-  };
-  // A folder's files, without hidden ones such as .DS_Store, which the library does not take.
-  folderInput.onchange = () => {
-    const entries = [...folderInput.files].map((file) => ({ file, name: file.webkitRelativePath }))
-      .filter((e) => !e.name.split("/").some((part) => part.startsWith(".")));
-    folderInput.value = "";
-    if (!entries.length) return;
-    const top = entries[0].name.split("/")[0];
-    const there = disk && disk.items.some((item) => item.name === top);
-    if (there && !confirm(`“${top}” is on the NanoKVM already. Add to it, replacing files of the same name?`)) return;
-    uploadAll(entries, there);
-  };
-
-  document.getElementById("disk").onclick = async () => {
-    showDiskError("");
-    diskShown = "";
-    await refreshDisk();
-    diskDialog.showModal();
-    clearInterval(diskTimer);
-    diskTimer = setInterval(refreshDisk, 1500);
-  };
-  document.getElementById("diskclose").onclick = () => diskDialog.close();
-  diskDialog.addEventListener("close", () => {
-    clearInterval(diskTimer);
-    diskTimer = null;
-    view.focus();
-  });
+  document.getElementById("disk").onclick = () => KuronekoDisk.open({ onClose: () => view.focus() });
 
   updateMicButton();
   mouseMode = prefs.get("mouseMode", "absolute") === "relative" ? "relative" : "absolute";
