@@ -39,6 +39,28 @@ defmodule Kuroneko.VirtualDiskTest do
     assert VirtualDisk.drive_size(10 * @gib, 100, false, 10 * @gib) == {:error, :no_room}
   end
 
+  test "what goes in again after a restart, as it was asked for" do
+    for {kind, opts} <- [
+          image: [media: :dvd],
+          image: [media: :drive, read_only: false],
+          image: [],
+          folder: [filesystem: :fat32, read_only: true]
+        ] do
+      json = "照片" |> VirtualDisk.memory(kind, opts) |> Jason.encode!() |> Jason.decode!()
+      assert {:ok, %{name: "照片", kind: ^kind, opts: back}} = VirtualDisk.from_memory(json)
+      assert Enum.sort(back) == Enum.sort(opts)
+    end
+
+    odd = %{
+      "name" => "x",
+      "kind" => "image",
+      "opts" => %{"media" => "floppy", "read_only" => "yes"}
+    }
+
+    assert VirtualDisk.from_memory(odd) == {:ok, %{name: "x", kind: :image, opts: []}}
+    assert VirtualDisk.from_memory(%{"name" => "x", "kind" => "tape", "opts" => %{}}) == :error
+  end
+
   test "names no drive takes", %{tmp_dir: tmp} do
     File.mkdir_p!(Path.join(tmp, "ok/照片"))
     File.write!(Path.join(tmp, "ok/照片/a b (1).jpg"), "")

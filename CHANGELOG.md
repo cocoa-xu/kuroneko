@@ -13,7 +13,8 @@
   or a Blu-ray disc, or a USB drive, and any of these can be forced. A
   folder goes in as an exFAT drive, or FAT32 for BIOS updates, UEFI and
   older systems, read-only or writable, and a writable one's changes come
-  back to it when ejected
+  back to it when ejected. What is in the drive goes in again after a
+  restart, unless inserted with `remember: false`
 * The USB network's addresses can move, on the device page, where
   172.31.0.0/16 is taken
 * A network's signal in dBm when the pointer rests on its bars, and a

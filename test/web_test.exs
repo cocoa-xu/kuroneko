@@ -615,9 +615,9 @@ defmodule Kuroneko.WebTest do
       assert request(:post, "/api/disk/insert", body, @page).status == 202
       assert_receive {:insert, "debian.iso", [media: :dvd]}
 
-      body = ~s({"name":"debian.iso","media":"drive","read_only":false})
+      body = ~s({"name":"debian.iso","media":"drive","read_only":false,"remember":false})
       assert request(:post, "/api/disk/insert", body, @page).status == 202
-      assert_receive {:insert, "debian.iso", [media: :drive, read_only: false]}
+      assert_receive {:insert, "debian.iso", [media: :drive, read_only: false, remember: false]}
 
       conn = request(:post, "/api/disk/insert", ~s({"name":"busy.iso"}), @page)
       assert {conn.status, Jason.decode!(conn.resp_body)} == {409, %{"error" => "busy"}}

@@ -37,7 +37,8 @@ defmodule Kuroneko.Web do
       `Kuroneko.VirtualDisk`); `POST /api/disk/insert` `{"name": ...,
       "media": "auto", "read_only": true}` for an image (`"cd"`, `"dvd"`,
       `"bd"` or `"drive"` force one), `{"name": ..., "filesystem":
-      "exfat", "read_only": true}` (or `"fat32"`) for a folder, `POST
+      "exfat", "read_only": true}` (or `"fat32"`) for a folder, with
+      `"remember": false` for it not to go in again after a restart, `POST
       /api/disk/eject`, `POST
       /api/disk/delete` `{"name": ...}`, `PUT /api/disk/files?name=...` with
       the file as the body (`folder/file` for a folder's files, `&replace=1`
@@ -600,9 +601,10 @@ defmodule Kuroneko.Web do
           value != nil,
           do: {String.to_existing_atom(field), value}
 
-    if is_boolean(data["read_only"]),
-      do: choices ++ [read_only: data["read_only"]],
-      else: choices
+    flags =
+      for key <- [:read_only, :remember], is_boolean(data["#{key}"]), do: {key, data["#{key}"]}
+
+    choices ++ flags
   end
 
   # The page explains the reasons it knows.

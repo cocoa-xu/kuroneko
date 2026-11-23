@@ -199,6 +199,8 @@
     <div class="diskdrive" id="diskdrive"></div>
     <p class="note" id="diskbusy" hidden></p>
     <div class="disklist" id="disklist"></div>
+    <label class="note"><input type="checkbox" id="diskremember" checked> Insert it again after the NanoKVM
+      restarts</label>
     <div class="diskupload">
       <button type="button" id="diskaddfiles">Upload images…</button>
       <button type="button" id="diskaddfolder">Upload a folder…</button>
@@ -1162,7 +1164,7 @@
   }
 
   function insertBody(item, mode) {
-    const body = { name: item.name };
+    const body = { name: item.name, remember: document.getElementById("diskremember").checked };
     if (item.kind === "folder") {
       body.filesystem = mode.split("-")[0];
       body.read_only = !mode.endsWith("rw");
@@ -1214,8 +1216,9 @@
 
   function describeMedium(m) {
     const access = m.read_only ? "read-only" : "writable";
-    return m.kind === "folder" ? `folder as ${FILESYSTEMS[m.filesystem] || "a drive"}, ${access}`
-      : `${m.cdrom ? DRIVES[m.disc] || "CD-ROM" : "USB drive"}, ${access}`;
+    const kept = m.remember ? ", in again after a restart" : "";
+    return m.kind === "folder" ? `folder as ${FILESYSTEMS[m.filesystem] || "a drive"}, ${access}${kept}`
+      : `${m.cdrom ? DRIVES[m.disc] || "CD-ROM" : "USB drive"}, ${access}${kept}`;
   }
 
   // The list is drawn anew only when it changes, so that a choice being made stays.
