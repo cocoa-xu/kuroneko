@@ -59,7 +59,7 @@ defmodule Kuroneko.MixProject do
       # bumps to Nerves systems. Since these include Linux kernel and Erlang
       # version updates, please review their release notes in case
       # changes to your application are needed.
-      sibling(:nerves_system_nano_kvm_go, "v0.1.0",
+      sibling(:nerves_system_nano_kvm_go, "v0.1.1",
         runtime: false,
         targets: :nano_kvm_go,
         nerves: [compile: true]

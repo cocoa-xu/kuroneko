@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+* The data partition takes the rest of the card, also on a card burned
+  from `kuroneko.img.gz`, where it had 512 MiB: the Nerves system v0.1.1
+  grows it at boot and keeps its files
 * Builds on its own: `nano_kvm_go`, `kuroneko_gadget` and the Nerves system
   come from GitHub at their release tags, or from the checkouts next to it
   with `KURONEKO_DEPS_PATH=..`
