@@ -14,6 +14,8 @@ defmodule Kuroneko.Web do
     * `GET /api/usb` and `POST /api/usb`: the USB devices the target sees,
       their settings (see `Kuroneko.USBSettings`; a POST takes changes)
       with the functions the gadget has and the formats the target uses
+    * `POST /api/usb/addresses` `{"address": "10.55.0.1/24"}`: the USB
+      network's IP addresses, null for the default (see `Kuroneko.USBNetwork`)
     * `POST /api/usb/network` `{"device_address": ..., "host_address":
       ...}`: the USB network's MAC addresses, null for the default (see
       `Kuroneko.Gadget.set_network_addresses/2`)
@@ -202,6 +204,20 @@ defmodule Kuroneko.Web do
   # null is the default, a field left out stays. The reply leaves before the
   # change, which takes the USB network away for a moment: the page may be
   # on it.
+  # The page may have come over the USB network, which moves: the reply
+  # leaves first.
+  post "/api/usb/addresses" do
+    with {:ok, %{"address" => address}, conn} when is_binary(address) or is_nil(address) <-
+           page_json(conn),
+         :ok <- usb_network().check(address) do
+      later(fn -> usb_network().set(address) end, "USB network addresses not set")
+      json(conn, 202, %{address: address})
+    else
+      {:error, reason} when is_atom(reason) -> json(conn, 400, %{error: reason})
+      other -> refused(conn, other)
+    end
+  end
+
   post "/api/usb/network" do
     server = Application.get_env(:kuroneko, :usb_server, Kuroneko.Gadget)
 
@@ -567,6 +583,7 @@ defmodule Kuroneko.Web do
 
   defp wifi, do: Application.get_env(:kuroneko, :wifi, Kuroneko.WiFi)
   defp disk, do: Application.get_env(:kuroneko, :virtual_disk, Kuroneko.VirtualDisk)
+  defp usb_network, do: Application.get_env(:kuroneko, :usb_network, Kuroneko.USBNetwork)
 
   defp disk_options(data) do
     for {key, field} <- [cdrom: "cdrom", read_only: "read_only"],

@@ -91,6 +91,7 @@ defmodule Kuroneko.WebTest do
           post: "/api/disk/eject",
           post: "/api/disk/delete",
           put: "/api/disk/files",
+          post: "/api/usb/addresses",
           get: "/api/ssh/keys",
           post: "/api/ssh/keys",
           post: "/api/ssh/keys/remove"
@@ -519,6 +520,43 @@ defmodule Kuroneko.WebTest do
       assert_receive :scanned
       assert request(:post, "/api/wifi/forget", "{}", @page).status == 202
       assert_receive :forgot, 2_000
+    end
+  end
+
+  describe "USB network addresses" do
+    defmodule FakeUSBNetwork do
+      def check(nil), do: :ok
+      def check("10.55.0.1/24"), do: :ok
+      def check(_address), do: {:error, :invalid_address}
+
+      def set(address) do
+        send(Kuroneko.WebTest, {:set, address})
+        :ok
+      end
+    end
+
+    setup do
+      Process.register(self(), Kuroneko.WebTest)
+      Application.put_env(:kuroneko, :usb_network, FakeUSBNetwork)
+      on_exit(fn -> Application.delete_env(:kuroneko, :usb_network) end)
+    end
+
+    test "moves after the reply, for the page only, and says why not" do
+      evil = [{"origin", "http://evil.example"}, {"content-type", "application/json"}]
+      body = ~s({"address":"10.55.0.1/24"})
+      assert request(:post, "/api/usb/addresses", body, evil).status == 403
+
+      assert request(:post, "/api/usb/addresses", body, @page).status == 202
+      assert_receive {:set, "10.55.0.1/24"}, 2_000
+      assert request(:post, "/api/usb/addresses", ~s({"address":null}), @page).status == 202
+      assert_receive {:set, nil}, 2_000
+
+      conn = request(:post, "/api/usb/addresses", ~s({"address":"10.55"}), @page)
+
+      assert {conn.status, Jason.decode!(conn.resp_body)} ==
+               {400, %{"error" => "invalid_address"}}
+
+      assert request(:post, "/api/usb/addresses", ~s({"address":5}), @page).status == 400
     end
   end
 
