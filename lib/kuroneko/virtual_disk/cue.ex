@@ -9,7 +9,7 @@ defmodule Kuroneko.VirtualDisk.Cue do
   disc's sectors (`layout/1`, `write/3`).
 
   The drive takes audio tracks and data tracks of mode 1 and mode 2, as
-  `Kuroneko.Gadget.Storage` does. Audio comes from raw CD audio (`BINARY`),
+  `Kuroneko.Gadget.MassStorage` does. Audio comes from raw CD audio (`BINARY`),
   its big-endian form (`MOTOROLA`), or WAVE and AIFF files of CD audio: 44.1
   kHz, 16 bits, stereo (`Kuroneko.VirtualDisk.Cue.Audio`).
   """
@@ -214,7 +214,7 @@ defmodule Kuroneko.VirtualDisk.Cue do
   @doc """
   How the drive takes the tracks: `{:direct, bin, tracks}` when one BIN
   file holds them as the disc has them, with the tracks for
-  `Kuroneko.Gadget.Storage`; else `{:layout, pieces, tracks}`, the pieces of
+  `Kuroneko.Gadget.MassStorage`; else `{:layout, pieces, tracks}`, the pieces of
   one image to write (`write/3`) and the tracks in it. Reads the sizes, and
   the headers of WAVE and AIFF files.
   """

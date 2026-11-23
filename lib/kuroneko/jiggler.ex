@@ -14,7 +14,7 @@ defmodule Kuroneko.Jiggler do
   def init(opts) do
     every = Keyword.get(opts, :every_ms, @every_ms)
     Process.send_after(self(), :jiggle, every)
-    {:ok, %{every: every, hid: Keyword.get(opts, :hid, Kuroneko.Gadget.HID)}}
+    {:ok, %{every: every, input: Keyword.get(opts, :input, Kuroneko.Gadget.Input)}}
   end
 
   @impl GenServer
@@ -22,8 +22,8 @@ defmodule Kuroneko.Jiggler do
     Process.send_after(self(), :jiggle, state.every)
 
     if Kuroneko.USBSettings.saved()["jiggler"] do
-      Kuroneko.Gadget.HID.relative(state.hid, dx: 1)
-      Kuroneko.Gadget.HID.relative(state.hid, dx: -1)
+      Kuroneko.Gadget.Input.relative(state.input, dx: 1)
+      Kuroneko.Gadget.Input.relative(state.input, dx: -1)
     end
 
     {:noreply, state}

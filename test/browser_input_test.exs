@@ -55,16 +55,18 @@ defmodule Kuroneko.BrowserInputTest do
     assert BrowserInput.parse(%{"type" => "paste", "text" => "hi"}) == :ignore
   end
 
-  test "events reach Kuroneko.Gadget.HID" do
+  test "events reach Kuroneko.Gadget.Input" do
     dir = Path.join(System.tmp_dir!(), "browser_input_#{System.unique_integer([:positive])}")
     File.mkdir_p!(dir)
     on_exit(fn -> File.rm_rf!(dir) end)
 
     keyboard = Path.join(dir, "keyboard")
     File.write!(keyboard, "")
-    hid = start_supervised!({Kuroneko.Gadget.HID, keyboard: keyboard, mouse: keyboard, name: nil})
+
+    hid =
+      start_supervised!({Kuroneko.Gadget.Input, keyboard: keyboard, mouse: keyboard, name: nil})
 
     BrowserInput.handle(%{"type" => "key", "code" => "KeyB", "down" => true}, hid)
-    assert %{keyboard: %{sent: 1}} = Kuroneko.Gadget.HID.stats(hid)
+    assert %{keyboard: %{sent: 1}} = Kuroneko.Gadget.Input.stats(hid)
   end
 end

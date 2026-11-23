@@ -487,7 +487,7 @@ defmodule Kuroneko.Web do
     |> send_resp(
       200,
       Jason.encode!(%{
-        hid: Kuroneko.Gadget.HID.stats(),
+        hid: Kuroneko.Gadget.Input.stats(),
         usb: Kuroneko.Gadget.functions(),
         storage: storage_status(),
         video: %{input: NanoKVMGo.Video.input(), capture: NanoKVMGo.Video.capture_stats()},
@@ -783,7 +783,7 @@ defmodule Kuroneko.Web do
   end
 
   defp storage_status() do
-    case Kuroneko.Gadget.Storage.medium() do
+    case Kuroneko.Gadget.MassStorage.medium() do
       {:ok, medium} -> %{medium: medium}
       {:error, reason} -> %{error: inspect(reason)}
     end
@@ -815,7 +815,7 @@ defmodule Kuroneko.InputSocket do
   # Keys held when the browser goes away must not stay pressed on the target.
   @impl WebSock
   def terminate(_reason, _state) do
-    Kuroneko.Gadget.HID.release_all()
+    Kuroneko.Gadget.Input.release_all()
   end
 end
 

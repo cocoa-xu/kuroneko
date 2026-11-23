@@ -1,7 +1,7 @@
 defmodule Kuroneko.BrowserInput do
   @moduledoc """
   Input events from the viewer page, JSON over the `/ws` WebSocket, to
-  `Kuroneko.Gadget.HID`:
+  `Kuroneko.Gadget.Input`:
 
     * `{"type": "key", "code": KeyboardEvent.code, "down": boolean}`
     * `{"type": "mouse", "x": 0..1, "y": 0..1, "buttons": MouseEvent.buttons,
@@ -11,35 +11,37 @@ defmodule Kuroneko.BrowserInput do
     * `{"type": "touch", "touches": [[id, x, y], ...]}`: the touches on the
       picture now, ids 0 to 9, x and y 0..1
     * `{"type": "text", "text": string}`: typed on the target, as a US
-      keyboard would, one text at a time
+      keyboard would, after any text before
     * `{"type": "release"}` when the page loses focus
   """
 
   import Bitwise
 
+  alias Kuroneko.Gadget.Input
+
   @max_text 10_000
 
   @type action() ::
-          {:key, Kuroneko.Gadget.HID.key(), :down | :up}
-          | {:pointer, [Kuroneko.Gadget.HID.pointer_change()]}
-          | {:relative, [Kuroneko.Gadget.HID.relative_change()]}
-          | {:touch, [Kuroneko.Gadget.HID.contact()]}
+          {:key, Kuroneko.Gadget.Input.key(), :down | :up}
+          | {:pointer, [Kuroneko.Gadget.Input.pointer_change()]}
+          | {:relative, [Kuroneko.Gadget.Input.relative_change()]}
+          | {:touch, [Kuroneko.Gadget.Input.contact()]}
           | {:text, String.t()}
           | :release
           | :ignore
 
   @doc """
-  Passes an event on to `Kuroneko.Gadget.HID`.
+  Passes an event on to `Kuroneko.Gadget.Input`.
   """
   @spec handle(map(), GenServer.server()) :: :ok
-  def handle(event, hid \\ Kuroneko.Gadget.HID) do
+  def handle(event, input \\ Input) do
     case parse(event) do
-      {:key, key, action} -> Kuroneko.Gadget.HID.key(hid, key, action)
-      {:pointer, changes} -> Kuroneko.Gadget.HID.pointer(hid, changes)
-      {:relative, changes} -> Kuroneko.Gadget.HID.relative(hid, changes)
-      {:touch, contacts} -> Kuroneko.Gadget.HID.touch(hid, contacts)
-      {:text, text} -> type(hid, text)
-      :release -> Kuroneko.Gadget.HID.release_all(hid)
+      {:key, key, action} -> Input.key(input, key, action)
+      {:pointer, changes} -> Input.pointer(input, changes)
+      {:relative, changes} -> Input.relative(input, changes)
+      {:touch, contacts} -> Input.touch(input, contacts)
+      {:text, text} -> Input.type(input, text)
+      :release -> Input.release_all(input)
       :ignore -> :ok
     end
   end
@@ -74,23 +76,6 @@ defmodule Kuroneko.BrowserInput do
 
   def parse(%{"type" => "release"}), do: :release
   def parse(_event), do: :ignore
-
-  # Outside the socket's process, which goes on taking input; a second text
-  # while one is typed is dropped.
-  defp type(hid, text) do
-    {:ok, _pid} =
-      Task.start(fn ->
-        if register(), do: Kuroneko.Gadget.HID.type(hid, text)
-      end)
-
-    :ok
-  end
-
-  defp register do
-    Process.register(self(), Kuroneko.Typing)
-  rescue
-    ArgumentError -> false
-  end
 
   defp buttons_and_wheels(event) do
     [

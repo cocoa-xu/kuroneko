@@ -77,7 +77,7 @@ defmodule Kuroneko.Application do
         NanoKVMGo.Audio,
         {NanoKVMGo.Audio, source: :usb, name: Kuroneko.Speaker},
         NanoKVMGo.Microphone,
-        Kuroneko.Gadget.HID,
+        Kuroneko.Gadget.Input,
         Kuroneko.Jiggler,
         NanoKVMGo.Display,
         NanoKVMGo.Backlight,

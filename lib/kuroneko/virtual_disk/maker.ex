@@ -28,7 +28,7 @@ defmodule Kuroneko.VirtualDisk.Maker do
         def make(_item, "zeros", %{image: image, progress: progress}) do
           File.write!(image, :binary.copy(<<0>>, 1_048_576))
           progress.(1_048_576, 1_048_576)
-          {:ok, cdrom: false, read_only: true}
+          {:ok, as: :disk, read_only: true}
         end
       end
   """
@@ -45,17 +45,20 @@ defmodule Kuroneko.VirtualDisk.Maker do
 
   @typedoc """
   Where to make the image, how to tell the progress (bytes done of a
-  total), and the bytes free on the device for it.
+  total), the bytes free on the device for it, and Kuroneko's FAT
+  formatter, `Kuroneko.VirtualDisk.FAT.format/3`, for a maker that cannot
+  depend on Kuroneko.
   """
   @type context() :: %{
           image: Path.t(),
           progress: (non_neg_integer(), pos_integer() -> any()),
-          free: non_neg_integer()
+          free: non_neg_integer(),
+          format_fat: (Path.t(), pos_integer(), keyword() -> :ok | {:error, term()})
         }
 
   @typedoc """
-  How the image goes in, as `Kuroneko.Gadget.Storage.insert/2` takes it:
-  `cdrom`, `disc`, `tracks`, `read_only`.
+  How the image goes in, as `Kuroneko.Gadget.MassStorage.insert/2` takes it:
+  `as`, `tracks`, `read_only`.
   """
   @type insertion() :: keyword()
 

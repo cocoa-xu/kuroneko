@@ -14,7 +14,7 @@ defmodule Kuroneko.VirtualDisk.MakerTest do
     def make(_item, "zeros", %{image: image, progress: progress}) do
       File.write!(image, :binary.copy(<<0>>, 4096))
       progress.(4096, 4096)
-      {:ok, cdrom: false, read_only: true}
+      {:ok, as: :disk, read_only: true}
     end
   end
 
