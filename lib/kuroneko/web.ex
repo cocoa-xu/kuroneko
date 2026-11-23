@@ -31,6 +31,12 @@ defmodule Kuroneko.Web do
       `GET /api/device`, all it shows (see `Kuroneko.DeviceInfo`), and
       `/api/device/live`, a WebSocket with what changes each second (see
       `Kuroneko.DeviceSocket`)
+    * `GET /api/disk`: the virtual disk's library and drive (see
+      `Kuroneko.VirtualDisk`); `POST /api/disk/insert` `{"name": ...,
+      "cdrom": false, "read_only": true}`, `POST /api/disk/eject`, `POST
+      /api/disk/delete` `{"name": ...}`, `PUT /api/disk/files?name=...` with
+      the file as the body (`folder/file` for a folder's files, `&replace=1`
+      to replace one)
     * `POST /api/firmware/validate`: keeps the firmware on trial
     * `POST /api/reboot`
     * `/settings`: the settings page, Wi-Fi, SSH keys and the password;
@@ -370,6 +376,54 @@ defmodule Kuroneko.Web do
     end
   end
 
+  get("/api/disk", do: json(conn, 200, disk().state()))
+
+  post "/api/disk/insert" do
+    with {:ok, %{"name" => name} = data, conn} when is_binary(name) <- page_json(conn),
+         :ok <- disk().insert(name, disk_options(data)) do
+      json(conn, 202, %{inserting: name})
+    else
+      {:error, reason} -> disk_refused(conn, reason)
+      other -> refused(conn, other)
+    end
+  end
+
+  post "/api/disk/eject" do
+    with {:ok, _data, conn} <- page_json(conn), :ok <- disk().eject() do
+      json(conn, 202, %{ejecting: true})
+    else
+      {:error, reason} -> disk_refused(conn, reason)
+      other -> refused(conn, other)
+    end
+  end
+
+  post "/api/disk/delete" do
+    with {:ok, %{"name" => name}, conn} when is_binary(name) <- page_json(conn),
+         :ok <- disk().delete(name) do
+      json(conn, 200, %{deleted: name})
+    else
+      {:error, reason} -> disk_refused(conn, reason)
+      other -> refused(conn, other)
+    end
+  end
+
+  # The body is the file, gigabytes for an ISO: it goes to disk as it comes.
+  put "/api/disk/files" do
+    conn = fetch_query_params(conn)
+    name = conn.query_params["name"]
+
+    with {:page, true} <- {:page, same_origin?(conn)},
+         {:ok, final, temporary} <-
+           disk().upload_paths(name, replace: conn.query_params["replace"] == "1"),
+         {:ok, conn} <- receive_file(conn, temporary),
+         :ok <- disk().finish_upload(temporary, final) do
+      json(conn, 201, %{uploaded: name})
+    else
+      {:page, false} -> send_resp(conn, 403, "forbidden")
+      {:error, reason} -> disk_refused(conn, reason)
+    end
+  end
+
   get("/api/ssh/keys", do: json(conn, 200, %{keys: ssh().keys()}))
 
   post "/api/ssh/keys" do
@@ -512,6 +566,53 @@ defmodule Kuroneko.Web do
   end
 
   defp wifi, do: Application.get_env(:kuroneko, :wifi, Kuroneko.WiFi)
+  defp disk, do: Application.get_env(:kuroneko, :virtual_disk, Kuroneko.VirtualDisk)
+
+  defp disk_options(data) do
+    for {key, field} <- [cdrom: "cdrom", read_only: "read_only"],
+        is_boolean(data[field]),
+        do: {key, data[field]}
+  end
+
+  # The page explains the reasons it knows.
+  defp disk_refused(conn, reason) when is_atom(reason) do
+    status =
+      case reason do
+        r when r in [:busy, :in_use, :exists, :eject_first] -> 409
+        r when r in [:invalid_name, :file_too_large] -> 400
+        :enoent -> 404
+        :no_room -> 507
+        :no_storage -> 503
+        _other -> 500
+      end
+
+    json(conn, status, %{error: reason})
+  end
+
+  defp disk_refused(conn, reason), do: json(conn, 500, %{error: inspect(reason)})
+
+  defp receive_file(conn, path) do
+    with {:ok, file} <- File.open(path, [:write, :binary, :raw]) do
+      result =
+        try do
+          receive_into(conn, file)
+        after
+          File.close(file)
+        end
+
+      with {:error, _reason} <- result, do: File.rm(path)
+      result
+    end
+  end
+
+  defp receive_into(conn, file) do
+    case read_body(conn, length: 4_000_000, read_length: 1_000_000, read_timeout: 60_000) do
+      {:more, chunk, conn} -> with :ok <- :file.write(file, chunk), do: receive_into(conn, file)
+      {:ok, chunk, conn} -> with :ok <- :file.write(file, chunk), do: {:ok, conn}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   defp ssh, do: Application.get_env(:kuroneko, :ssh, Kuroneko.SSH)
 
   defp wifi_error(:ssid_too_short), do: "the network needs a name"

@@ -86,6 +86,11 @@ defmodule Kuroneko.WebTest do
           post: "/api/wifi/scan",
           post: "/api/wifi/forget",
           post: "/api/wifi/country",
+          get: "/api/disk",
+          post: "/api/disk/insert",
+          post: "/api/disk/eject",
+          post: "/api/disk/delete",
+          put: "/api/disk/files",
           get: "/api/ssh/keys",
           post: "/api/ssh/keys",
           post: "/api/ssh/keys/remove"
@@ -514,6 +519,93 @@ defmodule Kuroneko.WebTest do
       assert_receive :scanned
       assert request(:post, "/api/wifi/forget", "{}", @page).status == 202
       assert_receive :forgot, 2_000
+    end
+  end
+
+  describe "virtual disk" do
+    defmodule FakeDisk do
+      def state,
+        do: %{items: [%{name: "debian.iso", kind: :image, size: 3}], medium: nil, busy: nil}
+
+      def insert("busy.iso", _opts), do: {:error, :busy}
+      def insert(name, opts), do: tell({:insert, name, opts})
+      def eject, do: tell(:ejected)
+      def delete(name), do: tell({:deleted, name})
+
+      def upload_paths(name, opts) do
+        dir = Application.fetch_env!(:kuroneko, :fake_disk_dir)
+
+        with {:ok, path} <- Kuroneko.VirtualDisk.library_path(name) do
+          final = Path.join(dir, path)
+
+          if File.exists?(final) and not opts[:replace],
+            do: {:error, :exists},
+            else: {:ok, final, Path.join(dir, "upload")}
+        end
+      end
+
+      defdelegate finish_upload(temporary, final), to: Kuroneko.VirtualDisk
+
+      defp tell(message) do
+        send(Kuroneko.WebTest, message)
+        :ok
+      end
+    end
+
+    setup %{tmp_dir: tmp_dir} do
+      Process.register(self(), Kuroneko.WebTest)
+      Application.put_env(:kuroneko, :virtual_disk, FakeDisk)
+      Application.put_env(:kuroneko, :fake_disk_dir, tmp_dir)
+
+      on_exit(fn ->
+        Application.delete_env(:kuroneko, :virtual_disk)
+        Application.delete_env(:kuroneko, :fake_disk_dir)
+      end)
+    end
+
+    test "the library and the drive" do
+      assert %{"items" => [%{"name" => "debian.iso", "kind" => "image"}], "medium" => nil} =
+               Jason.decode!(request(:get, "/api/disk").resp_body)
+    end
+
+    test "inserts, ejects and deletes for the page only, and says why not" do
+      evil = [{"origin", "http://evil.example"}, {"content-type", "application/json"}]
+      body = ~s({"name":"debian.iso","cdrom":true,"read_only":true})
+      assert request(:post, "/api/disk/insert", body, evil).status == 403
+
+      assert request(:post, "/api/disk/insert", body, @page).status == 202
+      assert_receive {:insert, "debian.iso", [cdrom: true, read_only: true]}
+
+      conn = request(:post, "/api/disk/insert", ~s({"name":"busy.iso"}), @page)
+      assert {conn.status, Jason.decode!(conn.resp_body)} == {409, %{"error" => "busy"}}
+
+      assert request(:post, "/api/disk/eject", "{}", @page).status == 202
+      assert_receive :ejected
+      assert request(:post, "/api/disk/delete", ~s({"name":"debian.iso"}), @page).status == 200
+      assert_receive {:deleted, "debian.iso"}
+      assert request(:post, "/api/disk/delete", ~s({"file":"debian.iso"}), @page).status == 400
+    end
+
+    test "an upload goes into the library as it comes", %{tmp_dir: tmp_dir} do
+      file = [{"origin", "http://www.example.com"}, {"content-type", "application/octet-stream"}]
+      body = :crypto.strong_rand_bytes(3_000_000)
+
+      assert request(:put, "/api/disk/files?name=os.iso", body, file).status == 201
+      assert File.read!(Path.join(tmp_dir, "os.iso")) == body
+      refute File.exists?(Path.join(tmp_dir, "upload"))
+
+      conn = request(:put, "/api/disk/files?name=os.iso", "again", file)
+      assert {conn.status, Jason.decode!(conn.resp_body)} == {409, %{"error" => "exists"}}
+      assert request(:put, "/api/disk/files?name=os.iso&replace=1", "again", file).status == 201
+      assert File.read!(Path.join(tmp_dir, "os.iso")) == "again"
+
+      assert request(:put, "/api/disk/files?name=Photos%2Fa.jpg", "jpeg", file).status == 201
+      assert File.read!(Path.join(tmp_dir, "Photos/a.jpg")) == "jpeg"
+
+      assert request(:put, "/api/disk/files?name=..%2Fx", "x", file).status == 400
+
+      assert request(:put, "/api/disk/files?name=x", "x", [{"origin", "http://evil.example"}]).status ==
+               403
     end
   end
 
