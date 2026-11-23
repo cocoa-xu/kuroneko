@@ -1,8 +1,9 @@
 defmodule Kuroneko.VirtualDisk do
   @moduledoc """
   The virtual disk's library and what is in its drives (`Kuroneko.Gadget.Storage`):
-  image files and folders in `/data/images`. The drives are numbered from 0:
-  drive 1 is the storage function's LUN 1, the drives the target sees.
+  image files and folders in `/data/images`. The drives are the LUNs of the
+  storage functions, numbered from 0: those of `"disk"` first, then those of
+  the others by name (`Kuroneko.USBSettings`).
 
     * An image file goes in as it is: on the disc its format belongs on, a CD,
       a DVD or a BD (see `Kuroneko.VirtualDisk.Image`), or as a USB drive,
@@ -57,7 +58,8 @@ defmodule Kuroneko.VirtualDisk do
   @doc """
   The library, what is in the drives and what is under way: `%{items:
   [%{name, kind: :image | :folder, size, format}], drives: [%{drive: 0,
-  medium: nil | %{name, kind, cdrom, disc, read_only, remember, image}}],
+  storage: "disk", lun: 0, medium: nil | %{name, kind, cdrom, disc,
+  read_only, remember, image}}],
   busy: nil | %{action: :making | :copying_back, name, drive, done, total},
   free: bytes, error: nil | text}`. An image's `format` is what
   `Kuroneko.VirtualDisk.Image.probe/1` finds.
@@ -257,10 +259,14 @@ defmodule Kuroneko.VirtualDisk do
     state = check_drives(state)
     {items, state} = items(state)
 
+    drives =
+      for {{storage, lun} = slot, drive} <- Enum.with_index(slots()) do
+        %{drive: drive, storage: storage, lun: lun, medium: view(medium(state, slot), drive)}
+      end
+
     reply = %{
       items: items,
-      drives:
-        for(drive <- 0..(drives() - 1)//1, do: %{drive: drive, medium: medium(state, drive)}),
+      drives: drives,
       busy: state.busy,
       free: free_space(),
       error: state.error
@@ -269,14 +275,16 @@ defmodule Kuroneko.VirtualDisk do
     {:reply, reply, state}
   end
 
-  def handle_call(:media, _from, state),
-    do: {:reply, for(drive <- 0..(drives() - 1)//1, do: medium(state, drive)), state}
+  def handle_call(:media, _from, state) do
+    media = for {slot, drive} <- Enum.with_index(slots()), do: view(medium(state, slot), drive)
+    {:reply, media, state}
+  end
 
   def handle_call({:writable?, relative}, _from, state),
     do: {:reply, if(in_use?(state, relative), do: {:error, :in_use}, else: :ok), state}
 
   def handle_call(:drives_changed, _from, %{busy: nil} = state),
-    do: {:reply, :ok, gone(state, Enum.filter(Map.keys(state.media), &(&1 >= drives())))}
+    do: {:reply, :ok, gone(state, Map.keys(state.media) -- slots())}
 
   def handle_call(_request, _from, %{busy: busy} = state) when busy != nil,
     do: {:reply, {:error, :busy}, state}
@@ -302,9 +310,11 @@ defmodule Kuroneko.VirtualDisk do
     end
   end
 
-  def handle_call({:eject, drive}, _from, state) do
-    case Storage.eject(lun: drive) do
-      :ok -> {:reply, :ok, taken_out(state, drive)}
+  def handle_call({:eject, index}, _from, state) do
+    with slot when slot != nil <- Enum.at(slots(), index) || {:error, :no_drive},
+         :ok <- Storage.eject(at(slot)) do
+      {:reply, :ok, taken_out(state, slot)}
+    else
       error -> {:reply, error, state}
     end
   end
@@ -359,37 +369,44 @@ defmodule Kuroneko.VirtualDisk do
 
   defp put_medium(state, medium), do: put_in(state.media[medium.drive], medium)
 
+  # A medium as the page and the API see it: its drive by number, not by
+  # function and LUN.
+  defp view(nil, _drive), do: nil
+  defp view(medium, drive), do: medium |> Map.delete(:request) |> Map.put(:drive, drive)
+
   # The drive asked for, else the one with the item, else the first empty
   # one, else the first. An item is in one drive at a time.
   defp pick_drive(state, wanted, relative) do
-    count = drives()
+    slots = slots()
+    asked = is_integer(wanted) && Enum.at(slots, wanted)
 
     current =
-      Enum.find_value(state.media, fn {drive, medium} -> medium.name == relative && drive end)
+      Enum.find_value(state.media, fn {slot, medium} -> medium.name == relative && slot end)
 
     cond do
-      count == 0 ->
-        {:error, :no_storage}
-
-      wanted != nil and not (is_integer(wanted) and wanted in 0..(count - 1)) ->
-        {:error, :no_drive}
-
-      current != nil and wanted != nil and wanted != current ->
-        {:error, :in_use}
-
-      wanted != nil ->
-        {:ok, wanted}
-
-      current != nil ->
-        {:ok, current}
-
-      true ->
-        {:ok, Enum.find(0..(count - 1), 0, &(not Map.has_key?(state.media, &1)))}
+      slots == [] -> {:error, :no_storage}
+      wanted != nil and not asked -> {:error, :no_drive}
+      current != nil and wanted != nil and asked != current -> {:error, :in_use}
+      wanted != nil -> {:ok, asked}
+      current != nil -> {:ok, current}
+      true -> {:ok, Enum.find(slots, hd(slots), &(not Map.has_key?(state.media, &1)))}
     end
   end
 
-  # A drive is a LUN of the storage function, by its number.
-  defp drives, do: Storage.luns()
+  # The drives: each storage function's LUNs, those of "disk" first.
+  defp slots do
+    Kuroneko.Gadget.instances()
+    |> Enum.filter(&(&1.kind == :storage))
+    |> Enum.sort_by(&{&1.name != "disk", &1.name})
+    |> Enum.flat_map(fn %{name: name, luns: luns} ->
+      for lun <- 0..(luns - 1), do: {name, lun}
+    end)
+  catch
+    :exit, _no_gadget -> for lun <- 0..(Storage.luns() - 1)//1, do: {"disk", lun}
+  end
+
+  defp at({storage, lun}), do: [storage: storage, lun: lun]
+  defp index(slot), do: Enum.find_index(slots(), &(&1 == slot))
 
   # ---- Image files
 
@@ -399,7 +416,7 @@ defmodule Kuroneko.VirtualDisk do
     disc = disc(Keyword.get(opts, :media, :auto), format)
     read_only = disc != nil or Keyword.get(opts, :read_only, format.disc != nil)
 
-    case Storage.insert(path, lun: drive, cdrom: disc != nil, disc: disc, read_only: read_only) do
+    case Storage.insert(path, at(drive) ++ [cdrom: disc != nil, disc: disc, read_only: read_only]) do
       :ok ->
         state = forget_folder_image(state, drive)
 
@@ -480,7 +497,7 @@ defmodule Kuroneko.VirtualDisk do
         Task.async(fn ->
           with :ok <- build(folder, image, size, medium, progress),
                :ok <- write_marker(medium),
-               :ok <- Storage.insert(image, lun: drive, cdrom: false, read_only: read_only) do
+               :ok <- Storage.insert(image, at(drive) ++ [cdrom: false, read_only: read_only]) do
             {:inserted, %{medium | image: in_drive(drive, image)}}
           else
             error ->
@@ -489,7 +506,7 @@ defmodule Kuroneko.VirtualDisk do
           end
         end)
 
-      busy = %{action: :making, name: relative, drive: drive, done: 0, total: bytes}
+      busy = %{action: :making, name: relative, drive: index(drive), done: 0, total: bytes}
       {:ok, %{state | task: task, busy: busy, error: nil}}
     else
       error -> {error, state}
@@ -556,7 +573,7 @@ defmodule Kuroneko.VirtualDisk do
       %{kind: :folder, read_only: false} = medium when state.busy == nil ->
         server = self()
         task = Task.async(fn -> with :ok <- copy_back(medium, server), do: :copied_back end)
-        busy = %{action: :copying_back, name: medium.name, drive: drive, done: 0, total: 0}
+        busy = %{action: :copying_back, name: medium.name, drive: index(drive), done: 0, total: 0}
         %{state | media: Map.delete(state.media, drive), task: task, busy: busy, error: nil}
 
       %{kind: :folder, read_only: false} ->
@@ -591,7 +608,7 @@ defmodule Kuroneko.VirtualDisk do
   # The computer can eject a removable drive itself, which empties it.
   defp check_drives(%{busy: nil} = state) do
     Enum.reduce_while(state.media, state, fn {drive, %{image: image}}, state ->
-      case Storage.medium(lun: drive) do
+      case Storage.medium(at(drive)) do
         {:ok, %{image: ^image}} ->
           {:cont, state}
 
@@ -624,8 +641,8 @@ defmodule Kuroneko.VirtualDisk do
         real_path(medium.image) == in_drive ->
           put_medium(state, %{medium | image: in_drive})
 
-        match?(%{kind: :folder}, memory) and memory.name == medium.name and drive < drives() and
-            Storage.insert(medium.image, lun: drive, cdrom: false, read_only: medium.read_only) ==
+        match?(%{kind: :folder}, memory) and memory.name == medium.name and drive in slots() and
+            Storage.insert(medium.image, at(drive) ++ [cdrom: false, read_only: medium.read_only]) ==
               :ok ->
           put_medium(state, %{medium | image: in_drive(drive, medium.image)})
 
@@ -647,7 +664,7 @@ defmodule Kuroneko.VirtualDisk do
     remembered()
     |> Enum.sort()
     |> Enum.reduce(state, fn {drive, memory}, state ->
-      if Map.has_key?(state.media, drive) or state.busy != nil or drive >= drives(),
+      if Map.has_key?(state.media, drive) or state.busy != nil or drive not in slots(),
         do: state,
         else: insert_again(state, drive, memory)
     end)
@@ -685,7 +702,7 @@ defmodule Kuroneko.VirtualDisk do
   # Still in the drive when only this server restarted: kept as it is, so
   # that the computer sees no change of medium.
   defp adopt_image(state, drive, relative, opts) do
-    {:ok, inserted} = Storage.medium(lun: drive)
+    {:ok, inserted} = Storage.medium(at(drive))
 
     medium =
       Map.merge(inserted, %{
@@ -725,17 +742,33 @@ defmodule Kuroneko.VirtualDisk do
         case fields do
           %{"drives" => drives} when is_map(drives) -> drives
           # One drive's, from before there were several.
-          %{"name" => _name} -> %{"0" => fields}
+          %{"name" => _name} -> %{"disk/0" => fields}
           _other -> %{}
         end
 
-      for {drive, entry} <- drives,
-          {drive, ""} <- [Integer.parse(drive)],
+      for {id, entry} <- drives,
+          slot = slot_of(id),
+          slot != nil,
           {:ok, memory} <- [from_memory(entry)],
           into: %{},
-          do: {drive, memory}
+          do: {slot, memory}
     else
       _none -> %{}
+    end
+  end
+
+  # "boot/1", or "1" for disk's LUN 1, as kept before there were several
+  # storage functions.
+  defp slot_of(id) do
+    with [storage, lun] <-
+           (case String.split(id, "/") do
+              [lun] -> ["disk", lun]
+              parts -> parts
+            end),
+         {lun, ""} <- Integer.parse(lun) do
+      {storage, lun}
+    else
+      _invalid -> nil
     end
   end
 
@@ -745,9 +778,9 @@ defmodule Kuroneko.VirtualDisk do
     path = memory_file()
 
     drives =
-      for {drive, %{name: name, kind: kind, opts: opts}} <- memories,
+      for {{storage, lun}, %{name: name, kind: kind, opts: opts}} <- memories,
           into: %{},
-          do: {Integer.to_string(drive), memory(name, kind, opts)}
+          do: {"#{storage}/#{lun}", memory(name, kind, opts)}
 
     with :ok <- File.mkdir_p(Path.dirname(path)),
          :ok <- File.write(path <> ".tmp", Jason.encode!(%{drives: drives})),
@@ -791,7 +824,7 @@ defmodule Kuroneko.VirtualDisk do
       %{
         name: name,
         kind: :folder,
-        drive: if(is_integer(fields["drive"]), do: fields["drive"], else: 0),
+        drive: marker_slot(fields),
         filesystem: if(fields["filesystem"] == "fat32", do: :fat32, else: :exfat),
         read_only: read_only,
         remember: fields["remember"] == true,
@@ -800,8 +833,21 @@ defmodule Kuroneko.VirtualDisk do
     end
   end
 
+  defp marker_slot(%{"storage" => storage, "lun" => lun})
+       when is_binary(storage) and is_integer(lun),
+       do: {storage, lun}
+
+  defp marker_slot(%{"drive" => lun}) when is_integer(lun), do: {"disk", lun}
+  defp marker_slot(_fields), do: {"disk", 0}
+
   defp write_marker(medium) do
-    fields = Map.take(medium, [:name, :drive, :filesystem, :read_only, :remember])
+    {storage, lun} = medium.drive
+
+    fields =
+      medium
+      |> Map.take([:name, :filesystem, :read_only, :remember])
+      |> Map.merge(%{storage: storage, lun: lun})
+
     File.write(medium.image <> ".json", Jason.encode!(fields))
   end
 
@@ -826,7 +872,7 @@ defmodule Kuroneko.VirtualDisk do
   # A drive reports the file it holds by the path the kernel opened, with
   # links resolved: /root/images for /data/images on Nerves.
   defp in_drive(drive, fallback) do
-    case Storage.medium(lun: drive) do
+    case Storage.medium(at(drive)) do
       {:ok, %{image: image}} -> image
       _empty -> fallback
     end
@@ -892,16 +938,19 @@ defmodule Kuroneko.VirtualDisk do
     end
   end
 
-  defp medium(state, drive) do
-    case {state.media[drive], Storage.medium(lun: drive)} do
+  defp medium(state, {storage, lun} = slot) do
+    case {state.media[slot], Storage.medium(at(slot))} do
       {%{image: image} = ours, {:ok, %{image: image} = inserted}} ->
-        Map.merge(inserted, Map.delete(ours, :request))
+        inserted
+        |> Map.merge(Map.delete(ours, :drive))
+        |> Map.merge(%{storage: storage, lun: lun})
 
       {_ours, {:ok, %{image: image} = inserted}} ->
         Map.merge(inserted, %{
           name: Path.basename(image),
           kind: :image,
-          drive: drive,
+          storage: storage,
+          lun: lun,
           remember: false
         })
 
