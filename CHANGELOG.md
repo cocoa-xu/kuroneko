@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.1.2 (2026-11-23)
 
 * The settings page scans on its own while it is open, every ten seconds,
   and keeps each network for five minutes after it was last seen: a scan
