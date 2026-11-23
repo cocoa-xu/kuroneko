@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Settings · NanoKVM-Go</title>
+<title>NanoKVM-Go settings</title>
 <style>
   :root {
     --bg: #0b0d10;
@@ -261,7 +261,7 @@
           <input type="password" id="current" autocomplete="current-password" required>
         </label>
         <label class="formfield">
-          <span>New password <i>· at least 8 characters</i></span>
+          <span>New password <i>(at least 8 characters)</i></span>
           <input type="password" id="newpassword" autocomplete="new-password" required minlength="8">
         </label>
         <label class="formfield">
@@ -426,7 +426,7 @@ function renderWifi(w) {
     ["Network", w.network || "None"],
     ["Address", w.address],
     ["Signal", link && h("span", { class: "num" }, signalBars(link.signal_percent),
-      ` ${link.signal_percent}% · ${link.signal_dbm} dBm`)],
+      ` ${link.signal_percent}% (${link.signal_dbm} dBm)`)],
     ["Band", link && [link.band, link.channel && `channel ${link.channel}`].filter(Boolean).join(", ")]
   ]);
   $("forget").hidden = !w.network;
@@ -450,7 +450,7 @@ function networkRow(n) {
   return h("div", { class: `row${current ? " current" : ""}` },
     signalBars(n.signal_percent),
     h("div", { class: "name" }, h("b", null, n.ssid),
-      h("small", null, [SECURITY[n.security], n.band].filter(Boolean).join(" · "))),
+      h("small", null, [SECURITY[n.security], n.band].filter(Boolean).join(", "))),
     n.security !== "open" && icon("lock", "lock"),
     action);
 }
@@ -472,7 +472,7 @@ function openJoin(network) {
   $("ssidfield").hidden = !!network;
   const passphrase = !network || network.security !== "open";
   $("passfield").hidden = $("showfield").hidden = !passphrase;
-  $("passhint").textContent = network ? "" : "· empty for an open network";
+  $("passhint").textContent = network ? "" : "(empty for an open network)";
   $("ssid").value = $("passphrase").value = "";
   $("showpass").checked = false;
   $("passphrase").type = "password";

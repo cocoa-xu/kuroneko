@@ -2,8 +2,8 @@ defmodule Kuroneko.Screen.Calibration do
   @moduledoc """
   From the touch panel's points to the display's:
 
-      x' = a·x + b·y + c
-      y' = d·x + e·y + f
+      x' = a * x + b * y + c
+      y' = d * x + e * y + f
 
   fitted by least squares to touches on targets at known places, as tslib
   does. Without a calibration the panel's 296 rows are spread over the
