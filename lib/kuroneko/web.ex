@@ -14,8 +14,8 @@ defmodule Kuroneko.Web do
     * `GET /api/usb` and `POST /api/usb`: the USB devices the target sees,
       their settings (see `Kuroneko.USBSettings`; a POST takes changes)
       with the functions the gadget has, each by name (`instances`), the
-      endpoints they take of those there are (`endpoints`) and the formats
-      the target uses
+      endpoints they take of those there are and what each kind takes
+      (`endpoints`), and the formats the target uses
     * `POST /api/usb/addresses` `{"address": "10.55.0.1/24"}`: the USB
       network's IP addresses, null for the default (see `Kuroneko.USBNetwork`)
     * `POST /api/usb/network` `{"device_address": ..., "host_address":
@@ -690,13 +690,25 @@ defmodule Kuroneko.Web do
       functions: Kuroneko.Gadget.functions(),
       # Each function by name, and the endpoints they take of those there are.
       instances: Kuroneko.Gadget.instances(),
-      endpoints: Kuroneko.Gadget.endpoints_in_use(),
+      endpoints: Map.put(Kuroneko.Gadget.endpoints_in_use(), :costs, endpoint_costs()),
       # What the target chose, while the streams run.
       formats: %{
         microphone: NanoKVMGo.Microphone.format(),
         speaker: NanoKVMGo.Audio.format(Kuroneko.Speaker)
       }
     }
+  end
+
+  # What a function of each kind takes, so that the page counts as the
+  # gadget does.
+  defp endpoint_costs do
+    Map.new(
+      [:network, :keyboard, :mouse, :relative_mouse, :storage, :microphone, :speaker],
+      fn kind ->
+        {:ok, cost} = Kuroneko.Gadget.endpoints([kind])
+        {kind, cost}
+      end
+    )
   end
 
   # The addresses the page sends: null or empty for the default.

@@ -6,9 +6,15 @@ defmodule Kuroneko.USBSettings do
     * `"pointer"` - the absolute pointer: `"absolute"` (a mouse), `"stylus"`
       (a pen, for Android and iPadOS) or `"touch"` (a touch screen); the
       relative mouse is always there with it
+    * `"networks"` - USB networks besides the system's (`usb0`), by name:
+      `["usb1"]`; the kernel names their interfaces
+      (`Kuroneko.Gadget.instances/1`), VintageNetDirect gives them addresses
+      (`Kuroneko.USBNetwork.configure_more/0`)
     * `"storage"` - the virtual disk
     * `"drives"` - its drives, 1 to 16: the storage function's LUNs, which
       take the endpoints of one
+    * `"storages"` - more storage devices, each a USB device with its own
+      drives: `[%{"name" => "boot", "drives" => 1}]`
     * `"audio"` - the sound card in the stock firmware's modes: `"off"`,
       `"mic"` (a microphone the browser talks into) and `"duplex"` (also a
       speaker, whose sound the browser plays)
@@ -18,7 +24,9 @@ defmodule Kuroneko.USBSettings do
       `"channels"`, the `"rates"` the target chooses from (starting with the
       first), `"sample_bits"`
 
-  Settings are JSON-shaped maps, as the page sends them.
+  Settings are JSON-shaped maps, as the page sends them. The functions must
+  fit the device controller's endpoints (`Kuroneko.Gadget.endpoints/1`); the
+  system's USB network is always one of them.
   """
 
   @modes %{"off" => [], "mic" => [:microphone], "duplex" => [:microphone, :speaker]}
@@ -29,8 +37,10 @@ defmodule Kuroneko.USBSettings do
     "hid" => true,
     "pointer" => "absolute",
     "jiggler" => false,
+    "networks" => [],
     "storage" => true,
     "drives" => 1,
+    "storages" => [],
     "audio" => "off",
     "microphone" => @default_format,
     "speaker" => @default_format
@@ -86,7 +96,17 @@ defmodule Kuroneko.USBSettings do
         true -> [:storage]
       end
 
-    hid ++ storage ++ Enum.map(@modes[settings["audio"]], &{&1, audio_options(settings, &1)})
+    storage =
+      storage ++
+        for %{"name" => name, "drives" => luns} <- settings["storages"],
+            do: {:storage, name: name, luns: luns}
+
+    networks = [
+      {:network, name: "usb0"} | for(name <- settings["networks"], do: {:network, name: name})
+    ]
+
+    networks ++
+      hid ++ storage ++ Enum.map(@modes[settings["audio"]], &{&1, audio_options(settings, &1)})
   end
 
   @doc "The sound card mode of the USB functions the gadget has."
@@ -102,12 +122,15 @@ defmodule Kuroneko.USBSettings do
   """
   @spec merge(t(), map()) :: {:ok, t()} | {:error, term()}
   def merge(settings, changes) when is_map(changes) do
+    gadget = NanoKVMGo.USB.gadget_options()
+
     with {:ok, settings} <- put_all(settings, changes),
          :ok <-
            Kuroneko.Gadget.validate(
              Enum.map([:microphone, :speaker], &{&1, audio_options(settings, &1)}),
-             NanoKVMGo.USB.gadget_options()
-           ) do
+             gadget
+           ),
+         :ok <- Kuroneko.Gadget.validate(functions(settings), gadget) do
       {:ok, settings}
     end
   end
@@ -124,6 +147,7 @@ defmodule Kuroneko.USBSettings do
          :ok <- Kuroneko.Gadget.configure(functions(settings)),
          :ok <- save(settings) do
       Kuroneko.VirtualDisk.drives_changed()
+      Kuroneko.USBNetwork.configure_more()
       {:ok, settings}
     end
   end
@@ -137,8 +161,30 @@ defmodule Kuroneko.USBSettings do
     end)
   end
 
-  defp put(settings, key, value) when key in ["hid", "storage", "jiggler"] and is_boolean(value),
-    do: {:ok, %{settings | key => value}}
+  defp put(settings, "networks", names) when is_list(names) do
+    if Enum.all?(names, &name?/1) and names == Enum.uniq(names) and "usb0" not in names and
+         length(names) <= 4,
+       do: {:ok, %{settings | "networks" => names}},
+       else: :error
+  end
+
+  defp put(settings, "storages", storages) when is_list(storages) do
+    names = Enum.map(storages, &(is_map(&1) && &1["name"]))
+
+    valid =
+      Enum.all?(storages, fn storage ->
+        is_map(storage) and name?(storage["name"]) and storage["drives"] in 1..16 and
+          map_size(storage) == 2
+      end)
+
+    if valid and names == Enum.uniq(names) and "disk" not in names and length(storages) <= 4,
+      do: {:ok, %{settings | "storages" => storages}},
+      else: :error
+  end
+
+  defp put(settings, key, value)
+       when key in ["hid", "storage", "jiggler"] and is_boolean(value),
+       do: {:ok, %{settings | key => value}}
 
   defp put(settings, "drives", drives) when drives in 1..16,
     do: {:ok, %{settings | "drives" => drives}}
@@ -159,6 +205,10 @@ defmodule Kuroneko.USBSettings do
   end
 
   defp put(_settings, _key, _value), do: :error
+
+  # A function's name in configfs: letters, digits, "_" and "-".
+  defp name?(name),
+    do: is_binary(name) and byte_size(name) in 1..32 and String.match?(name, ~r/^[A-Za-z0-9_-]+$/)
 
   defp pointer_mode("stylus"), do: :stylus
   defp pointer_mode("touch"), do: :touch

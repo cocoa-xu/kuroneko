@@ -9,6 +9,9 @@ defmodule Kuroneko.USBNetwork do
   one through DHCP. Either way the computer gets no router or DNS server: its
   own network stays its way out.
 
+  The USB networks besides the system's (`Kuroneko.USBSettings`) take
+  VintageNetDirect's addresses, each a /30 of its own (`configure_more/0`).
+
   VintageNet runs on the device only: on the host there is no USB network.
   """
 
@@ -84,6 +87,20 @@ defmodule Kuroneko.USBNetwork do
     with {:ok, config} <- config(cidr, other_networks()) do
       vintage_net(:configure, [@ifname, config])
     end
+  end
+
+  @doc """
+  Gives the USB networks besides the system's VintageNetDirect's addresses
+  until the next boot, on the interfaces the kernel named for them.
+  """
+  @spec configure_more() :: :ok
+  def configure_more do
+    for %{kind: :network, interface: ifname} <- Kuroneko.Gadget.instances(),
+        is_binary(ifname) and ifname != @ifname and not String.contains?(ifname, "%") do
+      vintage_net(:configure, [ifname, %{type: VintageNetDirect}, [persist: false]])
+    end
+
+    :ok
   end
 
   @doc "Checks an address as `set/1` would, without setting it."

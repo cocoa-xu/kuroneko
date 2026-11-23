@@ -47,6 +47,7 @@ defmodule Kuroneko.USBSettingsTest do
       })
 
     assert USBSettings.functions(settings) == [
+             {:network, name: "usb0"},
              :keyboard,
              {:mouse, mode: :absolute},
              :relative_mouse,
@@ -56,13 +57,27 @@ defmodule Kuroneko.USBSettingsTest do
            ]
 
     off = %{settings | "hid" => false, "storage" => false, "audio" => "off"}
-    assert USBSettings.functions(off) == []
+    assert USBSettings.functions(off) == [{:network, name: "usb0"}]
 
     drives = %{off | "storage" => true, "drives" => 3}
-    assert USBSettings.functions(drives) == [{:storage, luns: 3}]
+    assert USBSettings.functions(drives) == [{:network, name: "usb0"}, {:storage, luns: 3}]
+
+    more = %{off | "networks" => ["usb1"], "storages" => [%{"name" => "boot", "drives" => 2}]}
+
+    assert USBSettings.functions(more) == [
+             {:network, name: "usb0"},
+             {:network, name: "usb1"},
+             {:storage, name: "boot", luns: 2}
+           ]
 
     touch = %{settings | "pointer" => "touch", "audio" => "off", "storage" => false}
-    assert USBSettings.functions(touch) == [:keyboard, {:mouse, mode: :touch}, :relative_mouse]
+
+    assert USBSettings.functions(touch) == [
+             {:network, name: "usb0"},
+             :keyboard,
+             {:mouse, mode: :touch},
+             :relative_mouse
+           ]
   end
 
   test "the mode of the USB functions" do
@@ -80,6 +95,39 @@ defmodule Kuroneko.USBSettingsTest do
     assert {:error, {:invalid, "volume"}} = USBSettings.merge(defaults, %{"volume" => 11})
     assert {:ok, %{"drives" => 4}} = USBSettings.merge(defaults, %{"drives" => 4})
     assert {:error, {:invalid, "drives"}} = USBSettings.merge(defaults, %{"drives" => 17})
+
+    # Two networks (4) and two disks (2) fit without the keyboard and mice.
+    two = %{
+      "hid" => false,
+      "storages" => [%{"name" => "boot", "drives" => 2}],
+      "networks" => ["usb1"]
+    }
+
+    assert {:ok, %{"storages" => [%{"name" => "boot"}]}} = USBSettings.merge(defaults, two)
+
+    for bad <- [
+          [%{"name" => "disk", "drives" => 1}],
+          [%{"name" => "a.b", "drives" => 1}],
+          [%{"name" => "x"}]
+        ],
+        do:
+          assert(
+            {:error, {:invalid, "storages"}} = USBSettings.merge(defaults, %{"storages" => bad})
+          )
+
+    assert {:error, {:invalid, "networks"}} =
+             USBSettings.merge(defaults, %{"networks" => ["usb0"]})
+
+    assert {:error, {:invalid, "network"}} = USBSettings.merge(defaults, %{"network" => false})
+
+    # Seven IN endpoints: the network (2), three HID, the disk, the microphone,
+    # and no room for another storage device.
+    assert {:error, {:not_enough_endpoints, %{need: %{in: 8}}}} =
+             USBSettings.merge(defaults, %{
+               "audio" => "mic",
+               "storages" => [%{"name" => "boot", "drives" => 1}]
+             })
+
     assert {:error, {:invalid, "hid"}} = USBSettings.merge(defaults, %{"hid" => "yes"})
     assert {:ok, %{"pointer" => "stylus"}} = USBSettings.merge(defaults, %{"pointer" => "stylus"})
     assert {:error, {:invalid, "pointer"}} = USBSettings.merge(defaults, %{"pointer" => "pen"})
