@@ -1204,6 +1204,9 @@ function renderUsb(usb) {
     ["Virtual disk", !usb.functions || !usb.functions.includes("storage") ? null
       : media.length === 1 ? (media[0] ? describeMedium(media[0]) : "Empty")
       : h("div", {}, media.map((m, i) => h("div", {}, `Drive ${i + 1}: ${m ? describeMedium(m) : "empty"}`)))],
+    ["Endpoints", usb.endpoints && (usb.endpoints.have
+      ? `IN ${usb.endpoints.in} of ${usb.endpoints.have.in}, OUT ${usb.endpoints.out} of ${usb.endpoints.have.out}`
+      : `IN ${usb.endpoints.in}, OUT ${usb.endpoints.out}`)],
     ["Controller", c && h("span", { class: "mono" }, c.controller)],
   ]);
 }

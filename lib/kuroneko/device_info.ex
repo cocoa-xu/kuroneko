@@ -123,6 +123,7 @@ defmodule Kuroneko.DeviceInfo do
       functions: functions,
       media: if(functions && :storage in functions, do: Kuroneko.VirtualDisk.media(), else: []),
       network: ok_or_nil(safely(&Gadget.network/0)),
+      endpoints: safely(&Gadget.endpoints_in_use/0),
       addresses: Kuroneko.USBNetwork.current()
     }
   end

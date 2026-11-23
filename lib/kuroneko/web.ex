@@ -13,7 +13,9 @@ defmodule Kuroneko.Web do
       `Kuroneko.MicrophoneSocket`)
     * `GET /api/usb` and `POST /api/usb`: the USB devices the target sees,
       their settings (see `Kuroneko.USBSettings`; a POST takes changes)
-      with the functions the gadget has and the formats the target uses
+      with the functions the gadget has, each by name (`instances`), the
+      endpoints they take of those there are (`endpoints`) and the formats
+      the target uses
     * `POST /api/usb/addresses` `{"address": "10.55.0.1/24"}`: the USB
       network's IP addresses, null for the default (see `Kuroneko.USBNetwork`)
     * `POST /api/usb/network` `{"device_address": ..., "host_address":
@@ -686,6 +688,9 @@ defmodule Kuroneko.Web do
     %{
       settings: USBSettings.saved(),
       functions: Kuroneko.Gadget.functions(),
+      # Each function by name, and the endpoints they take of those there are.
+      instances: Kuroneko.Gadget.instances(),
+      endpoints: Kuroneko.Gadget.endpoints_in_use(),
       # What the target chose, while the streams run.
       formats: %{
         microphone: NanoKVMGo.Microphone.format(),
