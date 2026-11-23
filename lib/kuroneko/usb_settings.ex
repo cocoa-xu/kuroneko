@@ -122,7 +122,7 @@ defmodule Kuroneko.USBSettings do
   """
   @spec merge(t(), map()) :: {:ok, t()} | {:error, term()}
   def merge(settings, changes) when is_map(changes) do
-    gadget = NanoKVMGo.USB.gadget_options()
+    gadget = board()
 
     with {:ok, settings} <- put_all(settings, changes),
          :ok <-
@@ -136,6 +136,24 @@ defmodule Kuroneko.USBSettings do
   end
 
   def merge(_settings, _changes), do: {:error, :not_an_object}
+
+  @doc """
+  The endpoints the USB functions of settings take, and those the device
+  has: `%{in: 7, out: 3, have: %{in: 7, out: 7}}`.
+  """
+  @spec endpoints(t()) :: %{
+          in: non_neg_integer(),
+          out: non_neg_integer(),
+          have: %{in: non_neg_integer(), out: non_neg_integer()} | nil
+        }
+  def endpoints(settings) do
+    {:ok, use} = Kuroneko.Gadget.endpoints(functions(settings))
+    Map.put(use, :have, board()[:endpoints])
+  end
+
+  # What the functions are checked against. The serial number only makes the
+  # network's addresses: without it, no boardid runs at every check.
+  defp board, do: NanoKVMGo.USB.gadget_options(serial_number: nil)
 
   @doc """
   Applies changes to the saved settings: sets the USB functions up, then

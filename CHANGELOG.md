@@ -21,6 +21,9 @@
   The drives in Disk… span every storage device, `GET /api/usb` tells each
   USB device with what each kind takes, and each further network gets a
   /30 of its own
+* A USB devices page on the LCD: the keyboard and mice, the sound card,
+  the virtual disk's drives, more storage devices and networks, a tap each,
+  with the endpoints they take; Apply sets them at once
 * The USB network's addresses can move, on the device page, where
   172.31.0.0/16 is taken
 * A network's signal in dBm when the pointer rests on its bars, and a

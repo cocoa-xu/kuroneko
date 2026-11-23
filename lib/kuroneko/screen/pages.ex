@@ -12,7 +12,7 @@ defmodule Kuroneko.Screen.Pages do
   @width 240
   @height 270
   @title_height 44
-  @pages [:status, :system, :network, :settings, :about]
+  @pages [:status, :system, :network, :usb, :settings, :about]
 
   @black Canvas.rgb(0, 0, 0)
   @white Canvas.rgb(255, 255, 255)
@@ -29,6 +29,15 @@ defmodule Kuroneko.Screen.Pages do
     sleep: {124, 54, 108, 96},
     rotate: {8, 158, 108, 96},
     touch: {124, 158, 108, 96}
+  ]
+
+  @usb_tiles [
+    input: {8, 50, 108, 62},
+    sound: {124, 50, 108, 62},
+    drives: {8, 118, 108, 62},
+    disks: {124, 118, 108, 62},
+    networks: {8, 186, 108, 62},
+    apply: {124, 186, 108, 62}
   ]
 
   @buttons [
@@ -54,6 +63,10 @@ defmodule Kuroneko.Screen.Pages do
   @doc "The settings tile at a point, if any."
   @spec tile_at({integer(), integer()}) :: atom() | nil
   def tile_at(point), do: find(@tiles, point)
+
+  @doc "The USB page's tile at a point, if any."
+  @spec usb_tile_at({integer(), integer()}) :: atom() | nil
+  def usb_tile_at(point), do: find(@usb_tiles, point)
 
   @doc "The touch page's button at a point, if any: reset only with a calibration."
   @spec button_at({integer(), integer()}, boolean()) :: atom() | nil
@@ -151,6 +164,30 @@ defmodule Kuroneko.Screen.Pages do
     |> toast(view)
   end
 
+  # The USB devices as set, or as changed on the page until applied, and the
+  # endpoints they take.
+  def render(%{page: :usb, info: info} = view) do
+    %{settings: settings, endpoints: endpoints} = info
+    over = endpoints_over?(endpoints)
+
+    title(:usb, "USB devices")
+    |> usb_tile(:input, "Keyboard+mice", if(settings["hid"], do: "On", else: "Off"))
+    |> usb_tile(:sound, "Sound", sound_mode(settings["audio"]))
+    |> usb_tile(:drives, "Disk drives", disk_drives(settings))
+    |> usb_tile(:disks, "More disks", "#{length(settings["storages"])}")
+    |> usb_tile(:networks, "More networks", "#{length(settings["networks"])}")
+    |> apply_tile(
+      cond do
+        info.applying -> {"Reconnecting", "...", @panel}
+        over -> {"Too many", "Full", @red}
+        info.changed -> {"Changed", "Apply", @green}
+        true -> {"As set", "Saved", @panel}
+      end
+    )
+    |> center(254, endpoints_line(endpoints), if(over, do: @red, else: @grey))
+    |> toast(view)
+  end
+
   def render(%{page: :settings, settings: settings} = view) do
     title(:settings, "Settings")
     |> tile(:brightness, "Brightness", "#{settings.brightness}%", "tap: +20%")
@@ -242,6 +279,45 @@ defmodule Kuroneko.Screen.Pages do
     )
     |> Canvas.text(x + div(width - Canvas.text_width(hint, 1), 2), y + 72, hint, @dim)
   end
+
+  defp usb_tile(canvas, key, label, value) do
+    {x, y, width, height} = @usb_tiles[key]
+
+    canvas
+    |> Canvas.rect(x, y, width, height, @panel)
+    |> Canvas.text(x + div(width - Canvas.text_width(label, 1), 2), y + 6, label, @grey)
+    |> Canvas.text(x + div(width - Canvas.text_width(value, 2), 2), y + 26, value, @white,
+      scale: 2
+    )
+  end
+
+  defp apply_tile(canvas, {label, value, color}) do
+    {x, y, width, height} = @usb_tiles[:apply]
+
+    canvas
+    |> Canvas.rect(x, y, width, height, color)
+    |> Canvas.text(x + div(width - Canvas.text_width(label, 1), 2), y + 6, label, @white)
+    |> Canvas.text(x + div(width - Canvas.text_width(value, 2), 2), y + 26, value, @white,
+      scale: 2
+    )
+  end
+
+  defp endpoints_over?(%{have: %{in: in_have, out: out_have}} = endpoints),
+    do: endpoints.in > in_have or endpoints.out > out_have
+
+  defp endpoints_over?(_endpoints), do: false
+
+  defp endpoints_line(%{have: %{in: in_have, out: out_have}} = endpoints),
+    do: "Endpoints IN #{endpoints.in}/#{in_have} OUT #{endpoints.out}/#{out_have}"
+
+  defp endpoints_line(endpoints), do: "Endpoints IN #{endpoints.in} OUT #{endpoints.out}"
+
+  defp sound_mode("mic"), do: "Mic"
+  defp sound_mode("duplex"), do: "Duplex"
+  defp sound_mode(_off), do: "Off"
+
+  defp disk_drives(%{"storage" => true, "drives" => drives}), do: "#{drives}"
+  defp disk_drives(_settings), do: "Off"
 
   defp button(canvas, key, label, hint) do
     {x, y, width, height} = @buttons[key]

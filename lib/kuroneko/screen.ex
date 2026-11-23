@@ -3,8 +3,12 @@ defmodule Kuroneko.Screen do
   The NanoKVM-Go's LCD and its touch panel.
 
     * pages of status, system (CPU, memory, network, refreshed each
-      second), network, settings and about: a swipe left or right turns
-      them, so does a tap on a page without tiles
+      second), network, USB devices, settings and about: a swipe left or
+      right turns them, so does a tap on a page without tiles
+    * the USB devices on tiles: the keyboard and mice, the sound card, the
+      virtual disk's drives, more storage devices and networks, with the
+      endpoints they take; Apply sets what the taps changed at once
+      (`Kuroneko.Screen.USB`)
     * settings on big tiles: brightness, screen off after a while, rotation,
       and the touch panel's paint test and calibration
     * the BOOT button turns the backlight off and on, and ends the paint
@@ -20,7 +24,7 @@ defmodule Kuroneko.Screen do
   alias NanoKVMGo.{Backlight, Display}
   alias NanoKVMGo.Display.Canvas
   alias Kuroneko.Network
-  alias Kuroneko.Screen.{Calibration, Gesture, Pages, Settings}
+  alias Kuroneko.Screen.{Calibration, Gesture, Pages, Settings, USB}
 
   @refresh_ms 2_000
   @subscribe_retry_ms 1_000
@@ -103,7 +107,10 @@ defmodule Kuroneko.Screen do
       press: nil,
       toast: nil,
       active_at: now(),
-      subscriptions: %{}
+      subscriptions: %{},
+      # The USB page's changes until applied, and whether they are being.
+      usb: nil,
+      applying: false
     }
 
     {:ok, state |> subscribe(NanoKVMGo.Touch) |> subscribe(NanoKVMGo.Button)}
@@ -132,6 +139,12 @@ defmodule Kuroneko.Screen do
     do: {:noreply, boot_button(%{state | active_at: now()})}
 
   def handle_info({:subscribe, server}, state), do: {:noreply, subscribe(state, server)}
+
+  def handle_info({:usb_applied, {:ok, _settings}}, state),
+    do: {:noreply, draw(toast(%{state | applying: false, usb: nil}, "USB devices set", :ok))}
+
+  def handle_info({:usb_applied, {:error, reason}}, state),
+    do: {:noreply, draw(toast(%{state | applying: false}, usb_error(reason), :error))}
 
   def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
     case Map.pop(state.subscriptions, ref) do
@@ -197,6 +210,9 @@ defmodule Kuroneko.Screen do
   defp gesture({:swipe, :right}, state), do: turn(state, -1)
   defp gesture({:tap, point}, %{page: :settings} = state), do: tile(Pages.tile_at(point), state)
 
+  defp gesture({:tap, point}, %{page: :usb} = state),
+    do: usb_tile(Pages.usb_tile_at(point), state)
+
   defp gesture({:tap, point}, %{page: :touch} = state),
     do: touch_button(Pages.button_at(point, state.settings.calibration != nil), state)
 
@@ -212,7 +228,8 @@ defmodule Kuroneko.Screen do
     draw(%{
       state
       | page: Enum.at(pages, rem(index + step + length(pages), length(pages))),
-        toast: nil
+        toast: nil,
+        usb: nil
     })
   end
 
@@ -223,6 +240,33 @@ defmodule Kuroneko.Screen do
   defp tile(:rotate, state), do: change(state, %{rotate: 180 - state.settings.rotate})
   defp tile(:touch, state), do: draw(%{state | page: :touch, toast: nil})
   defp tile(nil, state), do: state
+
+  defp usb_tile(_tile, %{applying: true} = state), do: state
+  defp usb_tile(nil, state), do: state
+  defp usb_tile(:apply, %{usb: nil} = state), do: state
+
+  defp usb_tile(:apply, state) do
+    if endpoints_fit?(Kuroneko.USBSettings.endpoints(state.usb)) do
+      screen = self()
+      changes = USB.changes(state.usb)
+      Task.start(fn -> send(screen, {:usb_applied, Kuroneko.USBSettings.update(changes)}) end)
+      draw(%{state | applying: true})
+    else
+      draw(toast(state, "Too many: turn one off", :error))
+    end
+  end
+
+  defp usb_tile(tile, state),
+    do: draw(%{state | usb: USB.step(state.usb || Kuroneko.USBSettings.saved(), tile)})
+
+  defp endpoints_fit?(%{have: %{in: in_have, out: out_have}} = endpoints),
+    do: endpoints.in <= in_have and endpoints.out <= out_have
+
+  defp endpoints_fit?(_endpoints), do: true
+
+  defp usb_error({:not_enough_endpoints, _counts}), do: "Too many: turn one off"
+  defp usb_error(:busy), do: "Busy: try again"
+  defp usb_error(reason), do: String.slice("Not set: #{inspect(reason)}", 0, 29)
 
   # The paint test's page is shown once; the dots go on it.
   defp touch_button(:paint, state) do
@@ -390,7 +434,20 @@ defmodule Kuroneko.Screen do
 
   defp view(state) do
     toast = with {text, kind, _until} <- state.toast, do: {text, kind}
-    %{page: state.page, settings: state.settings, toast: toast, info: info(state.page)}
+    info = if state.page == :usb, do: usb_info(state), else: info(state.page)
+    %{page: state.page, settings: state.settings, toast: toast, info: info}
+  end
+
+  defp usb_info(state) do
+    saved = Kuroneko.USBSettings.saved()
+    settings = state.usb || saved
+
+    %{
+      settings: settings,
+      endpoints: Kuroneko.USBSettings.endpoints(settings),
+      changed: settings != saved,
+      applying: state.applying
+    }
   end
 
   ## Where a touch is

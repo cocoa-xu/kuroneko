@@ -143,4 +143,22 @@ defmodule Kuroneko.USBSettingsTest do
 
     assert {:error, :not_an_object} = USBSettings.merge(defaults, [1])
   end
+
+  test "the endpoints the functions take, and those the device has" do
+    defaults = USBSettings.defaults()
+
+    # The network (2 + 1), three HID (3 + 0), the disk (1 + 1).
+    assert USBSettings.endpoints(defaults) == %{in: 6, out: 2, have: %{in: 7, out: 7}}
+
+    more = %{
+      defaults
+      | "hid" => false,
+        "audio" => "duplex",
+        "networks" => ["usb1"],
+        "storages" => [%{"name" => "boot", "drives" => 1}]
+    }
+
+    # Two networks (4 + 2), two disks (2 + 2), the sound card (1 + 1).
+    assert USBSettings.endpoints(more) == %{in: 7, out: 5, have: %{in: 7, out: 7}}
+  end
 end

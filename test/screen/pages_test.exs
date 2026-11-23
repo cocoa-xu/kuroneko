@@ -32,6 +32,15 @@ defmodule Kuroneko.Screen.PagesTest do
     uptime: 93_784
   }
 
+  defp usb_info(settings) do
+    %{
+      settings: settings,
+      endpoints: %{in: 6, out: 2, have: %{in: 7, out: 7}},
+      changed: false,
+      applying: false
+    }
+  end
+
   defp size(canvas) do
     {width, height} = Pages.size()
     assert byte_size(Canvas.render(canvas)) == width * height * 2
@@ -54,6 +63,20 @@ defmodule Kuroneko.Screen.PagesTest do
           %{page: :network, info: @network, settings: settings, toast: {"Calibrated", :ok}},
           %{page: :network, info: %{@network | ap: nil}},
           %{page: :settings, settings: settings, toast: nil},
+          %{page: :usb, info: usb_info(Kuroneko.USBSettings.defaults()), toast: nil},
+          %{
+            page: :usb,
+            info: %{usb_info(Kuroneko.USBSettings.defaults()) | changed: true},
+            toast: {"USB devices set", :ok}
+          },
+          %{
+            page: :usb,
+            info: %{
+              usb_info(%{Kuroneko.USBSettings.defaults() | "audio" => "duplex"})
+              | endpoints: %{in: 8, out: 3, have: %{in: 7, out: 7}}
+            }
+          },
+          %{page: :usb, info: %{usb_info(Kuroneko.USBSettings.defaults()) | applying: true}},
           %{page: :touch, settings: settings, toast: {"Missed a cross", :error}},
           %{page: :touch, settings: %Settings{}},
           %{page: :about, info: @about},
@@ -91,5 +114,25 @@ defmodule Kuroneko.Screen.PagesTest do
     assert Pages.button_at({120, 80}, false) == :paint
     assert Pages.button_at({120, 210}, false) == nil
     assert Pages.button_at({120, 210}, true) == :reset
+    assert Pages.usb_tile_at({60, 80}) == :input
+    assert Pages.usb_tile_at({180, 210}) == :apply
+    assert Pages.usb_tile_at({120, 150}) == nil
+  end
+
+  test "the USB page says what does not fit" do
+    info = %{
+      settings: Kuroneko.USBSettings.defaults(),
+      endpoints: %{in: 8, out: 3, have: %{in: 7, out: 7}},
+      changed: true,
+      applying: false
+    }
+
+    texts =
+      for {:text, _x, _y, text, _color, _scale} <- Pages.render(%{page: :usb, info: info}).items,
+          do: to_string(text)
+
+    assert "Endpoints IN 8/7 OUT 3/7" in texts
+    assert "Full" in texts
+    refute "Apply" in texts
   end
 end

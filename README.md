@@ -16,7 +16,8 @@ processor.
   USB endpoints take: keyboard and mouse, virtual disks, USB networks, a
   sound card in the formats you choose; the USB network's addresses
 * **The LCD** - the device's address, the video input and its own load on
-  its little screen, with touch and the button
+  its little screen, with touch and the button; the USB devices can be set
+  there too
 * **The device page** - its hardware, temperature, CPU, memory and network,
   the auxiliary port's lines, firmware updates on trial, restart
 * **Settings** - the Wi-Fi to join, the SSH keys that may log in, the
