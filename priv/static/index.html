@@ -40,6 +40,7 @@
   #bar button.on { border-color: #3fa45b; color: #e6e8eb; }
   #actions { width: 92px; }
   #usbaudio { max-width: 150px; }
+  #quality { max-width: 170px; }
   /* Narrower windows keep the controls and the numbers, not the extras. */
   @media (max-width: 1440px) {
     #bar { gap: 12px; }
@@ -65,6 +66,7 @@
   <span id="input" class="state">input</span>
   <span id="mode"></span>
   <span id="size"></span>
+  <select id="quality" title="The picture's quality and the bitrate it takes: presets as the stock firmware's, and more on the device page" hidden></select>
   <button id="system" title="The NanoKVM's own CPU, memory and network: click for the device page">
     CPU <span class="meter"><i id="cpumeter"></i></span><span id="cpu">-</span>
     MEM <span class="meter"><i id="memmeter"></i></span><span id="mem">-</span>
@@ -241,6 +243,8 @@
   function startH264() {
     view = canvas;
     canvas.hidden = false;
+    quality.hidden = false;
+    loadQuality();
     const ctx = canvas.getContext("2d");
     const config = { codec: "avc1.42C033", optimizeForLatency: true };
     const open = () => {
@@ -924,6 +928,39 @@
     }
     view.focus();
   };
+
+  // ---- The H.264 stream's quality: a preset, or the device page's own settings ----
+  const quality = document.getElementById("quality");
+  const presetText = (p) => p.rate_control === "vbr" ? `${p.label} quality`
+    : `${p.label}, ${p.bitrate / 1e6} Mbit/s`;
+  function showQuality(video) {
+    quality.replaceChildren(...video.presets.map((p) => new Option(presetText(p), p.name)));
+    if (video.preset === "custom") quality.add(new Option("Custom quality", "custom"));
+    quality.value = video.preset;
+  }
+  async function loadQuality() {
+    try {
+      const reply = await fetch("/api/video");
+      if (reply.ok) showQuality(await reply.json());
+    } catch (_) {}
+  }
+  quality.onchange = async () => {
+    if (quality.value === "custom") return openDevice("video");
+    quality.disabled = true;
+    try {
+      const reply = await fetch("/api/video", { method: "POST",
+        headers: { "content-type": "application/json" }, body: JSON.stringify({ preset: quality.value }) });
+      if (!reply.ok) throw new Error(`HTTP ${reply.status}`);
+      showQuality(await reply.json());
+    } catch (e) {
+      alert(`Quality: ${e.message}`);
+      loadQuality();
+    } finally {
+      quality.disabled = false;
+      view.focus();
+    }
+  };
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) loadQuality(); });
 
   // ---- Virtual disk ----
   document.getElementById("disk").onclick = () => KuronekoDisk.open({ onClose: () => view.focus() });

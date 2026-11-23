@@ -96,7 +96,9 @@ defmodule Kuroneko.WebTest do
           post: "/api/ssh/keys",
           post: "/api/ssh/keys/remove",
           get: "/disk.js",
-          get: "/disk.css"
+          get: "/disk.css",
+          get: "/api/video",
+          post: "/api/video"
         ] do
       assert request(method, path, "{}", @page, false).status == 401, "#{method} #{path}"
     end
@@ -279,6 +281,27 @@ defmodule Kuroneko.WebTest do
     assert request(:post, "/api/usb", ~s({"microphone":{"sample_bits":20}}), @page).status == 400
     assert request(:post, "/api/usb", ~s([1]), @page).status == 400
     assert request(:post, "/api/usb", "audio=duplex", @page).status == 400
+  end
+
+  test "video settings only from the page, and only ones the stream takes", %{tmp_dir: tmp_dir} do
+    Application.put_env(:kuroneko, :video_settings_file, Path.join(tmp_dir, "video.json"))
+    on_exit(fn -> Application.delete_env(:kuroneko, :video_settings_file) end)
+
+    json_only = [{"content-type", "application/json"}]
+    assert request(:post, "/api/video", ~s({"preset":"low"}), json_only).status == 403
+
+    low = request(:post, "/api/video", ~s({"preset":"low"}), @page)
+    assert low.status == 200
+
+    assert %{"preset" => "low", "settings" => %{"bitrate" => 1_000_000}} =
+             Jason.decode!(low.resp_body)
+
+    assert %{"preset" => "low", "presets" => [%{"name" => "auto"} | _]} =
+             Jason.decode!(request(:get, "/api/video").resp_body)
+
+    bad = request(:post, "/api/video", ~s({"qp":99}), @page)
+    assert bad.status == 400
+    assert Jason.decode!(bad.resp_body) == %{"error" => "invalid", "setting" => "qp"}
   end
 
   describe "the USB network's MAC addresses" do

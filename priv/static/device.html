@@ -256,6 +256,7 @@
     margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
   .usbapply .note { flex: 1; min-width: 240px; margin: 0; }
   .drives { display: grid; gap: 8px; }
+  .segmented.wrap { flex-wrap: wrap; }
   .driverow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 10px 14px;
     border-radius: 11px; background: var(--panel-2); border: 1px solid var(--line); }
   .driverow b { font-weight: 650; white-space: nowrap; }
@@ -560,6 +561,40 @@
         <span class="badge" id="videobadge">–</span>
       </header>
       <dl class="facts" id="videofacts"></dl>
+      <div class="subsection" id="encoding" hidden>
+        <header><h3>H.264 stream</h3><span class="muted" id="encodingnow"></span></header>
+        <div class="control">
+          <span class="label" id="presetlabel">Preset</span>
+          <div class="segmented wrap" role="group" aria-labelledby="presetlabel" id="presets"></div>
+        </div>
+        <div class="control">
+          <span class="label" id="ratelabel">Rate control</span>
+          <div class="segmented" role="group" aria-labelledby="ratelabel" id="ratecontrol">
+            <button type="button" data-value="vbr">VBR</button>
+            <button type="button" data-value="cbr">CBR</button>
+            <button type="button" data-value="constant_qp">Constant QP</button>
+          </div>
+        </div>
+        <div class="control">
+          <label for="bitrate">Bitrate</label>
+          <select id="bitrate"></select>
+        </div>
+        <div class="control">
+          <label for="qp">Quality</label>
+          <select id="qp"></select>
+        </div>
+        <div class="control">
+          <label for="keyframes">Keyframes</label>
+          <select id="keyframes"></select>
+        </div>
+        <div class="control">
+          <label for="maxfps">Frame rate</label>
+          <select id="maxfps"></select>
+        </div>
+        <p class="note">VBR keeps the quality, a QP, and takes a higher QP only where the bitrate would go over
+          its most; CBR keeps to the bitrate; a constant QP takes what each frame needs. A still picture
+          takes little whatever the choice. Each change applies from the next frame.</p>
+      </div>
     </section>
 
     <section class="card" id="network">
@@ -1315,7 +1350,86 @@ function renderVideo(video) {
     ["Input changes", capture.mid_frame_stops == null ? null : String(capture.mid_frame_stops)],
     ["Receiver restarts", capture.csi_recoveries == null ? null : String(capture.csi_recoveries)],
   ]);
+  const fps = signal ? input.fps : null;
+  if (fps !== encodingFps) {
+    encodingFps = fps;
+    renderEncoding();
+  }
 }
+
+// ---- The H.264 stream's encoding: each change applies at once.
+
+const BITRATES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20].map((m) => m * 1e6);
+const QPS = [16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 40];
+const KEYFRAMES = [30, 60, 150, 300, 600, 1200];
+const FPS_CAPS = [0, 60, 30, 20, 15, 10, 5];
+// What /api/video says: the settings, the preset they are, the presets.
+let encoding = null, encodingFps = null;
+const mbit = (bps) => `${+(bps / 1e6).toFixed(1)} Mbit/s`;
+
+// A select of values, with the current one even when it is not among them.
+function choices(select, values, text, current) {
+  const list = values.includes(current) ? values : [...values, current].sort((a, b) => a - b);
+  select.replaceChildren(...list.map((v) => h("option", { value: v }, text(v))));
+  select.value = String(current);
+}
+
+function renderEncoding() {
+  if (!encoding) return;
+  const s = encoding.settings;
+  $("encoding").hidden = false;
+  $("presets").replaceChildren(...encoding.presets.map((p) => h("button", {
+    type: "button", "data-value": p.name, "aria-pressed": String(encoding.preset === p.name),
+    title: p.rate_control === "vbr" ? `VBR of up to ${mbit(p.bitrate)} at QP ${p.qp}` : `CBR at ${mbit(p.bitrate)}`,
+  }, p.label)));
+  $("encodingnow").textContent = encoding.preset === "custom" ? "Custom" : "";
+  for (const b of $("ratecontrol").children) b.setAttribute("aria-pressed", String(b.dataset.value === s.rate_control));
+  choices($("bitrate"), BITRATES, (v) => (s.rate_control === "cbr" ? mbit(v) : `Up to ${mbit(v)}`), s.bitrate);
+  $("bitrate").disabled = s.rate_control === "constant_qp";
+  choices($("qp"), QPS, (v) => `QP ${v}${v <= 18 ? ", the finest" : v >= 36 ? ", the smallest" : ""}`, s.qp);
+  $("qp").disabled = s.rate_control === "cbr";
+  choices($("keyframes"), KEYFRAMES,
+          (v) => `Every ${v} frames${encodingFps ? `, ${+(v / encodingFps).toFixed(1)} s` : ""}`, s.keyframe_interval);
+  choices($("maxfps"), FPS_CAPS, (v) => (v ? `At most ${v} FPS` : "As the input"), s.max_fps);
+}
+
+async function loadEncoding() {
+  try {
+    const reply = await fetch("/api/video");
+    if (reply.status === 401) return location.reload();
+    if (!reply.ok) throw new Error(`HTTP ${reply.status}`);
+    encoding = await reply.json();
+    renderEncoding();
+  } catch (e) {
+    toast(`H.264 stream: ${e.message}`, true);
+  }
+}
+
+async function changeEncoding(changes, done) {
+  try {
+    encoding = await post("/api/video", changes);
+    renderEncoding();
+    if (done) toast(done);
+  } catch (e) {
+    const setting = e.data && e.data.setting;
+    toast(setting ? `H.264 stream: the NanoKVM does not take that ${setting}` : `H.264 stream: ${e.message}`, true);
+    loadEncoding();
+  }
+}
+
+$("presets").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (b) changeEncoding({ preset: b.dataset.value }, `${b.textContent} quality`);
+});
+$("ratecontrol").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (b) changeEncoding({ rate_control: b.dataset.value }, b.textContent);
+});
+$("bitrate").addEventListener("change", () => changeEncoding({ bitrate: +$("bitrate").value }));
+$("qp").addEventListener("change", () => changeEncoding({ qp: +$("qp").value }));
+$("keyframes").addEventListener("change", () => changeEncoding({ keyframe_interval: +$("keyframes").value }));
+$("maxfps").addEventListener("change", () => changeEncoding({ max_fps: +$("maxfps").value }));
+document.addEventListener("visibilitychange", () => { if (!document.hidden) loadEncoding(); });
 
 // ---- USB to the target: the devices it sees, the endpoints they take, the drives
 
@@ -2201,6 +2315,7 @@ $("keep").addEventListener("click", async () => {
 showBrightness();
 load().catch((e) => toast(`Device: ${e.message}`, true)).finally(connect);
 loadUsb();
+loadEncoding();
 </script>
 </body>
 </html>

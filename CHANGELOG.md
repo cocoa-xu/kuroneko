@@ -10,6 +10,12 @@
   to change or eject. USB… on the KVM page opens it, and the KVM page's
   echo cancellation for the microphone is in the Keys… menu
 * One Disk… dialog for both pages: the device page opens it for a drive
+* The H.264 stream's quality, as the stock firmware has it: presets on the
+  KVM page (Auto, VBR of up to 8 Mbit/s; Highest, High, Medium and Low, CBR
+  of 10, 5, 3 and 1 Mbit/s), and on the device page the rate control, the
+  bitrate, the QP, the keyframe interval and a frame rate cap. Changes apply
+  from the next frame, and stay across restarts. Needs nano_kvm_go's rate
+  control
 * Makers get Kuroneko's FAT32 formatter in their context, `format_fat`,
   so that a maker needs no dependency on Kuroneko, and tell how their
   image goes in with `as:` (`:disk`, `:cd`, `:dvd` or `:bd`), as

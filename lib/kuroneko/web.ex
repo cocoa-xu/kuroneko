@@ -75,6 +75,7 @@ defmodule Kuroneko.Web do
   alias Kuroneko.LoginLimit
   alias Kuroneko.SetupCode
   alias Kuroneko.USBSettings
+  alias Kuroneko.VideoSettings
   use Plug.Router
   require Logger
 
@@ -277,6 +278,20 @@ defmodule Kuroneko.Web do
       {:page, false} -> send_resp(conn, 403, "forbidden")
       {:error, reason} when not is_struct(reason) -> json(conn, 400, usb_error(reason))
       _ -> send_resp(conn, 400, "bad request")
+    end
+  end
+
+  get("/api/video", do: json(conn, 200, video()))
+
+  post "/api/video" do
+    with {:ok, changes, conn} <- page_json(conn) do
+      case VideoSettings.update(changes) do
+        {:ok, _settings} -> json(conn, 200, video())
+        {:error, {:invalid, setting}} -> json(conn, 400, %{error: :invalid, setting: setting})
+        {:error, reason} -> json(conn, 500, %{error: inspect(reason)})
+      end
+    else
+      other -> refused(conn, other)
     end
   end
 
@@ -710,6 +725,16 @@ defmodule Kuroneko.Web do
         microphone: NanoKVMGo.Microphone.format(),
         speaker: NanoKVMGo.Audio.format(Kuroneko.Speaker)
       }
+    }
+  end
+
+  defp video do
+    settings = VideoSettings.saved()
+
+    %{
+      settings: settings,
+      preset: VideoSettings.preset(settings),
+      presets: VideoSettings.presets()
     }
   end
 
