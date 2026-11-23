@@ -59,7 +59,7 @@ defmodule Kuroneko.USBSettingsTest do
     assert USBSettings.functions(off) == []
 
     drives = %{off | "storage" => true, "drives" => 3}
-    assert USBSettings.functions(drives) == [{:storage, drives: 3}]
+    assert USBSettings.functions(drives) == [{:storage, luns: 3}]
 
     touch = %{settings | "pointer" => "touch", "audio" => "off", "storage" => false}
     assert USBSettings.functions(touch) == [:keyboard, {:mouse, mode: :touch}, :relative_mouse]

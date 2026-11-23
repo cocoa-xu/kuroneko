@@ -7,7 +7,8 @@ defmodule Kuroneko.USBSettings do
       (a pen, for Android and iPadOS) or `"touch"` (a touch screen); the
       relative mouse is always there with it
     * `"storage"` - the virtual disk
-    * `"drives"` - its drives, 1 to 16, which take the endpoints of one
+    * `"drives"` - its drives, 1 to 16: the storage function's LUNs, which
+      take the endpoints of one
     * `"audio"` - the sound card in the stock firmware's modes: `"off"`,
       `"mic"` (a microphone the browser talks into) and `"duplex"` (also a
       speaker, whose sound the browser plays)
@@ -81,7 +82,7 @@ defmodule Kuroneko.USBSettings do
     storage =
       cond do
         not settings["storage"] -> []
-        settings["drives"] > 1 -> [{:storage, drives: settings["drives"]}]
+        settings["drives"] > 1 -> [{:storage, luns: settings["drives"]}]
         true -> [:storage]
       end
 

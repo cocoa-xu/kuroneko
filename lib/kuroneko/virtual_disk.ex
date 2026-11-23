@@ -1,8 +1,8 @@
 defmodule Kuroneko.VirtualDisk do
   @moduledoc """
   The virtual disk's library and what is in its drives (`Kuroneko.Gadget.Storage`):
-  image files and folders in `/data/images`. The drives are numbered from 0,
-  as the storage function has them.
+  image files and folders in `/data/images`. The drives are numbered from 0:
+  drive 1 is the storage function's LUN 1, the drives the target sees.
 
     * An image file goes in as it is: on the disc its format belongs on, a CD,
       a DVD or a BD (see `Kuroneko.VirtualDisk.Image`), or as a USB drive,
@@ -303,7 +303,7 @@ defmodule Kuroneko.VirtualDisk do
   end
 
   def handle_call({:eject, drive}, _from, state) do
-    case Storage.eject(drive: drive) do
+    case Storage.eject(lun: drive) do
       :ok -> {:reply, :ok, taken_out(state, drive)}
       error -> {:reply, error, state}
     end
@@ -388,7 +388,8 @@ defmodule Kuroneko.VirtualDisk do
     end
   end
 
-  defp drives, do: Storage.drives()
+  # A drive is a LUN of the storage function, by its number.
+  defp drives, do: Storage.luns()
 
   # ---- Image files
 
@@ -398,7 +399,7 @@ defmodule Kuroneko.VirtualDisk do
     disc = disc(Keyword.get(opts, :media, :auto), format)
     read_only = disc != nil or Keyword.get(opts, :read_only, format.disc != nil)
 
-    case Storage.insert(path, drive: drive, cdrom: disc != nil, disc: disc, read_only: read_only) do
+    case Storage.insert(path, lun: drive, cdrom: disc != nil, disc: disc, read_only: read_only) do
       :ok ->
         state = forget_folder_image(state, drive)
 
@@ -479,7 +480,7 @@ defmodule Kuroneko.VirtualDisk do
         Task.async(fn ->
           with :ok <- build(folder, image, size, medium, progress),
                :ok <- write_marker(medium),
-               :ok <- Storage.insert(image, drive: drive, cdrom: false, read_only: read_only) do
+               :ok <- Storage.insert(image, lun: drive, cdrom: false, read_only: read_only) do
             {:inserted, %{medium | image: in_drive(drive, image)}}
           else
             error ->
@@ -590,7 +591,7 @@ defmodule Kuroneko.VirtualDisk do
   # The computer can eject a removable drive itself, which empties it.
   defp check_drives(%{busy: nil} = state) do
     Enum.reduce_while(state.media, state, fn {drive, %{image: image}}, state ->
-      case Storage.medium(drive: drive) do
+      case Storage.medium(lun: drive) do
         {:ok, %{image: ^image}} ->
           {:cont, state}
 
@@ -624,7 +625,7 @@ defmodule Kuroneko.VirtualDisk do
           put_medium(state, %{medium | image: in_drive})
 
         match?(%{kind: :folder}, memory) and memory.name == medium.name and drive < drives() and
-            Storage.insert(medium.image, drive: drive, cdrom: false, read_only: medium.read_only) ==
+            Storage.insert(medium.image, lun: drive, cdrom: false, read_only: medium.read_only) ==
               :ok ->
           put_medium(state, %{medium | image: in_drive(drive, medium.image)})
 
@@ -684,7 +685,7 @@ defmodule Kuroneko.VirtualDisk do
   # Still in the drive when only this server restarted: kept as it is, so
   # that the computer sees no change of medium.
   defp adopt_image(state, drive, relative, opts) do
-    {:ok, inserted} = Storage.medium(drive: drive)
+    {:ok, inserted} = Storage.medium(lun: drive)
 
     medium =
       Map.merge(inserted, %{
@@ -825,7 +826,7 @@ defmodule Kuroneko.VirtualDisk do
   # A drive reports the file it holds by the path the kernel opened, with
   # links resolved: /root/images for /data/images on Nerves.
   defp in_drive(drive, fallback) do
-    case Storage.medium(drive: drive) do
+    case Storage.medium(lun: drive) do
       {:ok, %{image: image}} -> image
       _empty -> fallback
     end
@@ -892,7 +893,7 @@ defmodule Kuroneko.VirtualDisk do
   end
 
   defp medium(state, drive) do
-    case {state.media[drive], Storage.medium(drive: drive)} do
+    case {state.media[drive], Storage.medium(lun: drive)} do
       {%{image: image} = ours, {:ok, %{image: image} = inserted}} ->
         Map.merge(inserted, Map.delete(ours, :request))
 
