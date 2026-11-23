@@ -19,6 +19,11 @@
 * CUE sheets in Disk…: audio CDs and mixed-mode CDs, such as game discs,
   from BIN, WAVE or AIFF files. A sheet of one BIN goes in as it is, any
   other is laid out as one image first. Needs the Nerves system v0.1.3
+* Makers: other modules can offer more ways an item of the library goes
+  in a drive and make its image, such as a Windows installer's USB drive
+  (`Kuroneko.VirtualDisk.Maker`). They are registered with `:disk_makers`
+  in the config or at run time with `register_maker/1`, and their modes
+  show in Disk…
 * Eject asks the target to eject a disc it has locked, as a drive's button
   does; when it does not, the disc is taken out and the drive appears to
   the target anew, as it does when it turns from CD to USB drive or back

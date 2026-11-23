@@ -1242,23 +1242,26 @@
     cd_only: "A CUE sheet is a CD: insert it as Auto or CD-ROM.",
     cue: (data) => `The CUE sheet cannot go in: ${data.detail}.`,
     tracks_unsupported: "This NanoKVM's system has no CDs of tracks: update it.",
+    no_maker: "That maker is not on this NanoKVM any more.",
+    not_offered: "That maker does not offer this mode for it.",
   };
   const FILESYSTEMS = { exfat: "exFAT", fat32: "FAT32" };
   const DRIVES = { cd: "CD-ROM", dvd: "DVD-ROM", bd: "BD-ROM" };
   const DISCS = { cd: "CD", dvd: "DVD", bd: "Blu-ray" };
   const BOOTS = { bios: "BIOS", uefi: "UEFI", other: "other firmware" };
 
-  // How an item can go in, the first being the default.
+  // How an item can go in, the first being the default; then what makers offer.
   function diskModes(item) {
+    const made = (item.makers || []).map((o) => [`maker:${o.maker}:${o.mode}`, o.label]);
     if (item.kind === "folder") {
       return [["exfat-ro", "exFAT, read-only"], ["exfat-rw", "exFAT, writable"],
-              ["fat32-ro", "FAT32, read-only"], ["fat32-rw", "FAT32, writable"]];
+              ["fat32-ro", "FAT32, read-only"], ["fat32-rw", "FAT32, writable"], ...made];
     }
     const disc = item.format && item.format.disc;
-    if (item.format && item.format.cue) return [["auto", "Auto: CD-ROM"]];
+    if (item.format && item.format.cue) return [["auto", "Auto: CD-ROM"], ...made];
     return [["auto", disc ? `Auto: ${DRIVES[disc]}` : "Auto: USB drive, writable"],
             ["cd", "CD-ROM"], ["dvd", "DVD-ROM"], ["bd", "BD-ROM"],
-            ["drive-ro", "USB drive, read-only"], ["drive-rw", "USB drive, writable"]];
+            ["drive-ro", "USB drive, read-only"], ["drive-rw", "USB drive, writable"], ...made];
   }
 
   // What an image holds, from its own structures.
@@ -1287,7 +1290,11 @@
   function insertBody(item, mode) {
     const body = { name: item.name, remember: document.getElementById("diskremember").checked };
     if (!document.getElementById("disktargetlabel").hidden) body.drive = +document.getElementById("disktarget").value;
-    if (item.kind === "folder") {
+    const offer = (item.makers || []).find((o) => mode === `maker:${o.maker}:${o.mode}`);
+    if (offer) {
+      body.maker = offer.maker;
+      body.mode = offer.mode;
+    } else if (item.kind === "folder") {
       body.filesystem = mode.split("-")[0];
       body.read_only = !mode.endsWith("rw");
     } else if (mode.startsWith("drive")) {
@@ -1339,6 +1346,7 @@
   function describeMedium(m) {
     const access = m.read_only ? "read-only" : "writable";
     const kept = m.remember ? ", in again after a restart" : "";
+    if (m.label) return `${m.label}, ${access}${kept}`;
     return m.kind === "folder" ? `folder as ${FILESYSTEMS[m.filesystem] || "a drive"}, ${access}${kept}`
       : `${m.cdrom ? DRIVES[m.disc] || "CD-ROM" : "USB drive"}${m.tracks ? ` of ${m.tracks} tracks` : ""}, ${access}${kept}`;
   }

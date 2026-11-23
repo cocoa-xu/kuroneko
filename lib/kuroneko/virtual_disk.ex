@@ -27,7 +27,7 @@ defmodule Kuroneko.VirtualDisk do
   require Logger
 
   alias Kuroneko.Gadget.Storage
-  alias Kuroneko.VirtualDisk.{Cue, ExFAT, FAT, Image}
+  alias Kuroneko.VirtualDisk.{Cue, ExFAT, FAT, Image, Maker}
 
   @work ".kuroneko"
   @fat32_max_file 4 * 1024 * 1024 * 1024 - 1
@@ -57,12 +57,13 @@ defmodule Kuroneko.VirtualDisk do
 
   @doc """
   The library, what is in the drives and what is under way: `%{items:
-  [%{name, kind: :image | :folder, size, format}], drives: [%{drive: 0,
+  [%{name, kind: :image | :folder, size, format, makers}], drives: [%{drive: 0,
   storage: "disk", lun: 0, medium: nil | %{name, kind, cdrom, disc,
   read_only, remember, image}}],
   busy: nil | %{action: :making | :copying_back, name, drive, done, total},
   free: bytes, error: nil | text}`. An image's `format` is what
-  `Kuroneko.VirtualDisk.Image.probe/1` finds.
+  `Kuroneko.VirtualDisk.Image.probe/1` finds; `makers`, what makers offer
+  for the item (`Kuroneko.VirtualDisk.Maker`): `[%{maker, mode, label}]`.
   """
   @spec state() :: map()
   def state, do: GenServer.call(__MODULE__, :state, 30_000)
@@ -78,12 +79,24 @@ defmodule Kuroneko.VirtualDisk do
     * `:read_only`: for drives; discs are read-only. By default an optical
       disc image in a USB drive is read-only, other images are not
     * `:filesystem` (folders): `:exfat`, the default, or `:fat32`
+    * `:maker` and `:mode`: a registered maker's id and a mode it offers for
+      the item: the maker makes the image that goes in
+      (`Kuroneko.VirtualDisk.Maker`)
     * `:remember`: `true`, the default, inserts it again after a restart
 
-  A folder goes in once its drive is made: see `state/0`.
+  A folder, or what a maker makes, goes in once its image is made: see
+  `state/0`.
   """
   @spec insert(String.t(), keyword()) :: :ok | {:error, term()}
   def insert(name, opts \\ []), do: GenServer.call(__MODULE__, {:insert, name, opts}, 30_000)
+
+  @doc """
+  Registers a maker until the next restart, besides those of the
+  `:disk_makers` setting (`Kuroneko.VirtualDisk.Maker`). One of the same id
+  is replaced.
+  """
+  @spec register_maker(module()) :: :ok | {:error, :not_a_maker}
+  def register_maker(module), do: GenServer.call(__MODULE__, {:register_maker, module})
 
   @doc "Takes a drive's medium out; a writable folder's changes then go back to it."
   @spec eject(non_neg_integer()) :: :ok | {:error, term()}
@@ -245,8 +258,11 @@ defmodule Kuroneko.VirtualDisk do
   # ---- Server
 
   @impl GenServer
-  def init(_opts),
-    do: {:ok, %{media: %{}, busy: nil, task: nil, error: nil, formats: %{}}, {:continue, :start}}
+  def init(_opts) do
+    makers = Enum.filter(Application.get_env(:kuroneko, :disk_makers, []), &Maker.maker?/1)
+    state = %{media: %{}, busy: nil, task: nil, error: nil, formats: %{}, makers: makers}
+    {:ok, state, {:continue, :start}}
+  end
 
   @impl GenServer
   def handle_continue(:start, state) do
@@ -286,6 +302,15 @@ defmodule Kuroneko.VirtualDisk do
   def handle_call(:drives_changed, _from, %{busy: nil} = state),
     do: {:reply, :ok, gone(state, Map.keys(state.media) -- slots())}
 
+  def handle_call({:register_maker, module}, _from, state) do
+    if Maker.maker?(module) do
+      makers = Enum.reject(state.makers, &(&1.id() == module.id())) ++ [module]
+      {:reply, :ok, %{state | makers: makers}}
+    else
+      {:reply, {:error, :not_a_maker}, state}
+    end
+  end
+
   def handle_call(_request, _from, %{busy: busy} = state) when busy != nil,
     do: {:reply, {:error, :busy}, state}
 
@@ -297,9 +322,10 @@ defmodule Kuroneko.VirtualDisk do
          :ok <- writable_folder_out(state, drive),
          path = Path.join(dir(), relative),
          {:ok, kind} <- kind(path) do
-      case kind do
-        :image -> insert_image(state, drive, relative, path, opts)
-        :folder -> make_drive(state, drive, relative, path, opts)
+      cond do
+        opts[:maker] -> make_with(state, drive, relative, path, kind, opts)
+        kind == :image -> insert_image(state, drive, relative, path, opts)
+        true -> make_drive(state, drive, relative, path, opts)
       end
       |> case do
         {:ok, state} -> {:reply, :ok, state}
@@ -550,6 +576,87 @@ defmodule Kuroneko.VirtualDisk do
       busy = %{action: :making, name: relative, drive: index(drive), done: 0, total: bytes}
       {:ok, %{state | task: task, busy: busy, error: nil}}
     end
+  end
+
+  # ---- Makers: an image another module makes from an item
+
+  defp make_with(state, drive, relative, path, kind, opts) do
+    with {:ok, maker} <- find_maker(state, opts[:maker]),
+         format = if(kind == :image, do: elem(cached_format(state.formats, path), 0)),
+         item = %{path: path, kind: kind, format: format},
+         {:ok, offer} <- find_offer(maker, item, opts[:mode]),
+         :ok <- File.mkdir_p(Path.join(dir(), @work)) do
+      state = forget_folder_image(state, drive)
+      id = Base.url_encode64(:crypto.strong_rand_bytes(6), padding: false)
+      image = Path.join([dir(), @work, "#{id}.img"])
+      server = self()
+
+      medium = %{
+        name: relative,
+        kind: kind,
+        drive: drive,
+        made: true,
+        maker: maker.id(),
+        mode: offer.mode,
+        label: offer.label,
+        cdrom: false,
+        read_only: true,
+        remember: Keyword.get(opts, :remember, true),
+        request: Keyword.take(opts, [:maker, :mode]),
+        image: image
+      }
+
+      context = %{
+        image: image,
+        progress: fn done, total -> send(server, {:progress, done, total}) end,
+        free: max(free_space() - @keep_free, 0)
+      }
+
+      task =
+        Task.async(fn ->
+          with {:ok, insertion} <- run_maker(maker, item, offer.mode, context),
+               medium =
+                 Map.merge(medium, Map.new(Keyword.take(insertion, [:cdrom, :disc, :read_only]))),
+               :ok <- write_marker(medium),
+               :ok <- Storage.insert(image, at(drive) ++ insertion) do
+            {:inserted, %{medium | image: in_drive(drive, image)}}
+          else
+            error ->
+              remove_image(image)
+              error
+          end
+        end)
+
+      busy = %{action: :making, name: relative, drive: index(drive), done: 0, total: 0}
+      {:ok, %{state | task: task, busy: busy, error: nil}}
+    else
+      error -> {error, state}
+    end
+  end
+
+  defp find_maker(state, id) do
+    case Enum.find(state.makers, &(&1.id() == id)) do
+      nil -> {:error, :no_maker}
+      maker -> {:ok, maker}
+    end
+  end
+
+  defp find_offer(maker, item, mode) do
+    case Enum.find(Maker.offers([maker], item), &(&1.mode == mode)) do
+      nil -> {:error, :not_offered}
+      offer -> {:ok, offer}
+    end
+  end
+
+  # A maker that raises fails the making, not the server.
+  defp run_maker(maker, item, mode, context) do
+    case maker.make(item, mode, context) do
+      {:ok, insertion} when is_list(insertion) -> {:ok, insertion}
+      {:error, reason} -> {:error, {:maker, maker.id(), reason}}
+      other -> {:error, {:maker, maker.id(), other}}
+    end
+  rescue
+    error -> {:error, {:maker, maker.id(), Exception.message(error)}}
   end
 
   # What the page shows of a sheet: its tracks, or why the drive cannot take it.
@@ -808,6 +915,9 @@ defmodule Kuroneko.VirtualDisk do
          {:ok, kind} <- kind(path) do
       inserted =
         cond do
+          opts[:maker] ->
+            make_with(state, drive, relative, path, kind, opts)
+
           kind == :image and real_path(path) == in_drive(drive, nil) ->
             {:ok, adopt_image(state, drive, relative, opts)}
 
@@ -941,7 +1051,13 @@ defmodule Kuroneko.VirtualDisk do
           do: {String.to_existing_atom(field), value}
 
     flags = for key <- ["read_only"], is_boolean(opts[key]), do: {:read_only, opts[key]}
-    {:ok, %{name: name, kind: String.to_existing_atom(kind), opts: choices ++ flags}}
+
+    made =
+      for key <- ["maker", "mode"],
+          is_binary(opts[key]),
+          do: {String.to_existing_atom(key), opts[key]}
+
+    {:ok, %{name: name, kind: String.to_existing_atom(kind), opts: choices ++ flags ++ made}}
   end
 
   def from_memory(_fields), do: :error
@@ -963,13 +1079,26 @@ defmodule Kuroneko.VirtualDisk do
         image: String.trim_trailing(marker, ".json")
       }
 
-      # A CUE sheet's image, made to be read
-      if fields["kind"] == "cue",
-        do:
+      # A CUE sheet's image, or a maker's
+      case fields["kind"] do
+        "cue" ->
           medium
           |> Map.drop([:filesystem])
-          |> Map.merge(%{kind: :image, made: true, cdrom: true, disc: :cd}),
-        else: medium
+          |> Map.merge(%{kind: :image, made: true, cdrom: true, disc: :cd})
+
+        "made" ->
+          medium
+          |> Map.drop([:filesystem])
+          |> Map.merge(%{
+            kind: :image,
+            made: true,
+            cdrom: fields["cdrom"] == true,
+            maker: fields["maker"]
+          })
+
+        _folder ->
+          medium
+      end
     end
   end
 
@@ -987,10 +1116,16 @@ defmodule Kuroneko.VirtualDisk do
       medium
       |> Map.take([:name, :filesystem, :read_only, :remember])
       |> Map.merge(%{storage: storage, lun: lun})
-      |> Map.merge(if(medium[:made], do: %{kind: "cue"}, else: %{}))
+      |> Map.merge(made_fields(medium))
 
     File.write(medium.image <> ".json", Jason.encode!(fields))
   end
+
+  defp made_fields(%{made: true, maker: maker} = medium),
+    do: %{kind: "made", maker: maker, cdrom: medium.cdrom}
+
+  defp made_fields(%{made: true}), do: %{kind: "cue"}
+  defp made_fields(_folder), do: %{}
 
   defp remove_image(image) do
     File.rm(image)
@@ -1059,11 +1194,21 @@ defmodule Kuroneko.VirtualDisk do
     {items, formats} =
       Enum.map_reduce(entries, %{}, fn
         {name, path, :folder}, formats ->
-          {%{name: name, kind: :folder, size: elem(measure(path), 0)}, formats}
+          makers = Maker.offers(state.makers, %{path: path, kind: :folder, format: nil})
+          {%{name: name, kind: :folder, size: elem(measure(path), 0), makers: makers}, formats}
 
         {name, path, :image}, formats ->
           {format, entry} = cached_format(state.formats, path)
-          item = %{name: name, kind: :image, size: File.stat!(path).size, format: format}
+          makers = Maker.offers(state.makers, %{path: path, kind: :image, format: format})
+
+          item = %{
+            name: name,
+            kind: :image,
+            size: File.stat!(path).size,
+            format: format,
+            makers: makers
+          }
+
           {item, Map.put(formats, path, entry)}
       end)
 
@@ -1195,6 +1340,8 @@ defmodule Kuroneko.VirtualDisk do
   defp describe({:error, {:copy, path, reason}}),
     do: "#{path} could not be copied: #{:file.format_error(reason)}"
 
+  defp describe({:error, {:maker, id, reason}}) when is_binary(reason), do: "#{id}: #{reason}"
+  defp describe({:error, {:maker, id, reason}}), do: "#{id}: #{inspect(reason)}"
   defp describe({:error, reason}), do: inspect(reason)
   defp describe(other), do: inspect(other)
 

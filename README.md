@@ -155,7 +155,11 @@ not to. **USB…** gives the virtual disk up to 16 drives, which the target
 sees at once, each with its own image or folder, and adds storage devices,
 each a USB drive of its own, for BIOSes that boot only a device's first
 drive. A CUE sheet goes in as a CD of its tracks, audio and data, from its
-BIN, WAVE or AIFF files. A folder goes in as a drive made from it:
+BIN, WAVE or AIFF files. Other ways an item can go in come from makers,
+modules that make an image of their own from it
+(`Kuroneko.VirtualDisk.Maker`): add one as a dependency and to
+`:disk_makers` in the config, or register it at run time from IEx. A folder
+goes in as a drive made from it:
 read-only, the target sees the folder as it was; writable, what the target
 changes comes back to the folder when the drive is ejected. The drive is
 exFAT, which holds files of any size, or FAT32 for BIOS updates, UEFI and

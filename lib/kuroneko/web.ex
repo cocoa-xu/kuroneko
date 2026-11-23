@@ -618,7 +618,9 @@ defmodule Kuroneko.Web do
     drive =
       if is_integer(data["drive"]) and data["drive"] >= 0, do: [drive: data["drive"]], else: []
 
-    drive ++ choices ++ flags
+    made = for key <- [:maker, :mode], is_binary(data["#{key}"]), do: {key, data["#{key}"]}
+
+    drive ++ choices ++ flags ++ made
   end
 
   # The page explains the reasons it knows.
@@ -627,7 +629,8 @@ defmodule Kuroneko.Web do
       case reason do
         r when r in [:busy, :in_use, :exists, :eject_first] -> 409
         :no_drive -> 404
-        r when r in [:invalid_name, :file_too_large, :cd_only] -> 400
+        r when r in [:invalid_name, :file_too_large, :cd_only, :not_offered] -> 400
+        :no_maker -> 404
         :enoent -> 404
         :no_room -> 507
         r when r in [:no_storage, :no_exfat, :disc_unsupported, :tracks_unsupported] -> 503
