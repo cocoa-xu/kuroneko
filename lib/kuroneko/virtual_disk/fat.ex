@@ -1,7 +1,9 @@
 defmodule Kuroneko.VirtualDisk.FAT do
   @moduledoc """
   An empty FAT32 file system in a file, without a partition table, as on
-  many USB sticks: the target computer mounts it as a removable drive.
+  many USB sticks: the target computer mounts it as a removable drive. It
+  can also go in a partition of a disk image, at an offset in the file;
+  makers (`Kuroneko.VirtualDisk.Maker`) use it so.
 
   Only what is not zero is written: the boot sectors, the FSInfo sectors,
   their backups, the start of both FATs and the volume label. The rest of
@@ -21,17 +23,25 @@ defmodule Kuroneko.VirtualDisk.FAT do
 
   @doc """
   Makes `path` an empty FAT32 file system of `size` bytes (rounded down to
-  whole sectors). Option: `:label`, the volume's name (11 characters of
-  A-Z, 0-9, spaces and a few symbols are kept; others become `_`).
+  whole sectors). Options:
+
+    * `:label` - the volume's name (11 characters of A-Z, 0-9, spaces and a
+      few symbols are kept; others become `_`)
+    * `:offset` - where in the file it starts, in bytes, a multiple of 512:
+      a partition of a disk image, whose other bytes it keeps. The file then
+      grows to hold it, if it has to
   """
   @spec format(Path.t(), pos_integer(), keyword()) :: :ok | {:error, term()}
   def format(path, size, opts \\ []) do
     sectors = div(size, @sector)
+    offset = Keyword.get(opts, :offset, 0)
+    mode = if offset > 0, do: [:read, :write, :binary, :raw], else: [:write, :binary, :raw]
 
-    with {:ok, layout} <- layout(sectors),
-         {:ok, file} <- File.open(path, [:write, :binary, :raw]) do
+    with :ok <- if(rem(offset, @sector) == 0, do: :ok, else: {:error, :offset}),
+         {:ok, layout} <- layout(sectors),
+         {:ok, file} <- File.open(path, mode) do
       try do
-        write_all(file, layout, sectors, label(opts[:label]))
+        write_all(file, layout, sectors, label(opts[:label]), offset)
       after
         File.close(file)
       end
@@ -61,8 +71,8 @@ defmodule Kuroneko.VirtualDisk.FAT do
   defp sectors_per_cluster(sectors) when sectors <= 67_108_864, do: 32
   defp sectors_per_cluster(_sectors), do: 64
 
-  defp write_all(file, layout, sectors, label) do
-    boot = boot_sector(layout, sectors, label)
+  defp write_all(file, layout, sectors, label, offset) do
+    boot = boot_sector(layout, sectors, label, div(offset, @sector))
     info = fs_info(layout.clusters - 1)
     # The third boot sector: only its signature.
     third = <<0::size(510 * 8), 0x55, 0xAA>>
@@ -76,9 +86,19 @@ defmodule Kuroneko.VirtualDisk.FAT do
         for(n <- 0..(@fats - 1), do: {(@reserved + n * layout.fat) * @sector, fat}) ++
         if(label, do: [{data, label_entry(label)}], else: [])
 
+    writes = for {at, bytes} <- writes, do: {offset + at, bytes}
+
     with :ok <- Enum.reduce_while(writes, :ok, &pwrite(file, &1, &2)),
-         {:ok, _} <- :file.position(file, sectors * @sector) do
-      :file.truncate(file)
+         do: set_size(file, offset + sectors * @sector, offset > 0)
+  end
+
+  # The file ends with the file system; a disk image's partition only makes
+  # it larger.
+  defp set_size(file, size, partition) do
+    with {:ok, now} <- :file.position(file, :eof) do
+      if partition and now >= size,
+        do: :ok,
+        else: with({:ok, _at} <- :file.position(file, size), do: :file.truncate(file))
     end
   end
 
@@ -89,7 +109,7 @@ defmodule Kuroneko.VirtualDisk.FAT do
     end
   end
 
-  defp boot_sector(layout, sectors, label) do
+  defp boot_sector(layout, sectors, label, hidden) do
     <<
       0xEB,
       0x58,
@@ -105,7 +125,7 @@ defmodule Kuroneko.VirtualDisk.FAT do
       0::little-16,
       63::little-16,
       255::little-16,
-      0::little-32,
+      hidden::little-32,
       sectors::little-32,
       layout.fat::little-32,
       0::little-16,

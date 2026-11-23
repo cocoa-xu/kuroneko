@@ -167,6 +167,27 @@ defmodule Kuroneko.VirtualDiskTest do
       File.close(file)
     end
 
+    test "in a partition of a disk image, its other bytes kept", %{tmp_dir: tmp} do
+      image = Path.join(tmp, "disk.img")
+      File.write!(image, :binary.copy(<<0xAB>>, 1024 * 1024))
+      start = 1024 * 1024
+
+      assert FAT.format(image, FAT.min_size(), label: "PART", offset: start) == :ok
+      assert File.stat!(image).size == start + FAT.min_size()
+
+      {:ok, file} = File.open(image, [:read, :binary])
+      assert {:ok, <<0xAB, 0xAB>>} = :file.pread(file, start - 2, 2)
+
+      # The sectors before the partition, as BIOSes and Windows expect.
+      assert {:ok, <<0xEB, 0x58, 0x90, "KURONEKO", _::binary-size(17), hidden::little-32>>} =
+               :file.pread(file, start, 32)
+
+      assert hidden == 2048
+      File.close(file)
+
+      assert FAT.format(image, FAT.min_size(), offset: 100) == {:error, :offset}
+    end
+
     test "no image under 64 MiB", %{tmp_dir: tmp} do
       assert FAT.format(Path.join(tmp, "small.img"), 16 * 1024 * 1024) == {:error, :too_small}
     end
