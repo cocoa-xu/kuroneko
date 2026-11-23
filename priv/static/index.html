@@ -1238,6 +1238,9 @@
     bad_name: (data) => `“${data.name}” has a character drives do not take (" * : < > ? \\ |): rename it first.`,
     no_room: "Not enough free space on the NanoKVM.",
     no_storage: "The virtual disk is off: turn it on in USB…",
+    cd_only: "A CUE sheet is a CD: insert it as Auto or CD-ROM.",
+    cue: (data) => `The CUE sheet cannot go in: ${data.detail}.`,
+    tracks_unsupported: "This NanoKVM's system has no CDs of tracks: update it.",
   };
   const FILESYSTEMS = { exfat: "exFAT", fat32: "FAT32" };
   const DRIVES = { cd: "CD-ROM", dvd: "DVD-ROM", bd: "BD-ROM" };
@@ -1251,6 +1254,7 @@
               ["fat32-ro", "FAT32, read-only"], ["fat32-rw", "FAT32, writable"]];
     }
     const disc = item.format && item.format.disc;
+    if (item.format && item.format.cue) return [["auto", "Auto: CD-ROM"]];
     return [["auto", disc ? `Auto: ${DRIVES[disc]}` : "Auto: USB drive, writable"],
             ["cd", "CD-ROM"], ["dvd", "DVD-ROM"], ["bd", "BD-ROM"],
             ["drive-ro", "USB drive, read-only"], ["drive-rw", "USB drive, writable"]];
@@ -1259,6 +1263,11 @@
   // What an image holds, from its own structures.
   function formatText(f) {
     if (!f) return "";
+    if (f.cue) {
+      if (f.cue.error) return `CUE sheet the drive cannot take: ${f.cue.error}`;
+      const tracks = [f.cue.data && `${f.cue.data} data`, f.cue.audio && `${f.cue.audio} audio`].filter(Boolean);
+      return `CUE sheet: a CD of ${tracks.join(" and ")} track${f.cue.data + f.cue.audio > 1 ? "s" : ""}`;
+    }
     const parts = [];
     const systems = [f.iso9660 && "ISO 9660", f.joliet && "Joliet", f.udf && `UDF ${f.udf}`].filter(Boolean);
     if (f.disc) {
@@ -1330,7 +1339,7 @@
     const access = m.read_only ? "read-only" : "writable";
     const kept = m.remember ? ", in again after a restart" : "";
     return m.kind === "folder" ? `folder as ${FILESYSTEMS[m.filesystem] || "a drive"}, ${access}${kept}`
-      : `${m.cdrom ? DRIVES[m.disc] || "CD-ROM" : "USB drive"}, ${access}${kept}`;
+      : `${m.cdrom ? DRIVES[m.disc] || "CD-ROM" : "USB drive"}${m.tracks ? ` of ${m.tracks} tracks` : ""}, ${access}${kept}`;
   }
 
   // The list is drawn anew only when it changes, so that a choice being made stays.

@@ -627,10 +627,10 @@ defmodule Kuroneko.Web do
       case reason do
         r when r in [:busy, :in_use, :exists, :eject_first] -> 409
         :no_drive -> 404
-        r when r in [:invalid_name, :file_too_large] -> 400
+        r when r in [:invalid_name, :file_too_large, :cd_only] -> 400
         :enoent -> 404
         :no_room -> 507
-        r when r in [:no_storage, :no_exfat, :disc_unsupported] -> 503
+        r when r in [:no_storage, :no_exfat, :disc_unsupported, :tracks_unsupported] -> 503
         _other -> 500
       end
 
@@ -638,6 +638,8 @@ defmodule Kuroneko.Web do
   end
 
   defp disk_refused(conn, {:bad_name, name}), do: json(conn, 400, %{error: :bad_name, name: name})
+
+  defp disk_refused(conn, {:cue, detail}), do: json(conn, 400, %{error: :cue, detail: detail})
 
   defp disk_refused(conn, reason), do: json(conn, 500, %{error: inspect(reason)})
 

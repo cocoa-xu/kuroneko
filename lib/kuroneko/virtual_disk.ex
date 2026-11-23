@@ -27,7 +27,7 @@ defmodule Kuroneko.VirtualDisk do
   require Logger
 
   alias Kuroneko.Gadget.Storage
-  alias Kuroneko.VirtualDisk.{ExFAT, FAT, Image}
+  alias Kuroneko.VirtualDisk.{Cue, ExFAT, FAT, Image}
 
   @work ".kuroneko"
   @fat32_max_file 4 * 1024 * 1024 * 1024 - 1
@@ -421,6 +421,12 @@ defmodule Kuroneko.VirtualDisk do
   # ---- Image files
 
   defp insert_image(state, drive, relative, path, opts) do
+    if cue?(path),
+      do: insert_cue(state, drive, relative, path, opts),
+      else: insert_plain_image(state, drive, relative, path, opts)
+  end
+
+  defp insert_plain_image(state, drive, relative, path, opts) do
     {format, entry} = cached_format(state.formats, path)
     state = put_in(state.formats[path], entry)
     disc = disc(Keyword.get(opts, :media, :auto), format)
@@ -450,6 +456,117 @@ defmodule Kuroneko.VirtualDisk do
     end
   end
 
+  # ---- CUE sheets: a CD of tracks, from one BIN as it is or laid out anew
+
+  defp cue?(path), do: String.downcase(Path.extname(path)) == ".cue"
+
+  defp insert_cue(state, drive, relative, path, opts) do
+    with :ok <-
+           if(Keyword.get(opts, :media, :auto) in [:auto, :cd], do: :ok, else: {:error, :cd_only}),
+         {:ok, tracks} <- read_cue(path),
+         {:ok, layout} <- cue_result(Cue.layout(tracks)) do
+      case layout do
+        {:direct, bin, table} ->
+          with :ok <- Storage.insert(bin, at(drive) ++ [tracks: table, read_only: true]) do
+            state = forget_folder_image(state, drive)
+            medium = cue_medium(relative, drive, table, in_drive(drive, bin), opts)
+            remember(medium)
+            {:ok, %{put_medium(state, medium) | error: nil}}
+          end
+
+        {:layout, pieces, table} ->
+          make_disc(state, drive, relative, pieces, table, opts)
+      end
+    end
+    |> case do
+      {:ok, state} -> {:ok, state}
+      error -> {error, state}
+    end
+  end
+
+  defp read_cue(path) do
+    with {:ok, text} <- File.read(path),
+         do: cue_result(Cue.parse(text, Path.dirname(path)))
+  end
+
+  defp cue_result({:error, reason}) when is_atom(reason) and reason != :enoent,
+    do: {:error, {:cue, cue_text(reason)}}
+
+  defp cue_result({:error, reason}) when is_tuple(reason), do: {:error, {:cue, cue_text(reason)}}
+  defp cue_result(result), do: result
+
+  defp cue_text({:line, line, reason}), do: "line #{line}: #{cue_text(reason)}"
+  defp cue_text({:track, {number, reason}}), do: "track #{number}: #{cue_text(reason)}"
+  defp cue_text({file, reason}) when is_binary(file), do: "#{file}: #{cue_text(reason)}"
+  defp cue_text(:enoent), do: "not in the library"
+  defp cue_text(:not_cd_audio), do: "not CD audio (44.1 kHz, 16 bits, stereo)"
+  defp cue_text(:no_index_1), do: "no INDEX 01"
+  defp cue_text(:index_order), do: "indexes out of order"
+  defp cue_text(:number), do: "tracks out of order"
+  defp cue_text(:no_tracks), do: "no tracks"
+  defp cue_text(reason), do: reason |> to_string() |> String.replace("_", " ")
+
+  defp cue_medium(relative, drive, table, image, opts) do
+    %{
+      name: relative,
+      kind: :image,
+      drive: drive,
+      cdrom: true,
+      disc: :cd,
+      tracks: length(table),
+      read_only: true,
+      remember: Keyword.get(opts, :remember, true),
+      request: Keyword.take(opts, [:media]),
+      image: image
+    }
+  end
+
+  # The tracks of a sheet laid out as one image in the work directory, as a
+  # folder's drive is made.
+  defp make_disc(state, drive, relative, pieces, table, opts) do
+    bytes = Cue.size(pieces)
+
+    with :ok <- if(bytes + @keep_free <= free_space(), do: :ok, else: {:error, :no_room}),
+         :ok <- File.mkdir_p(Path.join(dir(), @work)) do
+      state = forget_folder_image(state, drive)
+      id = Base.url_encode64(:crypto.strong_rand_bytes(6), padding: false)
+      image = Path.join([dir(), @work, "#{id}.img"])
+      medium = Map.put(cue_medium(relative, drive, table, image, opts), :made, true)
+      progress = progress(self(), bytes)
+
+      task =
+        Task.async(fn ->
+          with :ok <- Cue.write(pieces, image, &progress.(&1)),
+               :ok <- write_marker(medium),
+               :ok <- Storage.insert(image, at(drive) ++ [tracks: table, read_only: true]) do
+            {:inserted, %{medium | image: in_drive(drive, image)}}
+          else
+            error ->
+              remove_image(image)
+              error
+          end
+        end)
+
+      busy = %{action: :making, name: relative, drive: index(drive), done: 0, total: bytes}
+      {:ok, %{state | task: task, busy: busy, error: nil}}
+    end
+  end
+
+  # What the page shows of a sheet: its tracks, or why the drive cannot take it.
+  defp cue_format(path) do
+    case read_cue(path) do
+      {:ok, tracks} ->
+        audio = Enum.count(tracks, &(&1.mode == :audio))
+        %{disc: :cd, cue: %{audio: audio, data: length(tracks) - audio}}
+
+      {:error, {:cue, text}} ->
+        %{disc: nil, cue: %{error: text}}
+
+      {:error, reason} ->
+        %{disc: nil, cue: %{error: cue_text(reason)}}
+    end
+  end
+
   # The disc an image goes in on, nil for a USB drive.
   defp disc(:auto, format), do: format.disc
   defp disc(:drive, _format), do: nil
@@ -464,7 +581,8 @@ defmodule Kuroneko.VirtualDisk do
 
       {{:ok, %{mtime: mtime, size: size}}, _stale} ->
         format =
-          case Image.probe(path) do
+          case cue?(path) || Image.probe(path) do
+            true -> cue_format(path)
             {:ok, format} -> format
             {:error, _reason} -> %{disc: nil}
           end
@@ -601,6 +719,10 @@ defmodule Kuroneko.VirtualDisk do
   defp forget_folder_image(state, drive) do
     case state.media[drive] do
       %{kind: :folder, read_only: true, image: image} ->
+        remove_image(image)
+        %{state | media: Map.delete(state.media, drive)}
+
+      %{made: true, image: image} ->
         remove_image(image)
         %{state | media: Map.delete(state.media, drive)}
 
@@ -831,7 +953,7 @@ defmodule Kuroneko.VirtualDisk do
     for marker <- Path.wildcard(Path.join([dir(), @work, "*.img.json"])),
         {:ok, json} <- [File.read(marker)],
         {:ok, %{"name" => name, "read_only" => read_only} = fields} <- [Jason.decode(json)] do
-      %{
+      medium = %{
         name: name,
         kind: :folder,
         drive: marker_slot(fields),
@@ -840,6 +962,14 @@ defmodule Kuroneko.VirtualDisk do
         remember: fields["remember"] == true,
         image: String.trim_trailing(marker, ".json")
       }
+
+      # A CUE sheet's image, made to be read
+      if fields["kind"] == "cue",
+        do:
+          medium
+          |> Map.drop([:filesystem])
+          |> Map.merge(%{kind: :image, made: true, cdrom: true, disc: :cd}),
+        else: medium
     end
   end
 
@@ -857,6 +987,7 @@ defmodule Kuroneko.VirtualDisk do
       medium
       |> Map.take([:name, :filesystem, :read_only, :remember])
       |> Map.merge(%{storage: storage, lun: lun})
+      |> Map.merge(if(medium[:made], do: %{kind: "cue"}, else: %{}))
 
     File.write(medium.image <> ".json", Jason.encode!(fields))
   end
