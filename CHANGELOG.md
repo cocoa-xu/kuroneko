@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.1.1 (2026-11-23)
 
 * The data partition takes the rest of the card, also on a card burned
   from `kuroneko.img.gz`, where it had 512 MiB: the Nerves system v0.1.1

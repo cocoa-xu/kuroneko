@@ -2,7 +2,7 @@ defmodule Kuroneko.MixProject do
   use Mix.Project
 
   @app :kuroneko
-  @version "0.1.0"
+  @version "0.1.1"
   @all_targets [:nano_kvm_go]
 
   def project do
