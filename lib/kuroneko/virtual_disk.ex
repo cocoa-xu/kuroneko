@@ -311,7 +311,7 @@ defmodule Kuroneko.VirtualDisk do
   end
 
   def handle_call({:eject, index}, _from, state) do
-    with slot when slot != nil <- Enum.at(slots(), index) || {:error, :no_drive},
+    with {:ok, slot} <- drive_slot(index),
          :ok <- Storage.eject(at(slot)) do
       {:reply, :ok, taken_out(state, slot)}
     else
@@ -378,14 +378,14 @@ defmodule Kuroneko.VirtualDisk do
   # one, else the first. An item is in one drive at a time.
   defp pick_drive(state, wanted, relative) do
     slots = slots()
-    asked = is_integer(wanted) && Enum.at(slots, wanted)
+    asked = slot_at(slots, wanted)
 
     current =
       Enum.find_value(state.media, fn {slot, medium} -> medium.name == relative && slot end)
 
     cond do
       slots == [] -> {:error, :no_storage}
-      wanted != nil and not asked -> {:error, :no_drive}
+      wanted != nil and asked == nil -> {:error, :no_drive}
       current != nil and wanted != nil and asked != current -> {:error, :in_use}
       wanted != nil -> {:ok, asked}
       current != nil -> {:ok, current}
@@ -403,6 +403,16 @@ defmodule Kuroneko.VirtualDisk do
     end)
   catch
     :exit, _no_gadget -> for lun <- 0..(Storage.luns() - 1)//1, do: {"disk", lun}
+  end
+
+  defp slot_at(slots, index) when is_integer(index) and index >= 0, do: Enum.at(slots, index)
+  defp slot_at(_slots, _index), do: nil
+
+  defp drive_slot(index) do
+    case slot_at(slots(), index) do
+      nil -> {:error, :no_drive}
+      slot -> {:ok, slot}
+    end
   end
 
   defp at({storage, lun}), do: [storage: storage, lun: lun]
