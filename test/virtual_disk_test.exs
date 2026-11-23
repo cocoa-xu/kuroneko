@@ -7,6 +7,37 @@ defmodule Kuroneko.VirtualDiskTest do
   @moduletag :tmp_dir
   @gib 1024 * 1024 * 1024
 
+  test "a drive for the page: what the gadget has in it, nil when it is empty" do
+    slot = {"disk", 0}
+    dvd = %{image: "/root/images/win.iso", as: :dvd, read_only: true, tracks: nil}
+
+    game = %{
+      image: "/root/images/game.bin",
+      as: :cd,
+      read_only: true,
+      tracks: [
+        %{number: 1, mode: :mode1, size: 2352, offset: 0},
+        %{number: 2, mode: :audio, size: 2352, offset: 1_058_400}
+      ]
+    }
+
+    assert VirtualDisk.drive_medium(nil, {:ok, nil}, slot) == nil
+    assert VirtualDisk.drive_medium(%{image: dvd.image, name: "win.iso"}, {:ok, nil}, slot) == nil
+    assert VirtualDisk.drive_medium(nil, {:error, :no_storage}, slot) == nil
+
+    assert %{name: "win.iso", kind: :image, cdrom: true, disc: :dvd, remember: false} =
+             VirtualDisk.drive_medium(nil, {:ok, dvd}, slot)
+
+    ours = %{image: dvd.image, name: "Windows/win.iso", kind: :image, remember: true, drive: 0}
+
+    assert %{name: "Windows/win.iso", remember: true, storage: "disk", lun: 0} =
+             medium = VirtualDisk.drive_medium(ours, {:ok, dvd}, slot)
+
+    refute Map.has_key?(medium, :drive)
+    refute Map.has_key?(medium, :as)
+    assert %{cdrom: true, disc: :cd, tracks: 2} = VirtualDisk.drive_medium(nil, {:ok, game}, slot)
+  end
+
   test "the library takes relative names without hidden or parent parts" do
     for name <- ["debian.iso", "Photos/2026/a.jpg", "照片/a b.jpg"] do
       assert VirtualDisk.library_path(name) == {:ok, name}, name

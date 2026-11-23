@@ -1246,18 +1246,28 @@ defmodule Kuroneko.VirtualDisk do
     end
   end
 
-  defp medium(state, {storage, lun} = slot) do
-    case {state.media[slot],
-          with(
-            {:ok, inserted} <- MassStorage.medium(at(slot)),
-            do: {:ok, inserted |> page_medium() |> count_tracks()}
-          )} do
-      {%{image: image} = ours, {:ok, %{image: image} = inserted}} ->
+  defp medium(state, slot),
+    do: drive_medium(state.media[slot], MassStorage.medium(at(slot)), slot)
+
+  @doc false
+  # What the gadget has in a drive, with what this server knows of it when
+  # it put it there.
+  @spec drive_medium(
+          map() | nil,
+          {:ok, map() | nil} | {:error, term()},
+          {String.t(), non_neg_integer()}
+        ) ::
+          map() | nil
+  def drive_medium(ours, {:ok, %{image: image} = inserted}, {storage, lun}) do
+    inserted = inserted |> page_medium() |> count_tracks()
+
+    case ours do
+      %{image: ^image} ->
         inserted
         |> Map.merge(Map.delete(ours, :drive))
         |> Map.merge(%{storage: storage, lun: lun})
 
-      {_ours, {:ok, %{image: image} = inserted}} ->
+      _other ->
         Map.merge(inserted, %{
           name: Path.basename(image),
           kind: :image,
@@ -1265,11 +1275,10 @@ defmodule Kuroneko.VirtualDisk do
           lun: lun,
           remember: false
         })
-
-      _empty ->
-        nil
     end
   end
+
+  def drive_medium(_ours, _empty, _slot), do: nil
 
   # The drive tells each track; the page and the API, how many.
   defp count_tracks(%{tracks: tracks} = medium) when is_list(tracks),
