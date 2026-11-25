@@ -6,23 +6,28 @@ defmodule Kuroneko.DeviceSocket do
   `"history"`, and every 30th the `"storage"`, whose use changes slowly
   and costs a df(1) to read.
 
-  While `NanoKVMGo.Metrics` is not running, the status still comes each
-  second, and the socket subscribes again once it is back.
+  Without `NanoKVMGo.Metrics`, as on a computer in development, the status
+  comes each second alone. The socket closes, with 1011, when the metrics
+  stop: the page connects again.
   """
   @behaviour WebSock
 
-  alias NanoKVMGo.Metrics
   alias Kuroneko.DeviceInfo
+  alias Kuroneko.Subscription
+  alias NanoKVMGo.Metrics
 
-  @retry_ms 1_000
+  @status_ms 1_000
   @storage_every 30
 
   @impl WebSock
   def init(_args) do
-    state = subscribe(%{metrics: nil, sent: 0})
-    current = if state.metrics, do: safely(&Metrics.current/0)
-    history = if state.metrics, do: safely(&Metrics.history/0)
-    push(%{metrics: current, history: history}, state)
+    state = %{sent: 0}
+
+    case Subscription.subscribe(Metrics, &subscribe/1) do
+      {:ok, _monitor, {current, history}} -> push(%{metrics: current, history: history}, state)
+      :not_running -> push(%{metrics: nil, history: nil}, status_later(state))
+      :stopped -> {:stop, :normal, {1011, "the metrics stopped"}, state}
+    end
   end
 
   @impl WebSock
@@ -30,17 +35,22 @@ defmodule Kuroneko.DeviceSocket do
 
   @impl WebSock
   def handle_info({Metrics, sample}, state), do: push(%{metrics: sample}, state)
+  def handle_info(:status, state), do: push(%{metrics: nil}, status_later(state))
 
-  def handle_info(:retry, %{metrics: nil} = state) do
-    state = subscribe(state)
-    push(%{metrics: nil}, state)
-  end
-
-  def handle_info({:DOWN, ref, :process, _pid, _reason}, %{metrics: ref} = state) do
-    {:ok, retry(%{state | metrics: nil})}
-  end
+  def handle_info({:DOWN, _monitor, :process, _pid, _reason}, state),
+    do: {:stop, :normal, {1011, "the metrics stopped"}, state}
 
   def handle_info(_message, state), do: {:ok, state}
+
+  defp subscribe(metrics) do
+    :ok = Metrics.subscribe(metrics)
+    {Metrics.current(metrics), Metrics.history(metrics)}
+  end
+
+  defp status_later(state) do
+    Process.send_after(self(), :status, @status_ms)
+    state
+  end
 
   defp push(message, state) do
     message = Map.put(message, :status, DeviceInfo.status())
@@ -51,34 +61,5 @@ defmodule Kuroneko.DeviceSocket do
         else: message
 
     {:push, {:text, Jason.encode!(message)}, %{state | sent: state.sent + 1}}
-  end
-
-  # Monitors the sampler, so as to subscribe again when it restarts.
-  defp subscribe(state) do
-    case GenServer.whereis(Metrics) do
-      pid when is_pid(pid) ->
-        ref = Process.monitor(pid)
-
-        if safely(fn -> Metrics.subscribe(pid) end) == :ok do
-          %{state | metrics: ref}
-        else
-          Process.demonitor(ref, [:flush])
-          retry(state)
-        end
-
-      _not_running ->
-        retry(state)
-    end
-  end
-
-  defp retry(state) do
-    Process.send_after(self(), :retry, @retry_ms)
-    state
-  end
-
-  defp safely(fun) do
-    fun.()
-  catch
-    :exit, _reason -> nil
   end
 end

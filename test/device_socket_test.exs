@@ -18,22 +18,20 @@ defmodule Kuroneko.DeviceSocketTest do
 
   defp decode({:push, {:text, json}, state}), do: {Jason.decode!(json), state}
 
-  test "the status each second without the sampler, the samples once it comes",
-       %{tmp_dir: tmp_dir} do
+  test "the status each second without the sampler" do
     {first, state} = decode(DeviceSocket.init(%{}))
     assert %{"metrics" => nil, "history" => nil, "status" => %{"beam" => _}} = first
     refute Map.has_key?(first, "storage")
 
-    # Still no sampler: the status alone.
-    assert_receive :retry, 1_500
-    {message, state} = decode(DeviceSocket.handle_info(:retry, state))
+    assert_receive :status, 2_000
+    {message, _state} = decode(DeviceSocket.handle_info(:status, state))
     assert %{"metrics" => nil, "status" => %{"usb" => _}} = message
+  end
 
-    # The sampler comes: subscribed at the next try.
+  test "the samples with the status, until the sampler stops", %{tmp_dir: tmp_dir} do
     metrics = start_metrics(tmp_dir)
-    assert_receive :retry, 1_500
-    {_message, state} = decode(DeviceSocket.handle_info(:retry, state))
-    assert state.metrics
+    {first, state} = decode(DeviceSocket.init(%{}))
+    assert %{"metrics" => nil, "history" => %{}, "status" => _} = first
 
     send(metrics, :sample)
     assert_receive {NanoKVMGo.Metrics, sample}
@@ -41,13 +39,9 @@ defmodule Kuroneko.DeviceSocketTest do
     assert %{"metrics" => %{"cpu" => %{"total" => _}}, "status" => _} = message
     refute Map.has_key?(message, "history")
 
-    # It stops: the socket notices, and tries again.
-    ref = state.metrics
     stop_supervised!(NanoKVMGo.Metrics)
-    assert_receive {:DOWN, ^ref, :process, pid, reason}
-    assert {:ok, state} = DeviceSocket.handle_info({:DOWN, ref, :process, pid, reason}, state)
-    assert state.metrics == nil
-    assert_receive :retry, 1_500
+    assert_receive {:DOWN, _monitor, :process, _pid, _reason} = down
+    assert {:stop, :normal, {1011, _reason}, _state} = DeviceSocket.handle_info(down, state)
   end
 
   test "the storage with every 30th message" do
@@ -55,7 +49,7 @@ defmodule Kuroneko.DeviceSocketTest do
 
     messages =
       Enum.map_reduce(2..30, state, fn _n, state ->
-        decode(DeviceSocket.handle_info(:retry, %{state | metrics: nil}))
+        decode(DeviceSocket.handle_info(:status, state))
       end)
       |> elem(0)
 

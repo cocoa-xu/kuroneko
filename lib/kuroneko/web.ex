@@ -897,13 +897,13 @@ defmodule Kuroneko.VideoSocket do
 
   @impl WebSock
   def init(codecs) do
-    with video when is_pid(video) <- GenServer.whereis(NanoKVMGo.Video),
-         monitor = Process.monitor(video),
-         :ok <- NanoKVMGo.Video.subscribe(video, codecs: codecs) do
-      {:ok, %{video: monitor}}
-    else
-      nil -> {:stop, :normal, {1011, "no video stream"}, %{}}
-      {:error, reason} -> {:stop, :normal, {1011, "no video stream (#{reason})"}, %{}}
+    case Kuroneko.Subscription.subscribe(
+           NanoKVMGo.Video,
+           &NanoKVMGo.Video.subscribe(&1, codecs: codecs)
+         ) do
+      {:ok, monitor, :ok} -> {:ok, %{video: monitor}}
+      {:ok, _monitor, {:error, reason}} -> {:stop, :normal, {1011, "no video (#{reason})"}, %{}}
+      _not_running -> {:stop, :normal, {1011, "no video"}, %{}}
     end
   end
 
@@ -938,19 +938,31 @@ defmodule Kuroneko.AudioSocket do
 
   Text messages, `{"format": {"rate": 48000, "channels": 2, "source":
   "hdmi"}}`, come before the samples of a source and when its rate changes;
-  binary messages are interleaved S16LE samples.
+  binary messages are interleaved S16LE samples. The socket closes, with
+  1011, when a process the sound comes through stops: the page connects
+  again.
   """
   @behaviour WebSock
 
+  alias Kuroneko.Subscription
+
   # The speaker counts as playing this long after its last samples.
   @usb_hold_ms 300
-  # How often to look whether the speaker came or went with the audio mode.
-  @check_ms 2_000
 
+  # Every process it monitors is one the sound comes through.
   @impl WebSock
   def init(_args) do
-    :ok = NanoKVMGo.Audio.subscribe()
-    {:ok, check_speaker(%{current: nil, speaker: false, usb_seen: nil, formats: %{}})}
+    state = %{speaker: nil, current: nil, usb_seen: nil, formats: %{}}
+
+    with {:ok, _hdmi, :ok} <-
+           Subscription.subscribe(NanoKVMGo.Audio, &NanoKVMGo.Audio.subscribe/1),
+         {:ok, _gadget, {:ok, kinds}} <-
+           Subscription.subscribe(Kuroneko.Gadget, &Kuroneko.Gadget.subscribe/1),
+         {:ok, state} <- speaker(state, :speaker in kinds) do
+      {:ok, state}
+    else
+      _not_running -> {:stop, :normal, {1011, "no sound"}, state}
+    end
   end
 
   @impl WebSock
@@ -973,7 +985,16 @@ defmodule Kuroneko.AudioSocket do
     if speaker_playing?(state), do: {:ok, state}, else: forward(:hdmi, pcm, state)
   end
 
-  def handle_info(:check_speaker, state), do: {:ok, check_speaker(state)}
+  def handle_info({Kuroneko.Gadget, {:functions, kinds}}, state) do
+    case speaker(state, :speaker in kinds) do
+      {:ok, state} -> {:ok, state}
+      _not_running -> {:stop, :normal, {1011, "the sound stopped"}, state}
+    end
+  end
+
+  def handle_info({:DOWN, _monitor, :process, _pid, _reason}, state),
+    do: {:stop, :normal, {1011, "the sound stopped"}, state}
+
   def handle_info(_message, state), do: {:ok, state}
 
   defp forward(source, pcm, %{current: source} = state), do: {:push, {:binary, pcm}, state}
@@ -993,23 +1014,19 @@ defmodule Kuroneko.AudioSocket do
 
   # Captures the speaker only while the gadget has one: without, the capture
   # would fail over and over.
-  defp check_speaker(state) do
-    Process.send_after(self(), :check_speaker, @check_ms)
-    present = :speaker in Kuroneko.Gadget.functions()
-
-    cond do
-      present and not state.speaker ->
-        :ok = NanoKVMGo.Audio.subscribe(Kuroneko.Speaker)
-        %{state | speaker: true}
-
-      state.speaker and not present ->
-        :ok = NanoKVMGo.Audio.unsubscribe(Kuroneko.Speaker)
-        %{state | speaker: false, usb_seen: nil}
-
-      true ->
-        state
-    end
+  defp speaker(%{speaker: nil} = state, true) do
+    with {:ok, monitor, :ok} <-
+           Subscription.subscribe(Kuroneko.Speaker, &NanoKVMGo.Audio.subscribe/1),
+         do: {:ok, %{state | speaker: monitor}}
   end
+
+  defp speaker(%{speaker: monitor} = state, false) when monitor != nil do
+    :ok = NanoKVMGo.Audio.unsubscribe(Kuroneko.Speaker)
+    Process.demonitor(monitor, [:flush])
+    {:ok, %{state | speaker: nil, usb_seen: nil}}
+  end
+
+  defp speaker(state, _present), do: {:ok, state}
 
   defp format_frame(source, format) do
     {:text, Jason.encode!(%{format: Map.put(format, :source, source)})}
@@ -1025,27 +1042,35 @@ defmodule Kuroneko.MicrophoneSocket do
   "channels": 2, "sample_format": "s16_le"}}`, tell the format to send: the
   one the microphone was set up with, at the rate the target chose, again
   when it chooses another. Binary messages from the browser are interleaved
-  samples in that format. The socket closes when the sound card drops the
-  microphone.
+  samples in that format. The socket closes, with 1008, when the sound card
+  drops the microphone, and with 1011 when a process the sound goes through
+  stops.
   """
   @behaviour WebSock
 
-  @check_ms 2_000
+  alias Kuroneko.Subscription
+
   @sample_bytes %{s16_le: 2, s24_3le: 3, s24_le: 4, s32_le: 4}
 
+  # Every process it monitors is one the sound goes through.
   @impl WebSock
   def init(_args) do
-    cond do
-      not microphone?() ->
+    with {:ok, _gadget, {:ok, kinds}} <-
+           Subscription.subscribe(Kuroneko.Gadget, &Kuroneko.Gadget.subscribe/1),
+         {:microphone, true} <- {:microphone, :microphone in kinds},
+         {:register, true} <- {:register, register()},
+         {:ok, _microphone, :ok} <-
+           Subscription.subscribe(NanoKVMGo.Microphone, &NanoKVMGo.Microphone.subscribe/1) do
+      {:ok, %{frame_bytes: nil}}
+    else
+      {:microphone, false} ->
         {:stop, :normal, {1008, "the USB microphone is off"}, nil}
 
-      not register() ->
+      {:register, false} ->
         {:stop, :normal, {1008, "another browser is using the microphone"}, nil}
 
-      true ->
-        :ok = NanoKVMGo.Microphone.subscribe()
-        Process.send_after(self(), :check, @check_ms)
-        {:ok, %{frame_bytes: nil}}
+      _not_running ->
+        {:stop, :normal, {1011, "no microphone"}, nil}
     end
   end
 
@@ -1065,18 +1090,16 @@ defmodule Kuroneko.MicrophoneSocket do
     {:push, {:text, Jason.encode!(%{format: format})}, %{state | frame_bytes: bytes}}
   end
 
-  def handle_info(:check, state) do
-    if microphone?() do
-      Process.send_after(self(), :check, @check_ms)
-      {:ok, state}
-    else
-      {:stop, :normal, {1008, "the USB microphone is off"}, state}
-    end
+  def handle_info({Kuroneko.Gadget, {:functions, kinds}}, state) do
+    if :microphone in kinds,
+      do: {:ok, state},
+      else: {:stop, :normal, {1008, "the USB microphone is off"}, state}
   end
 
-  def handle_info(_message, state), do: {:ok, state}
+  def handle_info({:DOWN, _monitor, :process, _pid, _reason}, state),
+    do: {:stop, :normal, {1011, "the microphone stopped"}, state}
 
-  defp microphone?, do: :microphone in Kuroneko.Gadget.functions()
+  def handle_info(_message, state), do: {:ok, state}
 
   defp register do
     Process.register(self(), __MODULE__)
