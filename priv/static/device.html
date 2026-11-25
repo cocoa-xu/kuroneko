@@ -933,9 +933,12 @@ function toast(text, error) {
   toastTimer = setTimeout(() => { el.className = el.className.replace("show", "").trim(); }, error ? 5000 : 2500);
 }
 
+// A change that moves the network the page came over can take the reply
+// with it: the error then has noReply set.
 async function post(path, body) {
   const reply = await fetch(path, { method: "POST", headers: { "content-type": "application/json" },
-                                    body: JSON.stringify(body) });
+                                    body: JSON.stringify(body) })
+    .catch((err) => { throw Object.assign(err, { noReply: true }); });
   if (reply.status === 401) return location.reload();
   const data = await reply.json().catch(() => ({}));
   if (!reply.ok) throw Object.assign(new Error(data.error || `HTTP ${reply.status}`), { data });
@@ -2072,23 +2075,26 @@ $("macform").addEventListener("submit", async (e) => {
   $("macerror").hidden = true;
   try {
     await post("/api/usb/network", body);
-    $("macdialog").close();
-    pendingMacs = { ...wanted, until: Date.now() + 20000 };
-    toast("Changing the addresses: the USB devices reconnect");
   } catch (err) {
-    const data = err.data || {};
-    const text = MAC_ERRORS[data.error] || err.message;
-    const f = macFields[data.field];
-    if (f) {
-      f.field.classList.add("invalid");
-      f.hint.textContent = text;
-    } else {
-      $("macerror").textContent = text;
-      $("macerror").hidden = false;
-    }
-    $("macapply").disabled = false;
+    if (!err.noReply) return showMacError(err);
   }
+  $("macdialog").close();
+  pendingMacs = { ...wanted, until: Date.now() + 20000 };
+  toast("Changing the addresses: the USB devices reconnect");
 });
+function showMacError(err) {
+  const data = err.data || {};
+  const text = MAC_ERRORS[data.error] || err.message;
+  const f = macFields[data.field];
+  if (f) {
+    f.field.classList.add("invalid");
+    f.hint.textContent = text;
+  } else {
+    $("macerror").textContent = text;
+    $("macerror").hidden = false;
+  }
+  $("macapply").disabled = false;
+}
 
 // ---- The USB network's IP addresses
 
@@ -2148,14 +2154,17 @@ $("ipform").addEventListener("submit", async (e) => {
   $("iperror").hidden = true;
   try {
     await post("/api/usb/addresses", { address: text || null });
-    $("ipdialog").close();
-    toast(text ? `The NanoKVM moves to ${text} on the USB network` : "The USB network goes back to its default addresses");
   } catch (err) {
-    $("iperror").textContent = IP_ERRORS[(err.data || {}).error] || err.message;
-    $("iperror").hidden = false;
-  } finally {
-    $("ipapply").disabled = false;
+    if (!err.noReply) {
+      $("iperror").textContent = IP_ERRORS[(err.data || {}).error] || err.message;
+      $("iperror").hidden = false;
+      $("ipapply").disabled = false;
+      return;
+    }
   }
+  $("ipapply").disabled = false;
+  $("ipdialog").close();
+  toast(text ? `The NanoKVM moves to ${text} on the USB network` : "The USB network goes back to its default addresses");
 });
 
 function renderStorage(storage) {
@@ -2343,11 +2352,11 @@ $("restartconfirm").addEventListener("click", async () => {
   $("restartdialog").close();
   try {
     await post("/api/reboot", {});
-    restartedAt = Date.now();
-    $("overlay").hidden = false;
   } catch (e) {
-    toast(`Restart: ${e.message}`, true);
+    if (!e.noReply) return toast(`Restart: ${e.message}`, true);
   }
+  restartedAt = Date.now();
+  $("overlay").hidden = false;
 });
 
 $("keep").addEventListener("click", async () => {

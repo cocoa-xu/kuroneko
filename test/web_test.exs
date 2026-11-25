@@ -46,7 +46,7 @@ defmodule Kuroneko.WebTest do
 
   test "restarts on a same-origin JSON request" do
     assert request(:post, "/api/reboot", "{}", @page).status == 202
-    assert_receive :rebooted, 2_000
+    assert_received :rebooted
   end
 
   test "refuses other origins, a missing origin and other content types" do
@@ -59,7 +59,7 @@ defmodule Kuroneko.WebTest do
       assert request(:post, "/api/reboot", "{}", headers).status == 403
     end
 
-    refute_receive :rebooted, 1_000
+    refute_received :rebooted
   end
 
   # Any site the browser has open can ask for a WebSocket to the device.
@@ -122,7 +122,7 @@ defmodule Kuroneko.WebTest do
       assert String.starts_with?(content_type, type)
     end
 
-    refute_receive :rebooted, 100
+    refute_received :rebooted
   end
 
   test "logging in opens a session; five wrong passwords close it for a minute" do
@@ -253,10 +253,10 @@ defmodule Kuroneko.WebTest do
   test "keeps the firmware on a same-origin JSON request only" do
     json_only = [{"content-type", "application/json"}]
     assert request(:post, "/api/firmware/validate", "{}", json_only).status == 403
-    refute_receive :validated, 100
+    refute_received :validated
 
     assert request(:post, "/api/firmware/validate", "{}", @page).status == 200
-    assert_receive :validated
+    assert_received :validated
   end
 
   test "USB settings only from the page, and only ones the USB functions take" do
@@ -339,7 +339,7 @@ defmodule Kuroneko.WebTest do
       %{ncm: ncm}
     end
 
-    test "change after the reply, only from the page, only to unicast addresses", %{ncm: ncm} do
+    test "change from the page only, to unicast addresses", %{ncm: ncm} do
       path = "/api/usb/network"
       body = ~s({"host_address":"02:12:34:56:78:9A","device_address":null})
       assert request(:post, path, body, [{"content-type", "application/json"}]).status == 403
@@ -359,11 +359,7 @@ defmodule Kuroneko.WebTest do
       assert Jason.decode!(conn.resp_body) == %{"error" => "same_addresses"}
 
       assert request(:post, path, body, @page).status == 202
-      assert File.read!(Path.join(ncm, "host_addr")) =~ "7a:78:1f:1f:1d:dd"
-
-      assert_receive {KV, %{"usbnet_hostaddr" => "02:12:34:56:78:9a", "usbnet_devaddr" => ""}},
-                     2_000
-
+      assert_received {KV, %{"usbnet_hostaddr" => "02:12:34:56:78:9a", "usbnet_devaddr" => ""}}
       assert File.read!(Path.join(ncm, "host_addr")) == "02:12:34:56:78:9a"
     end
   end
@@ -499,9 +495,9 @@ defmodule Kuroneko.WebTest do
                "networks" => [%{"ssid" => "home", "security" => "personal"}]
              } = Jason.decode!(request(:get, "/api/wifi").resp_body)
 
-      refute_receive :scanned, 100
+      refute_received :scanned
       assert request(:get, "/api/wifi?scan=1").status == 200
-      assert_receive :scanned
+      assert_received :scanned
     end
 
     test "follows a country's rules after the reply, from the page only" do
@@ -510,7 +506,7 @@ defmodule Kuroneko.WebTest do
 
       conn = request(:post, "/api/wifi/country", ~s({"country":"jp"}), @page)
       assert {conn.status, Jason.decode!(conn.resp_body)} == {202, %{"country" => "JP"}}
-      assert_receive {:country, "JP"}, 2_000
+      assert_received {:country, "JP"}
 
       conn = request(:post, "/api/wifi/country", ~s({"country":"Japan"}), @page)
 
@@ -518,7 +514,7 @@ defmodule Kuroneko.WebTest do
                {400, %{"error" => "not a country code"}}
 
       assert request(:post, "/api/wifi/country", ~s({"code":"JP"}), @page).status == 400
-      refute_receive {:country, _code}, 700
+      refute_received {:country, _code}
     end
 
     test "joins a network after the reply, from the page only" do
@@ -530,7 +526,7 @@ defmodule Kuroneko.WebTest do
       assert request(:post, "/api/wifi", ~s({"ssid":"home","passphrase":"long enough"}), @page).status ==
                202
 
-      assert_receive {:applied, %{ssid: "home", passphrase: "long enough", hidden: false}}, 2_000
+      assert_received {:applied, %{ssid: "home", passphrase: "long enough", hidden: false}}
 
       assert request(
                :post,
@@ -539,7 +535,7 @@ defmodule Kuroneko.WebTest do
                @page
              ).status == 202
 
-      assert_receive {:applied, %{ssid: "lab", passphrase: nil, hidden: true}}, 2_000
+      assert_received {:applied, %{ssid: "lab", passphrase: nil, hidden: true}}
     end
 
     test "says what is wrong with a network or a passphrase" do
@@ -556,14 +552,14 @@ defmodule Kuroneko.WebTest do
         assert request(:post, "/api/wifi", body, @page).status == 400, body
       end
 
-      refute_receive {:applied, _config}, 700
+      refute_received {:applied, _config}
     end
 
     test "scans and forgets" do
       assert request(:post, "/api/wifi/scan", "{}", @page).status == 202
-      assert_receive :scanned
+      assert_received :scanned
       assert request(:post, "/api/wifi/forget", "{}", @page).status == 202
-      assert_receive :forgot, 2_000
+      assert_received :forgot
     end
   end
 
@@ -585,15 +581,15 @@ defmodule Kuroneko.WebTest do
       on_exit(fn -> Application.delete_env(:kuroneko, :usb_network) end)
     end
 
-    test "moves after the reply, for the page only, and says why not" do
+    test "moves from the page only, and says why not" do
       evil = [{"origin", "http://evil.example"}, {"content-type", "application/json"}]
       body = ~s({"address":"10.55.0.1/24"})
       assert request(:post, "/api/usb/addresses", body, evil).status == 403
 
       assert request(:post, "/api/usb/addresses", body, @page).status == 202
-      assert_receive {:set, "10.55.0.1/24"}, 2_000
+      assert_received {:set, "10.55.0.1/24"}
       assert request(:post, "/api/usb/addresses", ~s({"address":null}), @page).status == 202
-      assert_receive {:set, nil}, 2_000
+      assert_received {:set, nil}
 
       conn = request(:post, "/api/usb/addresses", ~s({"address":"10.55"}), @page)
 

@@ -79,9 +79,6 @@ defmodule Kuroneko.Web do
   use Plug.Router
   require Logger
 
-  # Time for the reply to leave before the device, or its USB network, goes
-  # down.
-  @reply_delay 500
   @network_fields %{"device_address" => :device_address, "host_address" => :host_address}
   @expansion_modes Map.new(
                      ~w(off uart gpio pwm pwm_gpio gpio_pwm i2c)a,
@@ -220,39 +217,37 @@ defmodule Kuroneko.Web do
 
   get("/api/usb", do: json(conn, 200, usb()))
 
-  # The USB network's MAC addresses, `{"host_address": "02:12:34:56:78:9a"}`:
-  # null is the default, a field left out stays. The reply leaves before the
-  # change, which takes the USB network away for a moment: the page may be
-  # on it.
-  # The page may have come over the USB network, which moves: the reply
-  # leaves first.
+  # The USB network's IP address: the page may have come over that network,
+  # which moves, so the reply leaves first.
   post "/api/usb/addresses" do
     with {:ok, %{"address" => address}, conn} when is_binary(address) or is_nil(address) <-
            page_json(conn),
          :ok <- usb_network().check(address) do
-      later(fn -> usb_network().set(address) end, "USB network addresses not set")
-      json(conn, 202, %{address: address})
+      conn
+      |> json(202, %{address: address})
+      |> after_reply(fn -> usb_network().set(address) end, "USB network addresses not set")
     else
       {:error, reason} when is_atom(reason) -> json(conn, 400, %{error: reason})
       other -> refused(conn, other)
     end
   end
 
+  # The USB network's MAC addresses, `{"host_address": "02:12:34:56:78:9a"}`:
+  # null is the default, a field left out stays. The change takes the USB
+  # network away for a moment, and the page may be on it: the reply leaves
+  # first.
   post "/api/usb/network" do
     server = Application.get_env(:kuroneko, :usb_server, Kuroneko.Gadget)
 
     with {:ok, data, conn} <- page_json(conn),
          {:ok, settings} <- network_settings(data),
          :ok <- Kuroneko.Gadget.validate_network_addresses(server, settings) do
-      Task.start(fn ->
-        Process.sleep(@reply_delay)
-
-        with {:error, reason} <- Kuroneko.Gadget.set_network_addresses(server, settings) do
-          Logger.error("USB network addresses #{inspect(settings)} not set: #{inspect(reason)}")
-        end
-      end)
-
-      json(conn, 202, %{changing: true})
+      conn
+      |> json(202, %{changing: true})
+      |> after_reply(
+        fn -> Kuroneko.Gadget.set_network_addresses(server, settings) end,
+        "USB network addresses #{inspect(settings)} not set"
+      )
     else
       {:error, {reason, field, _value}} when reason in [:invalid_address, :multicast_address] ->
         json(conn, 400, %{error: reason, field: field})
@@ -403,8 +398,9 @@ defmodule Kuroneko.Web do
     with {:ok, %{"ssid" => ssid} = data, conn} when is_binary(ssid) <- page_json(conn),
          passphrase when is_binary(passphrase) or is_nil(passphrase) <- data["passphrase"],
          {:ok, config} <- wifi().config(ssid, passphrase, hidden: data["hidden"] == true) do
-      later(fn -> wifi().apply_config(config) end, "Wi-Fi network not joined")
-      json(conn, 202, %{joining: ssid})
+      conn
+      |> json(202, %{joining: ssid})
+      |> after_reply(fn -> wifi().apply_config(config) end, "Wi-Fi network not joined")
     else
       {:error, reason} when is_atom(reason) -> json(conn, 400, %{error: wifi_error(reason)})
       other -> refused(conn, other)
@@ -413,8 +409,9 @@ defmodule Kuroneko.Web do
 
   post "/api/wifi/forget" do
     with {:ok, _data, conn} <- page_json(conn) do
-      later(fn -> wifi().forget() end, "Wi-Fi network not forgotten")
-      json(conn, 202, %{forgetting: true})
+      conn
+      |> json(202, %{forgetting: true})
+      |> after_reply(fn -> wifi().forget() end, "Wi-Fi network not forgotten")
     else
       other -> refused(conn, other)
     end
@@ -424,8 +421,9 @@ defmodule Kuroneko.Web do
   post "/api/wifi/country" do
     with {:ok, %{"country" => code}, conn} <- page_json(conn),
          {:ok, code} <- wifi().country_code(code) do
-      later(fn -> wifi().set_country(code) end, "Wi-Fi country not set")
-      json(conn, 202, %{country: code})
+      conn
+      |> json(202, %{country: code})
+      |> after_reply(fn -> wifi().set_country(code) end, "Wi-Fi country not set")
     else
       {:error, reason} when is_atom(reason) -> json(conn, 400, %{error: wifi_error(reason)})
       other -> refused(conn, other)
@@ -548,14 +546,10 @@ defmodule Kuroneko.Web do
     if same_origin?(conn) and json?(conn) do
       reboot = Application.get_env(:kuroneko, :reboot, &Nerves.Runtime.reboot/0)
 
-      Task.start(fn ->
-        Process.sleep(@reply_delay)
-        reboot.()
-      end)
-
       conn
       |> put_resp_content_type("application/json")
       |> send_resp(202, Jason.encode!(%{rebooting: true}))
+      |> after_reply(reboot, "not restarted")
     else
       send_resp(conn, 403, "forbidden")
     end
@@ -622,12 +616,11 @@ defmodule Kuroneko.Web do
   defp refused(conn, {:page, false}), do: send_resp(conn, 403, "forbidden")
   defp refused(conn, _other), do: send_resp(conn, 400, "bad request")
 
-  # After the reply has left.
-  defp later(change, failure) do
-    Task.start(fn ->
-      Process.sleep(@reply_delay)
-      with {:error, reason} <- change.(), do: Logger.error("#{failure}: #{inspect(reason)}")
-    end)
+  # A change that moves the network the page came over comes once the reply
+  # is sent; the page takes a reply lost on the way as the change underway.
+  defp after_reply(conn, change, failure) do
+    with {:error, reason} <- change.(), do: Logger.error("#{failure}: #{inspect(reason)}")
+    conn
   end
 
   defp wifi, do: Application.get_env(:kuroneko, :wifi, Kuroneko.WiFi)

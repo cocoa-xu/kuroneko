@@ -151,16 +151,13 @@
   }
   async function restart() {
     if (!confirm("Restart the NanoKVM? Video, keyboard and mouse stop for about 30 seconds.")) return;
-    try {
-      const reply = await fetch("/api/reboot", { method: "POST",
-        headers: { "content-type": "application/json" }, body: "{}" });
-      if (!reply.ok) throw new Error(`HTTP ${reply.status}`);
-      restartingUntil = Date.now() + 10000;
-      notice.textContent = "Restarting…";
-      notice.hidden = false;
-    } catch (e) {
-      alert(`Restart failed: ${e.message}`);
-    }
+    // The restart can take the reply with it: no reply is a restart too.
+    const reply = await fetch("/api/reboot", { method: "POST",
+      headers: { "content-type": "application/json" }, body: "{}" }).catch(() => null);
+    if (reply && !reply.ok) return alert(`Restart failed: HTTP ${reply.status}`);
+    restartingUntil = Date.now() + 10000;
+    notice.textContent = "Restarting…";
+    notice.hidden = false;
   }
 
   // The NanoKVM's own CPU, memory and network.

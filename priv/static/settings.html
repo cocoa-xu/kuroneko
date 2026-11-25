@@ -356,10 +356,13 @@ function toast(text, error) {
 }
 
 // A 401 means the session ended, except where it means a wrong password.
+// A change that moves the network the page came over can take the reply
+// with it: the error then has noReply set.
 async function request(path, { body, reloadOn401 = true } = {}) {
   const options = body === undefined ? {} :
     { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
-  const reply = await fetch(path, options);
+  const reply = await fetch(path, options)
+    .catch((err) => { throw Object.assign(err, { noReply: true }); });
   if (reply.status === 401 && reloadOn401) {
     location.reload();
     return new Promise(() => {});
@@ -496,14 +499,17 @@ $("joinform").addEventListener("submit", async (e) => {
   $("joinerror").hidden = true;
   try {
     await request("/api/wifi", { body: { ssid, passphrase: $("passphrase").value || null, hidden: !joining } });
-    $("joindialog").close();
-    toast(`Joining “${ssid}”: the device's screen shows its address once connected`);
-    setTimeout(refreshWifi, 3000);
   } catch (err) {
-    $("joinerror").textContent = err.message;
-    $("joinerror").hidden = false;
-    $("joinapply").disabled = false;
+    if (!err.noReply) {
+      $("joinerror").textContent = err.message;
+      $("joinerror").hidden = false;
+      $("joinapply").disabled = false;
+      return;
+    }
   }
+  $("joindialog").close();
+  toast(`Joining “${ssid}”: the device's screen shows its address once connected`);
+  setTimeout(refreshWifi, 3000);
 });
 
 $("scan").addEventListener("click", async () => {
@@ -531,8 +537,12 @@ $("country").addEventListener("change", async (e) => {
       `The Wi-Fi restarts with the rules of ${countryName(code)}`);
     setTimeout(refreshWifi, 4000);
   } catch (err) {
-    toast(`Country: ${err.message}`, true);
-    select.value = (wifi && wifi.country) || "00";
+    if (err.noReply) {
+      toast("The Wi-Fi restarts");
+    } else {
+      toast(`Country: ${err.message}`, true);
+      select.value = (wifi && wifi.country) || "00";
+    }
   } finally {
     setTimeout(() => {
       delete select.dataset.pending;
@@ -545,11 +555,11 @@ $("forget").addEventListener("click", async () => {
   if (!confirm(`Forget “${wifi.network}”? The NanoKVM-Go stays off Wi-Fi until it joins another network.`)) return;
   try {
     await request("/api/wifi/forget", { body: {} });
-    toast("Leaving the network");
-    setTimeout(refreshWifi, 2000);
   } catch (err) {
-    toast(`Wi-Fi: ${err.message}`, true);
+    if (!err.noReply) return toast(`Wi-Fi: ${err.message}`, true);
   }
+  toast("Leaving the network");
+  setTimeout(refreshWifi, 2000);
 });
 
 // ---- SSH
