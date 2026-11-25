@@ -500,7 +500,7 @@ defmodule Kuroneko.Screen do
   defp info(:system) do
     %{stats: NanoKVMGo.Metrics.current(), history: NanoKVMGo.Metrics.history()}
   catch
-    :exit, _reason -> %{stats: nil, history: nil}
+    :exit, {:noproc, _call} -> %{stats: nil, history: nil}
   end
 
   defp info(_page), do: %{}
@@ -508,7 +508,7 @@ defmodule Kuroneko.Screen do
   defp video do
     NanoKVMGo.Video.input()
   catch
-    :exit, _reason -> nil
+    :exit, {:noproc, _call} -> nil
   end
 
   defp now, do: System.monotonic_time(:millisecond)

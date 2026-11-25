@@ -530,7 +530,7 @@ defmodule Kuroneko.Web do
   defp metrics do
     NanoKVMGo.Metrics.current()
   catch
-    :exit, _reason -> nil
+    :exit, {:noproc, _call} -> nil
   end
 
   defp temperature do
@@ -797,7 +797,7 @@ defmodule Kuroneko.Web do
         json(conn, 503, %{error: inspect(reason)})
     end
   catch
-    :exit, _reason -> json(conn, 503, %{error: "not running"})
+    :exit, {:noproc, _call} -> json(conn, 503, %{error: "not running"})
   end
 
   # The page explains these.

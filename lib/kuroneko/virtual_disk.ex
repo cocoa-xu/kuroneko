@@ -153,7 +153,7 @@ defmodule Kuroneko.VirtualDisk do
   def media do
     GenServer.call(__MODULE__, :media)
   catch
-    :exit, _reason ->
+    :exit, {:noproc, _call} ->
       MassStorage.media()
       |> Enum.with_index()
       |> Enum.map(fn
@@ -428,7 +428,7 @@ defmodule Kuroneko.VirtualDisk do
       for lun <- 0..(luns - 1), do: {name, lun}
     end)
   catch
-    :exit, _no_gadget -> for lun <- 0..(MassStorage.lun_count() - 1)//1, do: {"disk", lun}
+    :exit, {:noproc, _call} -> for lun <- 0..(MassStorage.lun_count() - 1)//1, do: {"disk", lun}
   end
 
   defp slot_at(slots, index) when is_integer(index) and index >= 0, do: Enum.at(slots, index)

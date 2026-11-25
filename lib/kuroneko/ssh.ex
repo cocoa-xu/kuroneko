@@ -102,7 +102,7 @@ defmodule Kuroneko.SSH do
         {:error, :invalid_key}
     end
   catch
-    _kind, _reason -> {:error, :invalid_key}
+    :error, _reason -> {:error, :invalid_key}
   end
 
   defp nerves_ssh_keys do
@@ -111,7 +111,7 @@ defmodule Kuroneko.SSH do
       _other -> []
     end
   catch
-    :exit, _reason -> []
+    :exit, {:noproc, _call} -> []
   end
 
   defp nerves_ssh(function, args) do

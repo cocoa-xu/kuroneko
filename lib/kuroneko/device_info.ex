@@ -169,9 +169,10 @@ defmodule Kuroneko.DeviceInfo do
   defp ok_or_nil({:ok, value}), do: value
   defp ok_or_nil(_other), do: nil
 
+  # A part not running, or not answering, is unknown.
   defp safely(fun) do
     fun.()
   catch
-    :exit, _reason -> nil
+    :exit, {reason, _call} when reason in [:noproc, :timeout] -> nil
   end
 end

@@ -28,7 +28,7 @@ defmodule Kuroneko.WiFi.Scanner do
   def access_points(opts \\ []) do
     GenServer.call(__MODULE__, {:access_points, Keyword.get(opts, :scan, false)})
   catch
-    :exit, _reason -> []
+    :exit, {:noproc, _call} -> []
   end
 
   @doc "Scans now; what it finds comes a few seconds later."
@@ -36,7 +36,7 @@ defmodule Kuroneko.WiFi.Scanner do
   def scan do
     GenServer.call(__MODULE__, :scan)
   catch
-    :exit, reason -> {:error, reason}
+    :exit, {:noproc, _call} -> {:error, :not_running}
   end
 
   @doc false

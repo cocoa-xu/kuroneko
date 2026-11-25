@@ -71,7 +71,7 @@ defmodule Kuroneko.Network do
     end
   catch
     # wpa_supplicant not answering must not take the caller down.
-    :exit, _reason -> nil
+    :exit, {reason, _call} when reason in [:noproc, :timeout] -> nil
   end
 
   # Only the name: the configuration holds the passphrase too.
