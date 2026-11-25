@@ -108,9 +108,10 @@ defmodule Kuroneko.Screen do
       toast: nil,
       active_at: now(),
       subscriptions: %{},
-      # The USB page's changes until applied, and whether they are being.
+      # The USB page's changes until applied.
       usb: nil,
-      applying: false
+      # The task that applies USB changes, while it runs.
+      applying: nil
     }
 
     {:ok, state |> subscribe(NanoKVMGo.Touch) |> subscribe(NanoKVMGo.Button)}
@@ -140,11 +141,19 @@ defmodule Kuroneko.Screen do
 
   def handle_info({:subscribe, server}, state), do: {:noreply, subscribe(state, server)}
 
-  def handle_info({:usb_applied, {:ok, _settings}}, state),
-    do: {:noreply, draw(toast(%{state | applying: false, usb: nil}, "USB devices set", :ok))}
+  def handle_info({task, result}, %{applying: task} = state) when is_reference(task) do
+    Process.demonitor(task, [:flush])
+    state = %{state | applying: nil}
 
-  def handle_info({:usb_applied, {:error, reason}}, state),
-    do: {:noreply, draw(toast(%{state | applying: false}, usb_error(reason), :error))}
+    case result do
+      {:ok, _settings} -> {:noreply, draw(toast(%{state | usb: nil}, "USB devices set", :ok))}
+      {:error, reason} -> {:noreply, draw(toast(state, usb_error(reason), :error))}
+    end
+  end
+
+  def handle_info({:DOWN, task, :process, _pid, _reason}, %{applying: task} = state) do
+    {:noreply, draw(toast(%{state | applying: nil}, "USB devices not set", :error))}
+  end
 
   def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
     case Map.pop(state.subscriptions, ref) do
@@ -241,16 +250,20 @@ defmodule Kuroneko.Screen do
   defp tile(:touch, state), do: draw(%{state | page: :touch, toast: nil})
   defp tile(nil, state), do: state
 
-  defp usb_tile(_tile, %{applying: true} = state), do: state
+  defp usb_tile(_tile, %{applying: task} = state) when task != nil, do: state
   defp usb_tile(nil, state), do: state
   defp usb_tile(:apply, %{usb: nil} = state), do: state
 
   defp usb_tile(:apply, state) do
     if endpoints_fit?(Kuroneko.USBSettings.endpoints(state.usb)) do
-      screen = self()
       changes = USB.changes(state.usb)
-      Task.start(fn -> send(screen, {:usb_applied, Kuroneko.USBSettings.update(changes)}) end)
-      draw(%{state | applying: true})
+
+      task =
+        Task.Supervisor.async_nolink(Kuroneko.TaskSupervisor, fn ->
+          Kuroneko.USBSettings.update(changes)
+        end)
+
+      draw(%{state | applying: task.ref})
     else
       draw(toast(state, "Too many: turn one off", :error))
     end
@@ -446,7 +459,7 @@ defmodule Kuroneko.Screen do
       settings: settings,
       endpoints: Kuroneko.USBSettings.endpoints(settings),
       changed: settings != saved,
-      applying: state.applying
+      applying: state.applying != nil
     }
   end
 

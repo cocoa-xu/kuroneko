@@ -66,6 +66,7 @@ defmodule Kuroneko.Application do
       Application.put_env(:kuroneko, :mjpeg_token, mjpeg_token)
 
       [
+        {Task.Supervisor, name: Kuroneko.TaskSupervisor},
         # The Wi-Fi and SSH keys the card was burned with.
         {Task, &Kuroneko.Provisioning.run/0},
         Kuroneko.TrialGuard,
