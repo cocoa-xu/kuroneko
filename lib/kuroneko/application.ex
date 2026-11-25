@@ -14,7 +14,8 @@ defmodule Kuroneko.Application do
         Kuroneko.LoginLimit,
         Kuroneko.SetupCode,
         Kuroneko.WiFi.Scanner,
-        Kuroneko.VideoSettings
+        Kuroneko.VideoSettings,
+        Kuroneko.USBSettings
       ] ++ target_children()
 
     # See https://elixir.hexdocs.pm/Supervisor.html
@@ -56,10 +57,7 @@ defmodule Kuroneko.Application do
       end
     end
 
-    # The USB devices follow the saved settings: the keyboard and mouse and
-    # the virtual disk by default, the sound card when turned on.
     defp target_children() do
-      usb_functions = Kuroneko.USBSettings.functions(Kuroneko.USBSettings.saved())
       # The MJPEG stream, served apart, goes to pages with a session: they get
       # this token, made anew each boot.
       mjpeg_token = Base.url_encode64(:crypto.strong_rand_bytes(18), padding: false)
@@ -70,8 +68,11 @@ defmodule Kuroneko.Application do
         # The Wi-Fi and SSH keys the card was burned with.
         {Task, &Kuroneko.Provisioning.run/0},
         Kuroneko.TrialGuard,
+        # The USB devices follow the saved settings: the keyboard and mouse and
+        # the virtual disk by default, the sound card when turned on.
         {Kuroneko.Gadget,
-         NanoKVMGo.USB.gadget_options() ++ [functions: usb_functions, manage_networks: true]},
+         NanoKVMGo.USB.gadget_options() ++
+           [functions: {Kuroneko.USBSettings, :functions, []}, manage_networks: true]},
         Supervisor.child_spec({Task, &Kuroneko.USBNetwork.configure_more/0}, id: :usb_networks),
         Kuroneko.VirtualDisk,
         {NanoKVMGo.Video,

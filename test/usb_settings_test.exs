@@ -20,6 +20,18 @@ defmodule Kuroneko.USBSettingsTest do
     assert USBSettings.saved() == USBSettings.defaults()
   end
 
+  test "changes are checked and saved, for a gadget not running to start with" do
+    assert {:ok, settings} = USBSettings.update(%{"audio" => "mic"})
+    assert USBSettings.saved() == settings
+    assert USBSettings.functions() == USBSettings.functions(settings)
+
+    # A second network as well: more IN endpoints than the controller has.
+    assert {:error, {:not_enough_endpoints, %{need: %{in: 9}, have: %{in: 7}}}} =
+             USBSettings.update(%{"networks" => ["usb1"]})
+
+    assert USBSettings.saved() == settings
+  end
+
   test "takes the audio mode the firmware before saved", %{tmp_dir: tmp_dir} do
     File.write!(Path.join(tmp_dir, "audio_mode"), "duplex\n")
     assert USBSettings.saved()["audio"] == "duplex"

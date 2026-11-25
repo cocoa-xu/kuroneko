@@ -108,7 +108,7 @@ defmodule Kuroneko.VirtualDisk do
   def drives_changed do
     GenServer.call(__MODULE__, :drives_changed, 30_000)
   catch
-    :exit, _not_running -> :ok
+    :exit, {:noproc, _call} -> :ok
   end
 
   @doc "Deletes an image file or a folder from the library, unless it is in use."

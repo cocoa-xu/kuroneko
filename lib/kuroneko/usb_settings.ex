@@ -27,7 +27,12 @@ defmodule Kuroneko.USBSettings do
 
   Settings are JSON-shaped maps, as the page sends them. The functions must
   fit the device controller's endpoints (`Kuroneko.Gadget.endpoints/1`).
+
+  Changes go through this process, one at a time, so that the gadget has
+  the settings saved. `Kuroneko.Gadget` takes them as it starts, restarts
+  too, from `functions/0`.
   """
+  use GenServer
 
   @modes %{"off" => [], "mic" => [:microphone], "duplex" => [:microphone, :speaker]}
   # 48 kHz first, which the target starts with, as with the stock firmware.
@@ -48,6 +53,10 @@ defmodule Kuroneko.USBSettings do
   }
 
   @type t() :: %{String.t() => term()}
+
+  @doc "Starts the process that changes go through."
+  @spec start_link(keyword()) :: GenServer.on_start()
+  def start_link(_opts), do: GenServer.start_link(__MODULE__, nil, name: __MODULE__)
 
   @spec defaults() :: t()
   def defaults, do: @defaults
@@ -81,6 +90,10 @@ defmodule Kuroneko.USBSettings do
         @defaults
     end
   end
+
+  @doc "The `Kuroneko.Gadget` functions of the saved settings."
+  @spec functions() :: [Kuroneko.Gadget.function_spec()]
+  def functions, do: functions(saved())
 
   @doc "The `Kuroneko.Gadget` functions of settings."
   @spec functions(t()) :: [Kuroneko.Gadget.function_spec()]
@@ -157,18 +170,44 @@ defmodule Kuroneko.USBSettings do
   defp board, do: NanoKVMGo.USB.gadget_options(serial_number: nil)
 
   @doc """
-  Applies changes to the saved settings: sets the USB functions up, then
-  saves. The target sees the USB devices reconnect when they change.
+  Applies changes to the saved settings and sets the USB functions up. The
+  target sees the USB devices reconnect when they change.
   """
   @spec update(map()) :: {:ok, t()} | {:error, term()}
-  def update(changes) do
-    with {:ok, settings} <- merge(saved(), changes),
-         :ok <- Kuroneko.Gadget.configure(functions(settings)),
-         :ok <- save(settings) do
-      Kuroneko.VirtualDisk.drives_changed()
-      Kuroneko.USBNetwork.configure_more()
-      {:ok, settings}
+  def update(changes), do: GenServer.call(__MODULE__, {:update, changes}, 60_000)
+
+  @impl GenServer
+  def init(nil), do: {:ok, nil}
+
+  # Checked, saved, then set up: a gadget restarting meanwhile starts with
+  # them. A refusal leaves the gadget as it was, and the saved settings too.
+  @impl GenServer
+  def handle_call({:update, changes}, _from, state) do
+    saved = saved()
+
+    reply =
+      with {:ok, settings} <- merge(saved, changes),
+           :ok <- Kuroneko.Gadget.validate(functions(settings), board()),
+           :ok <- save(settings),
+           :ok <- configure(settings, saved) do
+        {:ok, settings}
+      end
+
+    {:reply, reply, state}
+  end
+
+  defp configure(settings, saved) do
+    case Kuroneko.Gadget.configure(functions(settings)) do
+      :ok ->
+        Kuroneko.VirtualDisk.drives_changed()
+        Kuroneko.USBNetwork.configure_more()
+
+      {:error, _reason} = error ->
+        :ok = save(saved)
+        error
     end
+  catch
+    :exit, {:noproc, _call} -> :ok
   end
 
   defp put_all(settings, changes) do
