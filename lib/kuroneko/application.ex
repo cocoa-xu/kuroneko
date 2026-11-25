@@ -13,7 +13,8 @@ defmodule Kuroneko.Application do
       [
         Kuroneko.LoginLimit,
         Kuroneko.SetupCode,
-        Kuroneko.WiFi.Scanner
+        Kuroneko.WiFi.Scanner,
+        Kuroneko.VideoSettings
       ] ++ target_children()
 
     # See https://elixir.hexdocs.pm/Supervisor.html
@@ -72,12 +73,11 @@ defmodule Kuroneko.Application do
          NanoKVMGo.USB.gadget_options() ++ [functions: usb_functions, manage_networks: true]},
         Supervisor.child_spec({Task, &Kuroneko.USBNetwork.configure_more/0}, id: :usb_networks),
         Kuroneko.VirtualDisk,
-        %{
-          id: NanoKVMGo.Video,
-          start:
-            {Kuroneko.VideoSettings, :start_video,
-             [[mjpeg_port: 8088, mjpeg_token: mjpeg_token, jpeg_quality: 60]]}
-        },
+        {NanoKVMGo.Video,
+         mjpeg_port: 8088,
+         mjpeg_token: mjpeg_token,
+         jpeg_quality: 60,
+         encoding: {Kuroneko.VideoSettings, :encoding, []}},
         NanoKVMGo.Audio,
         {NanoKVMGo.Audio, source: :usb, name: Kuroneko.Speaker},
         NanoKVMGo.Microphone,

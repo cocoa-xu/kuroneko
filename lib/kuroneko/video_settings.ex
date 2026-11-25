@@ -18,7 +18,12 @@ defmodule Kuroneko.VideoSettings do
   (VBR of up to 8 Mbit/s), `"highest"`, `"high"`, `"medium"` and `"low"`
   (CBR of 10, 5, 3 and 1 Mbit/s). Settings are JSON-shaped maps, as the page
   sends them.
+
+  Changes go through this process, one at a time, so that the stream has
+  the settings saved. `NanoKVMGo.Video` takes them as it starts, restarts
+  too, from `encoding/0`.
   """
+  use GenServer
 
   @presets [
     {"auto", "Auto", %{"rate_control" => "vbr", "bitrate" => 8_000_000, "qp" => 24}},
@@ -43,6 +48,10 @@ defmodule Kuroneko.VideoSettings do
   @color_ranges %{"auto" => :auto, "full" => :full, "limited" => :limited}
 
   @type t() :: %{String.t() => term()}
+
+  @doc "Starts the process that changes go through."
+  @spec start_link(keyword()) :: GenServer.on_start()
+  def start_link(_opts), do: GenServer.start_link(__MODULE__, nil, name: __MODULE__)
 
   @doc "The saved settings, the defaults for what is not saved."
   @spec saved() :: t()
@@ -86,13 +95,9 @@ defmodule Kuroneko.VideoSettings do
     ]
   end
 
-  @doc """
-  Starts `NanoKVMGo.Video` with the saved encoding and `opts`, its other
-  options. Its supervisor calls this again for each restart, so the process
-  always starts with the settings saved last.
-  """
-  @spec start_video(keyword()) :: GenServer.on_start()
-  def start_video(opts), do: NanoKVMGo.Video.start_link([encoding: encoding(saved())] ++ opts)
+  @doc "The saved settings as `NanoKVMGo.Video`'s `:encoding`."
+  @spec encoding() :: keyword()
+  def encoding, do: encoding(saved())
 
   @doc """
   Applies changes to the saved settings, `"preset"` for a preset's: the
@@ -100,15 +105,25 @@ defmodule Kuroneko.VideoSettings do
   it does not take.
   """
   @spec update(map()) :: {:ok, t()} | {:error, term()}
-  def update(changes) do
-    with {:ok, settings} <- merge(saved(), changes),
-         :ok <- save(settings) do
-      apply_encoding(settings)
-      {:ok, settings}
-    end
+  def update(changes), do: GenServer.call(__MODULE__, {:update, changes})
+
+  @impl GenServer
+  def init(nil), do: {:ok, nil}
+
+  # Saved, then applied: a NanoKVMGo.Video starting meanwhile reads the file
+  # once its name is registered, so it reads these settings or gets the call.
+  @impl GenServer
+  def handle_call({:update, changes}, _from, state) do
+    reply =
+      with {:ok, settings} <- merge(saved(), changes),
+           :ok <- save(settings) do
+        :ok = apply_encoding(settings)
+        {:ok, settings}
+      end
+
+    {:reply, reply, state}
   end
 
-  # A NanoKVMGo.Video that is not running starts with the settings saved.
   defp apply_encoding(settings) do
     _encoding = NanoKVMGo.Video.set_encoding(encoding(settings))
     :ok
