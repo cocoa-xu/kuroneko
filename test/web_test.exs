@@ -64,7 +64,7 @@ defmodule Kuroneko.WebTest do
 
   # Any site the browser has open can ask for a WebSocket to the device.
   test "WebSockets only for the page itself" do
-    for path <- ["/ws", "/h264", "/audio", "/microphone", "/api/device/live"],
+    for path <- ["/ws", "/video", "/audio", "/microphone", "/api/device/live"],
         headers <- [[{"origin", "http://evil.example"}], []] do
       assert request(:get, path, "", headers).status == 403, "#{path} #{inspect(headers)}"
     end

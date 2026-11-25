@@ -206,30 +206,44 @@
   setInterval(pollStatus, 2000);
   pollStatus();
 
+  // The stream's codec, as its messages say: "h264" or "h265".
+  let streamCodec = null;
+  const CODECS = {
+    h264: { label: "H.264", config: "avc1.42C033" },
+    h265: { label: "H.265", config: "hvc1.1.6.L153.B0" },
+  };
+
   setInterval(() => {
     if (view === canvas) {
       mark("video", decoded > 0);
-      text("mode", `H.264 ${decoded} fps`);
+      text("mode", `${streamCodec ? CODECS[streamCodec].label : "Video"} ${decoded} fps`);
       decoded = 0;
     } else {
       mark("video", img.naturalWidth > 0 && notice.hidden);
     }
   }, 1000);
 
-  // H.264 through WebCodecs when the browser can decode it, MJPEG otherwise.
+  // H.264 or H.265 through WebCodecs when the browser can decode them, MJPEG
+  // otherwise. The device takes H.265 when every viewer decodes it.
   async function start() {
     if ("VideoDecoder" in window) {
-      const config = { codec: "avc1.42C033", codedWidth: 3840, codedHeight: 2160 };
-      const support = await VideoDecoder.isConfigSupported(config).catch(() => ({}));
-      if (support.supported) return startH264();
+      const codecs = [];
+      for (const codec of Object.keys(CODECS)) {
+        const config = { codec: CODECS[codec].config, codedWidth: 3840, codedHeight: 2160 };
+        const support = await VideoDecoder.isConfigSupported(config).catch(() => ({}));
+        if (support.supported) codecs.push(codec);
+      }
+      if (codecs.length) return startVideo(codecs);
     }
-    startMJPEG();
+    startMJPEG("MJPEG");
   }
 
-  async function startMJPEG() {
+  async function startMJPEG(mode) {
     view = img;
+    canvas.hidden = true;
+    quality.hidden = true;
     img.hidden = false;
-    text("mode", "MJPEG");
+    text("mode", mode);
     // The stream on its own port asks for the token of this boot.
     const token = async () => (await (await fetch("/status")).json()).mjpeg_token || "";
     const load = async () => {
@@ -240,15 +254,19 @@
     attachInput(img);
   }
 
-  function startH264() {
+  // Binary messages: a type, then an access unit. 1 and 2 an H.264 delta and
+  // keyframe, 3 and 4 an H.265 delta and keyframe.
+  const chunkCodec = (type) => (type <= 2 ? "h264" : "h265");
+
+  function startVideo(codecs) {
     view = canvas;
     canvas.hidden = false;
     quality.hidden = false;
     loadQuality();
     const ctx = canvas.getContext("2d");
-    const config = { codec: "avc1.42C033", optimizeForLatency: true };
+    let stopped = false;
     const open = () => {
-      const ws = new WebSocket(wsUrl("/h264"));
+      const ws = new WebSocket(wsUrl(`/video?codecs=${codecs.join(",")}`));
       ws.binaryType = "arraybuffer";
       let synced = false;
       let streamInput;  // input of the stream this decoder gets
@@ -264,23 +282,34 @@
         },
         error: () => ws.close(),
       });
-      decoder.configure(config);
+      // A new codec or input restarts the stream, from a keyframe.
+      const reconfigure = (codec) => {
+        if (decoder.state === "configured") decoder.reset();
+        decoder.configure({ codec: CODECS[codec].config, optimizeForLatency: true });
+        streamCodec = codec;
+        synced = false;
+      };
       ws.onmessage = (ev) => {
         if (typeof ev.data === "string") {
           const message = JSON.parse(ev.data);
           if (!("input" in message)) return;
-          // A new input restarts the stream, at its size, from a keyframe.
-          if (streamInput !== undefined && !sameInput(message.input, streamInput) &&
-              decoder.state === "configured") {
-            decoder.reset();
-            decoder.configure(config);
-            synced = false;
-          }
+          if (streamInput !== undefined && !sameInput(message.input, streamInput) && streamCodec)
+            reconfigure(streamCodec);
           streamInput = message.input;
           return showInput(message.input);
         }
         const data = new Uint8Array(ev.data);
-        const key = data[0] === 2;
+        const codec = chunkCodec(data[0]);
+        const key = data[0] === 2 || data[0] === 4;
+        if (codec !== streamCodec) {
+          // Another viewer's setting can name a codec this browser lacks.
+          if (!codecs.includes(codec)) {
+            stopped = true;
+            ws.close();
+            return startMJPEG(`MJPEG: no ${CODECS[codec].label} here`);
+          }
+          reconfigure(codec);
+        }
         if (!key && !synced) return;
         synced = true;
         // Falling behind: reconnecting gets a fresh keyframe.
@@ -290,7 +319,8 @@
       };
       ws.onclose = () => {
         if (decoder.state !== "closed") decoder.close();
-        setTimeout(open, 1000);
+        streamCodec = null;
+        if (!stopped) setTimeout(open, 1000);
       };
     };
     open();
@@ -929,7 +959,7 @@
     view.focus();
   };
 
-  // ---- The H.264 stream's quality: a preset, or the device page's own settings ----
+  // ---- The video stream's quality: a preset, or the device page's own settings ----
   const quality = document.getElementById("quality");
   const presetText = (p) => p.rate_control === "vbr" ? `${p.label} quality`
     : `${p.label}, ${p.bitrate / 1e6} Mbit/s`;

@@ -4,9 +4,9 @@ defmodule Kuroneko.Web do
   viewer page, and
 
     * `/ws`: input, a WebSocket (see `Kuroneko.BrowserInput`)
-    * `/h264`: H.264 for WebCodecs, a WebSocket (binary messages: 1 delta or
-      2 keyframe, then the Annex B access unit; text messages:
-      `{"input": ...}` when the video input changes)
+    * `/video?codecs=h264,h265`: the video stream for WebCodecs, a WebSocket
+      that the page opens with the codecs it decodes (see
+      `Kuroneko.VideoSocket`)
     * `/audio`: the target's sound, a WebSocket (see
       `Kuroneko.AudioSocket`)
     * `/microphone`: the target's USB microphone, a WebSocket (see
@@ -186,7 +186,17 @@ defmodule Kuroneko.Web do
   end
 
   get("/ws", do: websocket(conn, Kuroneko.InputSocket))
-  get("/h264", do: websocket(conn, Kuroneko.H264Socket))
+
+  get "/video" do
+    conn = fetch_query_params(conn)
+
+    websocket(
+      conn,
+      Kuroneko.VideoSocket,
+      Kuroneko.VideoSocket.codecs(conn.query_params["codecs"])
+    )
+  end
+
   get("/audio", do: websocket(conn, Kuroneko.AudioSocket))
   get("/microphone", do: websocket(conn, Kuroneko.MicrophoneSocket))
   get("/api/device/live", do: websocket(conn, Kuroneko.DeviceSocket))
@@ -703,10 +713,10 @@ defmodule Kuroneko.Web do
   defp wifi_error(:invalid_country), do: "not a country code"
   defp wifi_error(reason), do: inspect(reason)
 
-  defp websocket(conn, handler) do
+  defp websocket(conn, handler, state \\ %{}) do
     if same_origin?(conn) do
       conn
-      |> WebSockAdapter.upgrade(handler, %{}, timeout: 60_000)
+      |> WebSockAdapter.upgrade(handler, state, timeout: 60_000)
       |> halt()
     else
       send_resp(conn, 403, "forbidden")
@@ -734,8 +744,16 @@ defmodule Kuroneko.Web do
     %{
       settings: settings,
       preset: VideoSettings.preset(settings),
-      presets: VideoSettings.presets()
+      presets: VideoSettings.presets(),
+      codec: stream_codec()
     }
+  end
+
+  # The codec the stream takes now, nil without the video process.
+  defp stream_codec do
+    NanoKVMGo.Video.codec()
+  catch
+    :exit, {:noproc, _call} -> nil
   end
 
   # What a function of each kind takes, so that the page counts as the
@@ -855,15 +873,44 @@ defmodule Kuroneko.InputSocket do
   end
 end
 
-defmodule Kuroneko.H264Socket do
-  @moduledoc false
+defmodule Kuroneko.VideoSocket do
+  @moduledoc """
+  The video stream for the page's WebCodecs decoder. The page opens it with
+  the codecs it decodes, `/video?codecs=h264,h265`: with the `"auto"` codec
+  the stream takes H.265 while every viewer decodes it.
+
+  Binary messages are a type, then the Annex B access unit: 1 an H.264
+  delta, 2 an H.264 keyframe, 3 an H.265 delta, 4 an H.265 keyframe. After
+  a codec change the first is a keyframe. Text messages, `{"input": ...}`,
+  come when the video input changes. The socket closes, with 1011, when the
+  video process stops: the page connects again to the one that follows.
+  """
   @behaviour WebSock
 
+  @codecs %{"h264" => :h264, "h265" => :h265}
+
+  @doc "The codecs a page names, H.264 for one that names none."
+  @spec codecs(String.t() | nil) :: [:h264 | :h265]
+  def codecs(names) do
+    names
+    |> to_string()
+    |> String.split(",", trim: true)
+    |> Enum.flat_map(&List.wrap(@codecs[&1]))
+    |> case do
+      [] -> [:h264]
+      codecs -> Enum.uniq(codecs)
+    end
+  end
+
   @impl WebSock
-  def init(state) do
-    case NanoKVMGo.Video.subscribe() do
-      :ok -> {:ok, state}
-      {:error, reason} -> {:stop, :normal, {1011, "no H.264 (#{reason})"}, state}
+  def init(codecs) do
+    with video when is_pid(video) <- GenServer.whereis(NanoKVMGo.Video),
+         monitor = Process.monitor(video),
+         :ok <- NanoKVMGo.Video.subscribe(video, codecs: codecs) do
+      {:ok, %{video: monitor}}
+    else
+      nil -> {:stop, :normal, {1011, "no video stream"}, %{}}
+      {:error, reason} -> {:stop, :normal, {1011, "no video stream (#{reason})"}, %{}}
     end
   end
 
@@ -871,15 +918,24 @@ defmodule Kuroneko.H264Socket do
   def handle_in(_frame, state), do: {:ok, state}
 
   @impl WebSock
-  def handle_info({NanoKVMGo.Video, {:h264, kind, au}}, state) do
-    {:push, {:binary, [if(kind == :key, do: 2, else: 1), au]}, state}
+  def handle_info({NanoKVMGo.Video, {codec, kind, au}}, state) do
+    {:push, {:binary, [type(codec, kind), au]}, state}
   end
 
   def handle_info({NanoKVMGo.Video, {:input, input}}, state) do
     {:push, {:text, Jason.encode!(%{input: input})}, state}
   end
 
+  def handle_info({:DOWN, monitor, :process, _pid, _reason}, %{video: monitor} = state) do
+    {:stop, :normal, {1011, "the video stream stopped"}, state}
+  end
+
   def handle_info(_message, state), do: {:ok, state}
+
+  defp type(:h264, :delta), do: 1
+  defp type(:h264, :key), do: 2
+  defp type(:h265, :delta), do: 3
+  defp type(:h265, :key), do: 4
 end
 
 defmodule Kuroneko.AudioSocket do

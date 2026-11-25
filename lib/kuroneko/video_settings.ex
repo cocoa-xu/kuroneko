@@ -1,13 +1,18 @@
 defmodule Kuroneko.VideoSettings do
   @moduledoc """
-  How the H.264 stream is encoded, saved across restarts, as
+  How the video stream is encoded, saved across restarts, as
   `NanoKVMGo.Video` takes it (`t:NanoKVMGo.Video.encoding/0`):
 
+    * `"codec"` - `"h264"`, `"h265"` or `"auto"`: H.265 while every viewer
+      decodes it, H.264 otherwise
     * `"rate_control"` - `"constant_qp"`, `"cbr"` or `"vbr"`
     * `"bitrate"` - bits a second: what CBR keeps to, the most VBR takes
     * `"qp"` - the quantizer of a constant QP, and the best VBR goes to
     * `"keyframe_interval"` - frames from a keyframe to the next
     * `"max_fps"` - frames a second at most, 0 for the input's
+    * `"color_matrix"` - `"auto"`, `"bt601"` or `"bt709"`, and
+      `"color_range"` - `"auto"`, `"full"` or `"limited"`: what the stream
+      says its colour is
 
   The presets set the first three, as the stock firmware's do: `"auto"`
   (VBR of up to 8 Mbit/s), `"highest"`, `"high"`, `"medium"` and `"low"`
@@ -23,13 +28,19 @@ defmodule Kuroneko.VideoSettings do
     {"low", "Low", %{"rate_control" => "cbr", "bitrate" => 1_000_000}}
   ]
   @defaults %{
+    "codec" => "auto",
     "rate_control" => "vbr",
     "bitrate" => 8_000_000,
     "qp" => 24,
     "keyframe_interval" => 600,
-    "max_fps" => 0
+    "max_fps" => 0,
+    "color_matrix" => "auto",
+    "color_range" => "auto"
   }
+  @codecs %{"auto" => :auto, "h264" => :h264, "h265" => :h265}
   @rate_controls %{"constant_qp" => :constant_qp, "cbr" => :cbr, "vbr" => :vbr}
+  @color_matrices %{"auto" => :auto, "bt601" => :bt601, "bt709" => :bt709}
+  @color_ranges %{"auto" => :auto, "full" => :full, "limited" => :limited}
 
   @type t() :: %{String.t() => term()}
 
@@ -64,13 +75,24 @@ defmodule Kuroneko.VideoSettings do
   @spec encoding(t()) :: keyword()
   def encoding(settings) do
     [
+      codec: Map.fetch!(@codecs, settings["codec"]),
       rate_control: Map.fetch!(@rate_controls, settings["rate_control"]),
       bitrate: settings["bitrate"],
       qp: settings["qp"],
       keyframe_interval: settings["keyframe_interval"],
-      max_fps: settings["max_fps"]
+      max_fps: settings["max_fps"],
+      color_matrix: Map.fetch!(@color_matrices, settings["color_matrix"]),
+      color_range: Map.fetch!(@color_ranges, settings["color_range"])
     ]
   end
+
+  @doc """
+  Starts `NanoKVMGo.Video` with the saved encoding and `opts`, its other
+  options. Its supervisor calls this again for each restart, so the process
+  always starts with the settings saved last.
+  """
+  @spec start_video(keyword()) :: GenServer.on_start()
+  def start_video(opts), do: NanoKVMGo.Video.start_link([encoding: encoding(saved())] ++ opts)
 
   @doc """
   Applies changes to the saved settings, `"preset"` for a preset's: the
@@ -86,12 +108,12 @@ defmodule Kuroneko.VideoSettings do
     end
   end
 
-  # NanoKVMGo.Video takes the saved settings when it starts.
+  # A NanoKVMGo.Video that is not running starts with the settings saved.
   defp apply_encoding(settings) do
     _encoding = NanoKVMGo.Video.set_encoding(encoding(settings))
     :ok
   catch
-    :exit, _not_running -> :ok
+    :exit, {:noproc, _call} -> :ok
   end
 
   defp merge(settings, changes) when is_map(changes) do
@@ -117,11 +139,14 @@ defmodule Kuroneko.VideoSettings do
     end
   end
 
+  defp valid?("codec", codec), do: is_map_key(@codecs, codec)
   defp valid?("rate_control", rate_control), do: is_map_key(@rate_controls, rate_control)
   defp valid?("bitrate", bitrate), do: bitrate in 100_000..50_000_000
   defp valid?("qp", qp), do: qp in 0..51
   defp valid?("keyframe_interval", frames), do: frames in 1..65_535
   defp valid?("max_fps", fps), do: fps in 0..240
+  defp valid?("color_matrix", matrix), do: is_map_key(@color_matrices, matrix)
+  defp valid?("color_range", range), do: is_map_key(@color_ranges, range)
   defp valid?(_key, _value), do: false
 
   defp save(settings) do

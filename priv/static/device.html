@@ -562,7 +562,15 @@
       </header>
       <dl class="facts" id="videofacts"></dl>
       <div class="subsection" id="encoding" hidden>
-        <header><h3>H.264 stream</h3><span class="muted" id="encodingnow"></span></header>
+        <header><h3>Video stream</h3><span class="muted" id="encodingnow"></span></header>
+        <div class="control">
+          <span class="label" id="codeclabel">Codec</span>
+          <div class="segmented" role="group" aria-labelledby="codeclabel" id="codec">
+            <button type="button" data-value="auto">Auto</button>
+            <button type="button" data-value="h264">H.264</button>
+            <button type="button" data-value="h265">H.265</button>
+          </div>
+        </div>
         <div class="control">
           <span class="label" id="presetlabel">Preset</span>
           <div class="segmented wrap" role="group" aria-labelledby="presetlabel" id="presets"></div>
@@ -591,9 +599,30 @@
           <label for="maxfps">Frame rate</label>
           <select id="maxfps"></select>
         </div>
-        <p class="note">VBR keeps the quality, a QP, and takes a higher QP only where the bitrate would go over
-          its most; CBR keeps to the bitrate; a constant QP takes what each frame needs. A still picture
-          takes little whatever the choice. Each change applies from the next frame.</p>
+        <div class="control">
+          <span class="label" id="matrixlabel">Colour</span>
+          <div class="segmented" role="group" aria-labelledby="matrixlabel" id="colormatrix">
+            <button type="button" data-value="auto">Auto</button>
+            <button type="button" data-value="bt709">BT.709</button>
+            <button type="button" data-value="bt601">BT.601</button>
+          </div>
+        </div>
+        <div class="control">
+          <span class="label" id="rangelabel">Range</span>
+          <div class="segmented" role="group" aria-labelledby="rangelabel" id="colorrange">
+            <button type="button" data-value="auto">Auto</button>
+            <button type="button" data-value="full">Full</button>
+            <button type="button" data-value="limited">Limited</button>
+          </div>
+        </div>
+        <p class="note">Auto streams H.265 when every viewer's browser decodes it, H.264 otherwise; H.265 needs
+          about half the bitrate for the same picture. VBR keeps the quality, a QP, and takes a higher QP
+          only where the bitrate would go over its most; CBR keeps to the bitrate; a constant QP takes what
+          each frame needs. A still picture takes little whatever the choice. Each change applies from the
+          next frame.</p>
+        <p class="note">The colour only labels the picture as the HDMI bridge hands it over: Auto says what it
+          hands over, BT.709 at full range. Another label shifts the colours, which helps only a source whose
+          colours look wrong.</p>
       </div>
     </section>
 
@@ -1346,7 +1375,7 @@ function renderVideo(video) {
   facts($("videofacts"), [
     ["Input", signal ? `${input.width} × ${input.height}, ${input.fps} FPS` : inputText(input)],
     ["Bridge", parts.video_bridge && parts.video_bridge.chip],
-    ["Encoders", "H.264 and JPEG, in the SoC"],
+    ["Encoders", "H.264, H.265 and JPEG, in the SoC"],
     ["Input changes", capture.mid_frame_stops == null ? null : String(capture.mid_frame_stops)],
     ["Receiver restarts", capture.csi_recoveries == null ? null : String(capture.csi_recoveries)],
   ]);
@@ -1357,14 +1386,19 @@ function renderVideo(video) {
   }
 }
 
-// ---- The H.264 stream's encoding: each change applies at once.
+// ---- The video stream's encoding: each change applies at once.
 
 const BITRATES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20].map((m) => m * 1e6);
 const QPS = [16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 40];
 const KEYFRAMES = [30, 60, 150, 300, 600, 1200];
 const FPS_CAPS = [0, 60, 30, 20, 15, 10, 5];
-// What /api/video says: the settings, the preset they are, the presets.
+// What /api/video says: the settings, the preset they are, the presets, the
+// codec the stream has.
 let encoding = null, encodingFps = null;
+const CODEC_LABELS = { h264: "H.264", h265: "H.265" };
+const pressed = (group, value) => {
+  for (const b of $(group).children) b.setAttribute("aria-pressed", String(b.dataset.value === value));
+};
 const mbit = (bps) => `${+(bps / 1e6).toFixed(1)} Mbit/s`;
 
 // A select of values, with the current one even when it is not among them.
@@ -1382,8 +1416,12 @@ function renderEncoding() {
     type: "button", "data-value": p.name, "aria-pressed": String(encoding.preset === p.name),
     title: p.rate_control === "vbr" ? `VBR of up to ${mbit(p.bitrate)} at QP ${p.qp}` : `CBR at ${mbit(p.bitrate)}`,
   }, p.label)));
-  $("encodingnow").textContent = encoding.preset === "custom" ? "Custom" : "";
-  for (const b of $("ratecontrol").children) b.setAttribute("aria-pressed", String(b.dataset.value === s.rate_control));
+  $("encodingnow").textContent = [encoding.codec && `Now ${CODEC_LABELS[encoding.codec]}`,
+                                   encoding.preset === "custom" && "custom quality"].filter(Boolean).join(", ");
+  pressed("codec", s.codec);
+  pressed("ratecontrol", s.rate_control);
+  pressed("colormatrix", s.color_matrix);
+  pressed("colorrange", s.color_range);
   choices($("bitrate"), BITRATES, (v) => (s.rate_control === "cbr" ? mbit(v) : `Up to ${mbit(v)}`), s.bitrate);
   $("bitrate").disabled = s.rate_control === "constant_qp";
   choices($("qp"), QPS, (v) => `QP ${v}${v <= 18 ? ", the finest" : v >= 36 ? ", the smallest" : ""}`, s.qp);
@@ -1401,7 +1439,7 @@ async function loadEncoding() {
     encoding = await reply.json();
     renderEncoding();
   } catch (e) {
-    toast(`H.264 stream: ${e.message}`, true);
+    toast(`Video stream: ${e.message}`, true);
   }
 }
 
@@ -1412,14 +1450,26 @@ async function changeEncoding(changes, done) {
     if (done) toast(done);
   } catch (e) {
     const setting = e.data && e.data.setting;
-    toast(setting ? `H.264 stream: the NanoKVM does not take that ${setting}` : `H.264 stream: ${e.message}`, true);
+    toast(setting ? `Video stream: the NanoKVM does not take that ${setting}` : `Video stream: ${e.message}`, true);
     loadEncoding();
   }
 }
 
+$("codec").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (b) changeEncoding({ codec: b.dataset.value }, b.dataset.value === "auto" ? "The codec every viewer decodes" : b.textContent);
+});
 $("presets").addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (b) changeEncoding({ preset: b.dataset.value }, `${b.textContent} quality`);
+});
+$("colormatrix").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (b) changeEncoding({ color_matrix: b.dataset.value }, `Colour: ${b.textContent}`);
+});
+$("colorrange").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (b) changeEncoding({ color_range: b.dataset.value }, `Range: ${b.textContent}`);
 });
 $("ratecontrol").addEventListener("click", (e) => {
   const b = e.target.closest("button");

@@ -10,12 +10,21 @@ defmodule Kuroneko.VideoSettingsTest do
     on_exit(fn -> Application.delete_env(:kuroneko, :video_settings_file) end)
   end
 
-  test "VBR of up to 8 Mbit/s at QP 24 until changed, the Auto preset" do
+  test "VBR of up to 8 Mbit/s at QP 24 until changed, the Auto preset, codec and colour" do
     settings = VideoSettings.saved()
     assert VideoSettings.preset(settings) == "auto"
+    assert settings["codec"] == "auto"
 
-    assert VideoSettings.encoding(settings) ==
-             [rate_control: :vbr, bitrate: 8_000_000, qp: 24, keyframe_interval: 600, max_fps: 0]
+    assert VideoSettings.encoding(settings) == [
+             codec: :auto,
+             rate_control: :vbr,
+             bitrate: 8_000_000,
+             qp: 24,
+             keyframe_interval: 600,
+             max_fps: 0,
+             color_matrix: :auto,
+             color_range: :auto
+           ]
   end
 
   test "a preset sets the rate control, and the rest stays" do
@@ -34,11 +43,14 @@ defmodule Kuroneko.VideoSettingsTest do
   test "refuses settings the stream does not take, saving none" do
     for changes <- [
           %{"preset" => "ultra"},
+          %{"codec" => "vp9"},
           %{"rate_control" => "abr"},
           %{"bitrate" => 0},
           %{"qp" => 52},
           %{"keyframe_interval" => 0},
           %{"max_fps" => -1},
+          %{"color_matrix" => "bt2020"},
+          %{"color_range" => "tv"},
           %{"gop" => 30}
         ] do
       assert {:error, {:invalid, _setting}} = VideoSettings.update(changes), inspect(changes)
