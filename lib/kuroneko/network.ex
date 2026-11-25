@@ -21,6 +21,17 @@ defmodule Kuroneko.Network do
       else: default
   end
 
+  @doc """
+  Sends the caller `{VintageNet, ["interface", ifname | key], old, new,
+  metadata}` each time the property changes; nothing on the host.
+  """
+  @spec subscribe(String.t(), [String.t()]) :: :ok
+  def subscribe(ifname, key) do
+    if vintage_net?(),
+      do: apply(VintageNet, :subscribe, [["interface", ifname | key]]),
+      else: :ok
+  end
+
   @doc "The addresses of an interface with their prefixes, `\"192.0.2.10/24\"`."
   @spec addresses(String.t()) :: [String.t()]
   def addresses(ifname) do

@@ -2,7 +2,8 @@ defmodule Kuroneko.TrialGuard do
   @moduledoc """
   Reboots after a while when this boot runs on trial, an unvalidated
   firmware or memory sizes on trial (`NanoKVMGo.CMA`), so that U-Boot goes
-  back to the previous firmware and sizes; logs the network state meanwhile.
+  back to the previous firmware and sizes; logs the network state as it
+  changes meanwhile.
   Validate by hand once the device is reachable:
   `Nerves.Runtime.validate_firmware()`, or from the device page, keeps both.
   `remaining/0` tells how long is left.
@@ -11,7 +12,7 @@ defmodule Kuroneko.TrialGuard do
   require Logger
 
   @timeout :timer.minutes(5)
-  @status_interval :timer.seconds(30)
+  @interfaces ["usb0", "wlan0"]
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -22,7 +23,7 @@ defmodule Kuroneko.TrialGuard do
   def remaining do
     GenServer.call(__MODULE__, :remaining)
   catch
-    :exit, _reason -> nil
+    :exit, {:noproc, _call} -> nil
   end
 
   @impl GenServer
@@ -37,7 +38,13 @@ defmodule Kuroneko.TrialGuard do
         )
 
         Process.send_after(self(), :check, @timeout)
-        send(self(), :status)
+
+        for ifname <- @interfaces do
+          :ok = Kuroneko.Network.subscribe(ifname, ["connection"])
+          :ok = Kuroneko.Network.subscribe(ifname, ["addresses"])
+          log_network(ifname)
+        end
+
         {:ok, %{deadline: now() + @timeout}}
     end
   end
@@ -60,15 +67,16 @@ defmodule Kuroneko.TrialGuard do
     end
   end
 
-  def handle_info(:status, state) do
-    for ifname <- ["usb0", "wlan0"] do
-      connection = Kuroneko.Network.get(ifname, ["connection"])
-      addresses = Kuroneko.Network.addresses(ifname)
-      Logger.info("trial guard: #{ifname} #{inspect(connection)} #{Enum.join(addresses, " ")}")
-    end
-
-    Process.send_after(self(), :status, @status_interval)
+  def handle_info({VintageNet, ["interface", ifname, _key], _old, _new, _metadata}, state) do
+    log_network(ifname)
     {:noreply, state}
+  end
+
+  # What to look at when the device cannot be reached to validate it.
+  defp log_network(ifname) do
+    connection = Kuroneko.Network.get(ifname, ["connection"])
+    addresses = Kuroneko.Network.addresses(ifname)
+    Logger.info("trial guard: #{ifname} #{inspect(connection)} #{Enum.join(addresses, " ")}")
   end
 
   defp on_trial do
