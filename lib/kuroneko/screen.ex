@@ -27,7 +27,6 @@ defmodule Kuroneko.Screen do
   alias Kuroneko.Screen.{Calibration, Gesture, Pages, Settings, USB}
 
   @refresh_ms 2_000
-  @subscribe_retry_ms 1_000
   @system_refresh_ms 1_000
   @toast_ms 3_000
   @paint_idle_ms 30_000
@@ -107,14 +106,16 @@ defmodule Kuroneko.Screen do
       press: nil,
       toast: nil,
       active_at: now(),
-      subscriptions: %{},
       # The USB page's changes until applied.
       usb: nil,
       # The task that applies USB changes, while it runs.
       applying: nil
     }
 
-    {:ok, state |> subscribe(NanoKVMGo.Touch) |> subscribe(NanoKVMGo.Button)}
+    # Started after them, and again after either restarts.
+    :ok = NanoKVMGo.Touch.subscribe()
+    :ok = NanoKVMGo.Button.subscribe()
+    {:ok, state}
   end
 
   @impl GenServer
@@ -139,8 +140,6 @@ defmodule Kuroneko.Screen do
   def handle_info({NanoKVMGo.Button, :up}, state),
     do: {:noreply, boot_button(%{state | active_at: now()})}
 
-  def handle_info({:subscribe, server}, state), do: {:noreply, subscribe(state, server)}
-
   def handle_info({task, result}, %{applying: task} = state) when is_reference(task) do
     Process.demonitor(task, [:flush])
     state = %{state | applying: nil}
@@ -155,37 +154,7 @@ defmodule Kuroneko.Screen do
     {:noreply, draw(toast(%{state | applying: nil}, "USB devices not set", :error))}
   end
 
-  def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
-    case Map.pop(state.subscriptions, ref) do
-      {nil, _subscriptions} ->
-        {:noreply, state}
-
-      {server, subscriptions} ->
-        {:noreply, subscribe(%{state | subscriptions: subscriptions}, server)}
-    end
-  end
-
   def handle_info(_message, state), do: {:noreply, state}
-
-  # Touch and Button forget their subscribers when they restart: watch them
-  # and subscribe again, retrying until they are back.
-  defp subscribe(state, server) do
-    with pid when is_pid(pid) <- GenServer.whereis(server),
-         ref = Process.monitor(pid),
-         :ok <- call_subscribe(server, pid) do
-      %{state | subscriptions: Map.put(state.subscriptions, ref, server)}
-    else
-      _gone ->
-        Process.send_after(self(), {:subscribe, server}, @subscribe_retry_ms)
-        state
-    end
-  end
-
-  defp call_subscribe(server, pid) do
-    server.subscribe(pid)
-  catch
-    :exit, reason -> {:error, reason}
-  end
 
   ## Touches
 

@@ -85,15 +85,26 @@ defmodule Kuroneko.Application do
         NanoKVMGo.Microphone,
         Kuroneko.Gadget.Input,
         Kuroneko.Jiggler,
-        NanoKVMGo.Display,
         NanoKVMGo.Metrics,
-        NanoKVMGo.Expansion,
-        Kuroneko.ExpansionWatch,
-        NanoKVMGo.Touch,
-        NanoKVMGo.Button,
-        Kuroneko.Screen,
+        rest_for_one(:expansion, [NanoKVMGo.Expansion, Kuroneko.ExpansionWatch]),
+        rest_for_one(:screen, [
+          NanoKVMGo.Display,
+          NanoKVMGo.Touch,
+          NanoKVMGo.Button,
+          Kuroneko.Screen
+        ]),
         {Bandit, plug: Kuroneko.Web, port: 80}
       ] ++ https()
+    end
+
+    # Children that subscribe to, or draw with, those before them as they
+    # start: they start again after any of those does.
+    defp rest_for_one(id, children) do
+      %{
+        id: id,
+        type: :supervisor,
+        start: {Supervisor, :start_link, [children, [strategy: :rest_for_one]]}
+      }
     end
 
     # Without a certificate the page still works, but not the microphone.

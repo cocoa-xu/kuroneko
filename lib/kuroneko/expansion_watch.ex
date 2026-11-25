@@ -4,7 +4,8 @@ defmodule Kuroneko.ExpansionWatch do
   for the device page. A PWM read back on the other line shows as two edges
   a period: the Finger Robot's servo at 50 Hz makes 100 a second.
 
-  It subscribes again whenever `NanoKVMGo.Expansion` restarts.
+  It subscribes as it starts, so it starts after `NanoKVMGo.Expansion` and
+  again whenever that restarts.
 
   ## Options
 
@@ -32,9 +33,9 @@ defmodule Kuroneko.ExpansionWatch do
 
   @impl GenServer
   def init(opts) do
-    send(self(), :subscribe)
+    :ok = NanoKVMGo.Expansion.subscribe(Keyword.get(opts, :server, NanoKVMGo.Expansion))
     lines = Map.new(@lines, &{&1, %{total: 0, second: nil, count: 0, previous: 0}})
-    {:ok, %{server: Keyword.get(opts, :server, NanoKVMGo.Expansion), lines: lines}}
+    {:ok, %{lines: lines}}
   end
 
   @impl GenServer
@@ -44,29 +45,9 @@ defmodule Kuroneko.ExpansionWatch do
   end
 
   @impl GenServer
-  def handle_info(:subscribe, state) do
-    with pid when is_pid(pid) <- GenServer.whereis(state.server),
-         :ok <- NanoKVMGo.Expansion.subscribe(pid) do
-      Process.monitor(pid)
-    else
-      _ -> Process.send_after(self(), :subscribe, 1_000)
-    end
-
-    {:noreply, state}
-  catch
-    :exit, _reason ->
-      Process.send_after(self(), :subscribe, 1_000)
-      {:noreply, state}
-  end
-
   def handle_info({NanoKVMGo.Expansion, {:edge, line, _value, _timestamp}}, state) do
     now = System.monotonic_time(:second)
     {:noreply, update_in(state.lines[line], &count(&1, now))}
-  end
-
-  def handle_info({:DOWN, _ref, :process, _pid, _reason}, state) do
-    Process.send_after(self(), :subscribe, 1_000)
-    {:noreply, state}
   end
 
   # Edges are counted in the second they come in; the rate is the count of
