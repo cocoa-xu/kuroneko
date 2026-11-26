@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.2.0 (2026-11-27)
 
 * The device page has a USB section: the endpoints each USB device takes,
   of the seven IN and seven OUT the controller has, as bars that follow
