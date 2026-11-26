@@ -15,7 +15,8 @@ defmodule Kuroneko.Application do
         Kuroneko.SetupCode,
         Kuroneko.WiFi.Scanner,
         Kuroneko.VideoSettings,
-        Kuroneko.USBSettings
+        Kuroneko.USBSettings,
+        Kuroneko.OCR
       ] ++ target_children()
 
     # See https://elixir.hexdocs.pm/Supervisor.html

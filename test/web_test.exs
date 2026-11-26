@@ -193,6 +193,19 @@ defmodule Kuroneko.WebTest do
     refute Auth.password_set?()
   end
 
+  test "text reading only from the page, for an area, and only with the NPU" do
+    area = ~s({"x":0.1,"y":0.1,"width":0.2,"height":0.1})
+    json_only = [{"content-type", "application/json"}]
+    assert request(:post, "/api/ocr", area, json_only).status == 403
+    assert request(:post, "/api/ocr", ~s({"x":0.1,"y":0.1,"width":0}), @page).status == 400
+    assert request(:post, "/api/ocr", ~s({"x":"left"}), @page).status == 400
+
+    # The host has no NPU.
+    reply = request(:post, "/api/ocr", area, @page)
+    assert reply.status == 503
+    assert Jason.decode!(reply.resp_body)["error"] =~ "NPU"
+  end
+
   test "Wake-on-LAN only from the page, and only for a MAC address" do
     json_only = [{"content-type", "application/json"}]
     assert request(:post, "/api/wol", ~s({"mac":"aa:bb:cc:dd:ee:ff"}), json_only).status == 403

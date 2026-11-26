@@ -56,6 +56,13 @@
     border: 1px solid #343941; background: #1f2226; color: #c9ccd1; cursor: pointer; }
   dialog menu { display: flex; justify-content: flex-end; gap: 8px; margin: 14px 0 0; padding: 0; }
   dialog button:disabled { opacity: 0.5; cursor: default; }
+  #ocrlayer { position: fixed; inset: var(--bar) 0 0 0; cursor: crosshair; z-index: 5; }
+  #ocrbox { position: fixed; border: 2px solid #3fa45b; background: rgba(63, 164, 91, 0.12);
+    pointer-events: none; z-index: 6; }
+  #ocrtext { width: 100%; min-height: 160px; box-sizing: border-box; resize: vertical;
+    font: 13px/1.5 ui-monospace, Menlo, monospace; background: #0e0f11; color: #e6e8eb;
+    border: 1px solid #343941; border-radius: 4px; padding: 8px; }
+  #ocrstate { color: #9aa0a8; font-size: 12px; margin: 6px 0 0; min-height: 1em; }
 </style>
 <link rel="stylesheet" href="/disk.css">
 </head>
@@ -115,12 +122,25 @@
   </select>
   <button id="usb" title="The USB devices the target sees, on the device page">USB…</button>
   <button id="disk" title="Images and folders the target sees as a USB drive">Disk…</button>
+  <button id="ocr" title="Read the text in a part of the picture: drag over it (Esc cancels)" hidden>Text</button>
   <a id="devicelink" class="button" href="/device" target="kuroneko-device"
      title="The NanoKVM itself: its hardware, status, screen and firmware">Device</a>
 </div>
 <canvas id="canvas" class="screen" tabindex="0" hidden></canvas>
 <img id="mjpeg" class="screen" tabindex="0" alt="" hidden>
 <div id="notice" hidden></div>
+<div id="ocrlayer" hidden></div>
+<div id="ocrbox" hidden></div>
+<dialog id="ocrdialog">
+  <h3>Text in the picture</h3>
+  <textarea id="ocrtext" spellcheck="false"></textarea>
+  <p id="ocrstate"></p>
+  <menu>
+    <button id="ocrcopy">Copy</button>
+    <button id="ocrtype" title="Types the text on the target, as a US keyboard would">Type on the target</button>
+    <button id="ocrclose">Close</button>
+  </menu>
+</dialog>
 <script src="/disk.js"></script>
 <script>
   const canvas = document.getElementById("canvas");
@@ -194,6 +214,7 @@
       showInput(status.video.input);
       showAudioMode(status.audio.mode);
       showSystem(status.metrics);
+      document.getElementById("ocr").hidden = !status.ocr;
       const hid = status.usb.includes("keyboard") && status.usb.includes("mouse");
       text("hint", !hid ? "keyboard and mouse are off, see USB…"
                    : mouseMode === "relative" ? "click the picture to take the mouse, Esc to let go"
@@ -991,6 +1012,80 @@
 
   // ---- Virtual disk ----
   document.getElementById("disk").onclick = () => KuronekoDisk.open({ onClose: () => view.focus() });
+
+  // ---- Text in the picture: drag over a part of it, the NanoKVM's NPU reads it ----
+  const ocrButton = document.getElementById("ocr");
+  const ocrLayer = document.getElementById("ocrlayer");
+  const ocrBox = document.getElementById("ocrbox");
+  const ocrDialog = document.getElementById("ocrdialog");
+  const ocrText = document.getElementById("ocrtext");
+  const ocrState = document.getElementById("ocrstate");
+  let ocrStart = null;
+
+  function ocrSelecting(on) {
+    ocrLayer.hidden = !on;
+    ocrBox.hidden = true;
+    ocrButton.classList.toggle("on", on);
+    ocrStart = null;
+    if (!on) view.focus();
+  }
+  ocrButton.onclick = () => ocrSelecting(ocrLayer.hidden);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !ocrLayer.hidden) { e.preventDefault(); ocrSelecting(false); }
+  }, true);
+
+  const ocrRect = (a, b) => ({ left: Math.min(a.clientX, b.clientX), top: Math.min(a.clientY, b.clientY),
+    width: Math.abs(a.clientX - b.clientX), height: Math.abs(a.clientY - b.clientY) });
+  ocrLayer.onpointerdown = (e) => {
+    ocrStart = { clientX: e.clientX, clientY: e.clientY };
+    ocrLayer.setPointerCapture(e.pointerId);
+  };
+  ocrLayer.onpointermove = (e) => {
+    if (!ocrStart) return;
+    const r = ocrRect(ocrStart, e);
+    Object.assign(ocrBox.style, { left: `${r.left}px`, top: `${r.top}px`,
+      width: `${r.width}px`, height: `${r.height}px` });
+    ocrBox.hidden = false;
+  };
+  ocrLayer.onpointerup = async (e) => {
+    if (!ocrStart) return;
+    const a = position(ocrStart), b = position(e);
+    ocrSelecting(false);
+    const area = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y),
+                   width: Math.abs(a.x - b.x), height: Math.abs(a.y - b.y) };
+    if (area.width < 0.002 || area.height < 0.002) return;
+    ocrText.value = "";
+    ocrState.textContent = "Reading…";
+    ocrDialog.showModal();
+    try {
+      const reply = await fetch("/api/ocr", { method: "POST",
+        headers: { "content-type": "application/json" }, body: JSON.stringify(area) });
+      const body = await reply.json().catch(() => ({}));
+      if (!reply.ok) {
+        ocrState.textContent = body.error || `failed (${reply.status})`;
+        return;
+      }
+      ocrText.value = body.text;
+      ocrState.textContent = body.lines.length ? `${body.lines.length} line(s)` : "No text found here.";
+    } catch (err) {
+      ocrState.textContent = String(err);
+    }
+  };
+  document.getElementById("ocrcopy").onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(ocrText.value);
+      ocrState.textContent = "Copied.";
+    } catch (_) {
+      ocrText.select();
+      ocrState.textContent = "Select and copy: the browser keeps the clipboard from plain HTTP pages.";
+    }
+  };
+  document.getElementById("ocrtype").onclick = () => {
+    if (ocrText.value) send({ type: "text", text: ocrText.value });
+    ocrDialog.close();
+  };
+  document.getElementById("ocrclose").onclick = () => ocrDialog.close();
+  ocrDialog.addEventListener("close", () => view.focus());
 
   updateMicButton();
   mouseMode = prefs.get("mouseMode", "absolute") === "relative" ? "relative" : "absolute";

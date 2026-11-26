@@ -42,6 +42,7 @@ defmodule Kuroneko.MixProject do
       {:muontrap, "~> 2.0"},
       sibling(:nano_kvm_go, "v0.3.0"),
       sibling(:kuroneko_gadget, "v0.4.0"),
+      sibling(:axera_npu, "v0.1.0"),
       {:bandit, "~> 1.6"},
       {:websock_adapter, "~> 0.5"},
       {:jason, "~> 1.4"},

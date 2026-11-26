@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+* Text in the picture: Text on the KVM page, then a drag over a part of the
+  picture, and the NanoKVM's NPU reads the text there (PP-OCRv5, Chinese and
+  English) in about half a second; it can be copied or typed on the target.
+  It needs the NPU, which the Go with 256 MiB leaves off by default, and the
+  models in `priv/ocr`
+
 ## v0.2.0 (2026-11-27)
 
 * The device page has a USB section: the endpoints each USB device takes,

@@ -300,6 +300,35 @@ defmodule Kuroneko.Web do
     end
   end
 
+  # Reads the text in an area of the picture: x, y, width and height as
+  # fractions of the picture's.
+  post "/api/ocr" do
+    with {:ok, data, conn} <- page_json(conn),
+         {:ok, area} <- ocr_area(data) do
+      case Kuroneko.OCR.read(area) do
+        {:ok, lines} ->
+          json(conn, 200, %{
+            text: Enum.map_join(lines, "\n", & &1.text),
+            lines: Enum.map(lines, &%{&1 | box: Tuple.to_list(&1.box)})
+          })
+
+        {:error, :unavailable} ->
+          json(conn, 503, %{error: "text reading needs the NPU and its models"})
+
+        {:error, reason} when reason in [:no_input, :timeout, :stopped] ->
+          json(conn, 409, %{error: "no picture"})
+
+        {:error, :empty_area} ->
+          json(conn, 400, %{error: "empty area"})
+
+        {:error, reason} ->
+          json(conn, 500, %{error: inspect(reason)})
+      end
+    else
+      other -> refused(conn, other)
+    end
+  end
+
   get "/api/screen" do
     case Kuroneko.Screen.settings() do
       {:ok, settings} -> json(conn, 200, settings)
@@ -521,6 +550,7 @@ defmodule Kuroneko.Web do
           mode: USBSettings.mode(Kuroneko.Gadget.functions())
         },
         mjpeg_token: Application.get_env(:kuroneko, :mjpeg_token),
+        ocr: Kuroneko.OCR.available?(),
         temperature: temperature(),
         metrics: metrics()
       })
@@ -612,6 +642,12 @@ defmodule Kuroneko.Web do
       {:ok, data, conn}
     end
   end
+
+  defp ocr_area(%{"x" => x, "y" => y, "width" => w, "height" => h})
+       when is_number(x) and is_number(y) and is_number(w) and is_number(h) and w > 0 and h > 0,
+       do: {:ok, %{x: x, y: y, width: w, height: h}}
+
+  defp ocr_area(_data), do: :error
 
   defp refused(conn, {:page, false}), do: send_resp(conn, 403, "forbidden")
   defp refused(conn, _other), do: send_resp(conn, 400, "bad request")
