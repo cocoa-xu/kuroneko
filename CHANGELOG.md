@@ -7,6 +7,10 @@
   English) in about half a second; it can be copied or typed on the target.
   It needs the NPU, which the Go with 256 MiB leaves off by default, and the
   models in `priv/ocr`
+* The video settings' `color_matrix` and `color_range` set the colour the
+  HDMI bridge turns the picture into, with a system that can convert it:
+  by default BT.601 at full range, which shows the MJPEG view's colours
+  right (it had BT.709's, which JPEG decoders do not expect)
 
 ## v0.2.0 (2026-11-27)
 

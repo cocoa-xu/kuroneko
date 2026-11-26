@@ -11,8 +11,10 @@ defmodule Kuroneko.VideoSettings do
     * `"keyframe_interval"` - frames from a keyframe to the next
     * `"max_fps"` - frames a second at most, 0 for the input's
     * `"color_matrix"` - `"auto"`, `"bt601"` or `"bt709"`, and
-      `"color_range"` - `"auto"`, `"full"` or `"limited"`: what the stream
-      says its colour is
+      `"color_range"` - `"auto"`, `"full"` or `"limited"`: the colour the
+      HDMI bridge turns the picture into where the system can convert it
+      (`"auto"` is BT.601 at full range, as JPEG has it), and otherwise
+      what the stream says its colour is
 
   The presets set the first three, as the stock firmware's do: `"auto"`
   (VBR of up to 8 Mbit/s), `"highest"`, `"high"`, `"medium"` and `"low"`
