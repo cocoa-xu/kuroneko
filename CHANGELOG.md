@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+* The KVM page's connection quality, under the picture's menu, each second:
+  what the NanoKVM captured, encoded and skipped and how long its encoder
+  took, and what the browser received, decoded and showed, the longest
+  wait for a frame and the input's round trip. The page tells the NanoKVM
+  its side as well (`Kuroneko.ViewerStats`)
+* The KVM page draws the picture with WebGL, from the decoder's memory, a
+  2D canvas only where there is no WebGL; this computer's pointer shows
+  over the picture (a dot by default); the mouse's last position and every
+  relative step go out; Bluetooth movement goes once a connection interval
+* The device page in Phoenix LiveView, with Tailwind CSS and daisyUI: live
+  cards, the virtual disk's dialog as a component, and the appearance
+  following the system or chosen in the bar
 * The KVM as a Bluetooth keyboard and mouse, for a phone, tablet or computer
   that pairs with it: the device page's Bluetooth card opens pairing for 2
   minutes and lists the paired devices, which it can forget; the KVM page's
