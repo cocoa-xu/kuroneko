@@ -498,7 +498,7 @@ function start(hook) {
         tally.received++;
         tally.bytes += ev.data.byteLength;
         const data = new Uint8Array(ev.data);
-        // The type, then the time the NanoKVM's encoder made the frame.
+        // The type, then the capture's frame-end time.
         const made = new DataView(ev.data).getBigInt64(1);
         const codec = chunkCodec(data[0]);
         const key = data[0] === 2 || data[0] === 4;

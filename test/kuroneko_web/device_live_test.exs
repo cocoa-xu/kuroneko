@@ -73,6 +73,7 @@ defmodule KuronekoWeb.DeviceLiveTest do
   test "the device page for a session", %{conn: conn} do
     {:ok, _view, html} = live(conn, "/device")
     assert html =~ "Bluetooth"
+    assert html =~ "On demand"
   end
 
   test "without a session, the login page" do

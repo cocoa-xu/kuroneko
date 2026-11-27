@@ -987,8 +987,8 @@ defmodule Kuroneko.VideoSocket do
   Binary messages are a type, then the Annex B access unit: 1 an H.264
   delta, 2 an H.264 keyframe, 3 an H.265 delta, 4 an H.265 keyframe. After
   a codec change the first is a keyframe. With `&timestamps=1` the type is
-  followed by the time the access unit came from the encoder, a big-endian
-  signed 64-bit count of microseconds on the device's monotonic clock, so
+  followed by the capture frame-end time, a big-endian
+  signed 64-bit count of microseconds calibrated to the VM's monotonic clock, so
   that the page can show the frames at the pace they were made. Text messages, `{"input": ...}`,
   come when the video input changes, and `{"stats": ...}` once a second
   with what the capture and the encoder did (`t:NanoKVMGo.Video.stats/0`).

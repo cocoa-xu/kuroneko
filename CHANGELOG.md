@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+* Video settings offer on-demand keyframes, the default for new settings;
+  saved intervals remain available
+
 * HTTPS picks ChaCha20-Poly1305 before AES-GCM, whatever the browser
   prefers: the NanoKVM's cores have no AES instructions, and a 140 KB frame
   took 8.3 ms to encrypt with AES-128-GCM against 1.8 ms with ChaCha20

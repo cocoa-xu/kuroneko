@@ -8,7 +8,7 @@ defmodule Kuroneko.VideoSettings do
     * `"rate_control"` - `"constant_qp"`, `"cbr"` or `"vbr"`
     * `"bitrate"` - bits a second: what CBR keeps to, the most VBR takes
     * `"qp"` - the quantizer of a constant QP, and the best VBR goes to
-    * `"keyframe_interval"` - frames from a keyframe to the next
+    * `"keyframe_interval"` - frames from a keyframe to the next, 0 for on demand
     * `"max_fps"` - frames a second at most, 0 for the input's
     * `"color_matrix"` - `"auto"`, `"bt601"` or `"bt709"`, and
       `"color_range"` - `"auto"`, `"full"` or `"limited"`: the colour the
@@ -39,7 +39,7 @@ defmodule Kuroneko.VideoSettings do
     "rate_control" => "vbr",
     "bitrate" => 8_000_000,
     "qp" => 24,
-    "keyframe_interval" => 600,
+    "keyframe_interval" => 0,
     "max_fps" => 0,
     "color_matrix" => "auto",
     "color_range" => "auto"
@@ -160,7 +160,7 @@ defmodule Kuroneko.VideoSettings do
   defp valid?("rate_control", rate_control), do: is_map_key(@rate_controls, rate_control)
   defp valid?("bitrate", bitrate), do: bitrate in 100_000..50_000_000
   defp valid?("qp", qp), do: qp in 0..51
-  defp valid?("keyframe_interval", frames), do: frames in 1..65_535
+  defp valid?("keyframe_interval", frames), do: frames in 0..65_535
   defp valid?("max_fps", fps), do: fps in 0..240
   defp valid?("color_matrix", matrix), do: is_map_key(@color_matrices, matrix)
   defp valid?("color_range", range), do: is_map_key(@color_ranges, range)

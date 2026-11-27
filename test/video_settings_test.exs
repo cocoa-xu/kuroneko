@@ -20,7 +20,7 @@ defmodule Kuroneko.VideoSettingsTest do
              rate_control: :vbr,
              bitrate: 8_000_000,
              qp: 24,
-             keyframe_interval: 600,
+             keyframe_interval: 0,
              max_fps: 0,
              color_matrix: :auto,
              color_range: :auto
@@ -47,7 +47,7 @@ defmodule Kuroneko.VideoSettingsTest do
           %{"rate_control" => "abr"},
           %{"bitrate" => 0},
           %{"qp" => 52},
-          %{"keyframe_interval" => 0},
+          %{"keyframe_interval" => -1},
           %{"max_fps" => -1},
           %{"color_matrix" => "bt2020"},
           %{"color_range" => "tv"},
@@ -62,5 +62,14 @@ defmodule Kuroneko.VideoSettingsTest do
   test "a saved file that is not settings is the defaults", %{tmp_dir: tmp_dir} do
     File.write!(Path.join(tmp_dir, "video.json"), ~s({"qp": "best"}))
     assert VideoSettings.preset(VideoSettings.saved()) == "auto"
+  end
+
+  test "keeps a saved interval and persists on-demand keyframes", %{tmp_dir: tmp_dir} do
+    File.write!(Path.join(tmp_dir, "video.json"), ~s({"keyframe_interval":600}))
+    assert VideoSettings.saved()["keyframe_interval"] == 600
+    assert {:ok, settings} = VideoSettings.update(%{"keyframe_interval" => 0})
+    assert settings["keyframe_interval"] == 0
+    assert VideoSettings.saved()["keyframe_interval"] == 0
+    assert VideoSettings.encoding(settings)[:keyframe_interval] == 0
   end
 end

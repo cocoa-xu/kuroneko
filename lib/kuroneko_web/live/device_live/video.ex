@@ -12,7 +12,7 @@ defmodule KuronekoWeb.DeviceLive.Video do
 
   @bitrates Enum.map([1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20], &(&1 * 1_000_000))
   @qps [16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 40]
-  @keyframes [30, 60, 150, 300, 600, 1200]
+  @keyframes [0, 30, 60, 150, 300, 600, 1200]
   @fps_caps [0, 60, 30, 20, 15, 10, 5]
   @codecs %{"h264" => "H.264", "h265" => "H.265"}
 
@@ -220,6 +220,7 @@ defmodule KuronekoWeb.DeviceLive.Video do
   defp qp_label(qp) when qp >= 36, do: "QP #{qp}, the smallest"
   defp qp_label(qp), do: "QP #{qp}"
 
+  defp keyframe_label(0, _fps), do: "On demand"
   defp keyframe_label(frames, nil), do: "Every #{frames} frames"
 
   defp keyframe_label(frames, fps),
