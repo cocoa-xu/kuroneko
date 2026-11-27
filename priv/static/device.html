@@ -620,9 +620,9 @@
           only where the bitrate would go over its most; CBR keeps to the bitrate; a constant QP takes what
           each frame needs. A still picture takes little whatever the choice. Each change applies from the
           next frame.</p>
-        <p class="note">The colour only labels the picture as the HDMI bridge hands it over: Auto says what it
-          hands over, BT.709 at full range. Another label shifts the colours, which helps only a source whose
-          colours look wrong.</p>
+        <p class="note">The HDMI bridge converts the picture to the colour chosen; Auto keeps its own, BT.709 at
+          full range. Browsers decode the MJPEG view as BT.601, so BT.709 leaves its strongest colours a little
+          off there; H.264 and H.265 tell the browser which they carry.</p>
       </div>
     </section>
 
