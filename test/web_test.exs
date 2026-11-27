@@ -111,7 +111,7 @@ defmodule Kuroneko.WebTest do
 
     # Logging in on the device page reloads it.
     assert request(:get, "/device", "", [], false).resp_body =~ "Log in to control the computer"
-    assert request(:get, "/device").resp_body =~ ~s(<main id="device")
+    assert request(:get, "/device").resp_body =~ ~s(id="usb")
     assert request(:get, "/settings", "", [], false).resp_body =~ "Log in to control the computer"
     assert request(:get, "/settings").resp_body =~ ~s(<main id="settings")
 

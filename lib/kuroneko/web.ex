@@ -31,8 +31,10 @@ defmodule Kuroneko.Web do
       port's expansion lines (see `NanoKVMGo.Expansion`)
     * `/status`: the video input, the USB functions and the NanoKVM's own
       CPU, memory and network use (`NanoKVMGo.Metrics`), for the viewer
-    * `/device`: the device page, its hardware, status and settings;
-      `GET /api/device`, all it shows (see `Kuroneko.DeviceInfo`), and
+    * `/device`: the device page, its hardware, status and settings, live
+      (`KuronekoWeb.DeviceLive`, with its socket at `/live` and its assets
+      at `/assets`); `GET /api/device`, all it shows (see
+      `Kuroneko.DeviceInfo`), and
       `/api/device/live`, a WebSocket with what changes each second (see
       `Kuroneko.DeviceSocket`)
     * `GET /api/disk`: the virtual disk's library and drive (see
@@ -121,7 +123,7 @@ defmodule Kuroneko.Web do
   get("/assets/*_rest", do: phoenix(conn))
 
   get("/", do: page(conn, "index.html"))
-  get("/device", do: page(conn, "device.html"))
+  get("/device", do: if(logged_in?(conn), do: phoenix(conn), else: page(conn, "login.html")))
   get("/settings", do: page(conn, "settings.html"))
   get("/disk.js", do: asset(conn, "disk.js", "text/javascript"))
   get("/disk.css", do: asset(conn, "disk.css", "text/css"))
