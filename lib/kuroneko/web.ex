@@ -94,22 +94,31 @@ defmodule Kuroneko.Web do
     {"POST", "/api/auth/setup"}
   ]
 
-  plug(:https_only)
-  plug(:put_secret_key_base)
-
-  plug(Plug.Session,
+  @session_options [
     store: :cookie,
     key: "_kuroneko",
     signing_salt: "kuroneko session",
     same_site: "Strict",
     http_only: true,
     max_age: 30 * 24 * 3600
-  )
+  ]
+
+  @doc false
+  # The LiveView socket reads the session from the same cookie.
+  def session_options, do: @session_options
+
+  plug(:https_only)
+  plug(:put_secret_key_base)
+  plug(Plug.Session, @session_options)
 
   plug(:fetch_session)
   plug(:authenticate)
   plug(:match)
   plug(:dispatch)
+
+  # The LiveView pages' socket and assets (KuronekoWeb)
+  match("/live/*_rest", do: phoenix(conn))
+  get("/assets/*_rest", do: phoenix(conn))
 
   get("/", do: page(conn, "index.html"))
   get("/device", do: page(conn, "device.html"))
@@ -643,8 +652,11 @@ defmodule Kuroneko.Web do
 
   defp put_secret_key_base(conn, _opts), do: %{conn | secret_key_base: Auth.secret()}
 
+  defp phoenix(conn), do: KuronekoWeb.Endpoint.call(conn, KuronekoWeb.Endpoint.init([]))
+
   defp authenticate(conn, _opts) do
-    if {conn.method, conn.request_path} in @public or logged_in?(conn),
+    if {conn.method, conn.request_path} in @public or
+         String.starts_with?(conn.request_path, "/assets/") or logged_in?(conn),
       do: conn,
       else: conn |> json(401, %{error: "log in first"}) |> halt()
   end

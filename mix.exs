@@ -14,6 +14,7 @@ defmodule Kuroneko.MixProject do
       listeners: listeners(Mix.target(), Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      aliases: aliases(),
       releases: [{@app, release()}]
     ]
   end
@@ -47,6 +48,29 @@ defmodule Kuroneko.MixProject do
       {:websock_adapter, "~> 0.5"},
       {:jason, "~> 1.4"},
       {:x509, "~> 0.8"},
+
+      # The pages: Phoenix LiveView, styled with Tailwind CSS and daisyUI,
+      # Heroicons; their CSS and JavaScript are built on the host
+      {:phoenix, "~> 1.8.17"},
+      {:phoenix_html, "~> 4.4"},
+      {:phoenix_live_view, "~> 1.2.15"},
+      {:lazy_html, "~> 0.1.16", only: :test},
+      {:esbuild, "~> 0.10.1", runtime: Mix.env() == :dev},
+      {:tailwind, "~> 0.5.2", runtime: Mix.env() == :dev},
+      {:heroicons,
+       github: "tailwindlabs/heroicons",
+       tag: "v2.2.0",
+       sparse: "optimized",
+       app: false,
+       compile: false,
+       depth: 1},
+      {:daisyui,
+       github: "saadeghi/daisyui",
+       tag: "v5.8.3",
+       sparse: "packages/bundle",
+       app: false,
+       compile: false,
+       depth: 1},
 
       # Allow Nerves.Runtime on host to support development, testing and CI.
       # See config/host.exs for usage.
@@ -91,4 +115,15 @@ defmodule Kuroneko.MixProject do
   # Uncomment the following line if using Phoenix > 1.8.
   # defp listeners(:host, :dev), do: [Phoenix.CodeReloader]
   defp listeners(_, _), do: []
+
+  # The pages' CSS and JavaScript go into the firmware: compile first, for
+  # the hooks that LiveView takes from the modules.
+  defp aliases do
+    [
+      "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
+      "assets.build": ["compile", "tailwind kuroneko", "esbuild kuroneko"],
+      "assets.deploy": ["compile", "tailwind kuroneko --minify", "esbuild kuroneko --minify"],
+      firmware: ["assets.setup", "assets.deploy", "firmware"]
+    ]
+  end
 end

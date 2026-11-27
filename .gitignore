@@ -19,3 +19,6 @@ erl_crash.dump
 # What is yours: the Wi-Fi and the SSH keys that may log in
 /config/wifi.secret.exs
 /config/authorized_keys
+
+# Built by mix assets.build or assets.deploy
+/priv/static/assets/

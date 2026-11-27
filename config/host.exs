@@ -19,3 +19,7 @@ config :nerves_runtime,
        "a.nerves_fw_platform" => "host",
        "a.nerves_fw_version" => "0.0.0"
      }}
+
+# On a computer the pages sign with a fixed secret; the NanoKVM uses its own
+config :kuroneko, KuronekoWeb.Endpoint,
+  secret_key_base: String.duplicate("kuroneko pages on a computer ", 3)

@@ -9,8 +9,12 @@ defmodule Kuroneko.Application do
   def start(_type, _args) do
     migrate()
 
+    configure_endpoint()
+
     children =
       [
+        {Phoenix.PubSub, name: Kuroneko.PubSub},
+        KuronekoWeb.Endpoint,
         Kuroneko.LoginLimit,
         Kuroneko.SetupCode,
         Kuroneko.WiFi.Scanner,
@@ -31,6 +35,7 @@ defmodule Kuroneko.Application do
 
   # List all child processes to be supervised
   if Mix.target() == :host do
+    defp configure_endpoint(), do: :ok
     defp migrate(), do: :ok
     defp init_complete(), do: :ok
 
@@ -50,6 +55,14 @@ defmodule Kuroneko.Application do
     # petting the watchdog 600 s after boot. The StartupGuard, which would do
     # it, is off so that firmware is validated by hand (TrialGuard).
     defp init_complete(), do: Nerves.Runtime.Heart.init_complete()
+
+    # The pages' socket reads the session cookie, which the device's own
+    # secret signs.
+    defp configure_endpoint() do
+      config = Application.get_env(:kuroneko, KuronekoWeb.Endpoint, [])
+      config = Keyword.put(config, :secret_key_base, Kuroneko.Auth.secret())
+      Application.put_env(:kuroneko, KuronekoWeb.Endpoint, config)
+    end
 
     # Before anything reads its settings.
     defp migrate() do
