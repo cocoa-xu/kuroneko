@@ -95,7 +95,8 @@
           .stats .side { grid-column: 1 / -1; margin-top: 6px; color: var(--text); font-weight: 600; }
           .stats .side:first-child { margin-top: 0; }
           /* Over the picture, wherever it is dragged */
-          #statsbox { position: fixed; top: calc(var(--bar) + 10px); left: 10px; z-index: 6; width: 270px;
+          #statsbox { position: fixed; top: calc(var(--bar) + 10px); left: 10px; z-index: 6; width: min(370px, calc(100vw - 20px));
+            max-height: calc(100vh - var(--bar) - 20px); overflow-y: auto;
             padding: 10px 12px; border-radius: 8px; background: rgba(0, 0, 0, 0.6); cursor: move;
             touch-action: none; user-select: none; -webkit-user-select: none; }
           #statsbox.dragging { cursor: grabbing; }

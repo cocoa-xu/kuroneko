@@ -1,3 +1,6 @@
+import { createPageScope } from "./page-scope.mjs";
+import { createPacer, sampleVideo } from "./video-playback.mjs";
+
 // The KVM page's picture, input, sound and tools, which the browser runs.
 // KuronekoWeb.KVMLive renders the page and its NanoKVM menu; the two talk
 // through events: "menu" from here when that menu opens or closes,
@@ -7,9 +10,29 @@ export const KVM = {
   mounted() {
     start(this);
   },
+  destroyed() {
+    this.stop?.();
+  },
 };
 
 function start(hook) {
+  const scope = createPageScope();
+  const setTimeout = scope.timeout, clearTimeout = scope.cancelTimeout;
+  const setInterval = scope.interval, requestAnimationFrame = scope.animation;
+  const listen = scope.listen;
+  const openSocket = (url) => {
+    const ws = new WebSocket(url);
+    const release = scope.own(() => ws.close());
+    ws.addEventListener("close", release, { once: true });
+    return ws;
+  };
+  const audioContext = (options) => {
+    const ctx = new AudioContext(options);
+    scope.own(() => { if (ctx.state !== "closed") ctx.close().catch(() => {}); });
+    return ctx;
+  };
+  hook.stop = () => { hook.stopVideo?.(); scope.stop(); };
+
   const canvas = document.getElementById("canvas");
   const img = document.getElementById("mjpeg");
   const notice = document.getElementById("notice");
@@ -47,7 +70,7 @@ function start(hook) {
     openPop = null;
   }
   for (const tool of document.querySelectorAll("[data-pop]")) {
-    tool.addEventListener("click", (e) => {
+    listen(tool, "click", (e) => {
       e.stopPropagation();
       const pop = document.getElementById(`pop-${tool.dataset.pop}`);
       const again = openPop && openPop.pop === pop;
@@ -62,8 +85,8 @@ function start(hook) {
       if (pop.id === "pop-kvm") hook.pushEvent("menu", { panel: "main", open: true });
     });
   }
-  document.addEventListener("click", (e) => { if (openPop && !openPop.pop.contains(e.target)) closePop(); });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && openPop) closePop(); });
+  listen(document, "click", (e) => { if (openPop && !openPop.pop.contains(e.target)) closePop(); });
+  listen(document, "keydown", (e) => { if (e.key === "Escape" && openPop) closePop(); });
 
   const wsUrl = (path) => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}`;
   let view = canvas;
@@ -169,10 +192,13 @@ function start(hook) {
     h265: { label: "H.265", config: "hvc1.1.6.L153.B0" },
   };
 
+  let modeAt = performance.now();
   setInterval(() => {
+    const now = performance.now(), seconds = (now - modeAt) / 1000;
+    modeAt = now;
     if (view === canvas) {
       mark("video", decoded > 0);
-      text("mode", `${streamCodec ? CODECS[streamCodec].label : "Video"} ${decoded} fps`);
+      text("mode", `${streamCodec ? CODECS[streamCodec].label : "Video"} ${Math.round(decoded / seconds)} fps`);
       decoded = 0;
     } else {
       mark("video", img.naturalWidth > 0 && notice.hidden);
@@ -195,6 +221,7 @@ function start(hook) {
   }
 
   async function startMJPEG(mode) {
+    if (!scope.active) return;
     view = img;
     canvas.hidden = true;
     quality.hidden = true;
@@ -260,15 +287,9 @@ function start(hook) {
   // the device its side too (Kuroneko.ViewerStats).
   const connection = { device: null, rtt: null, renderer: null, delay: null };
   const second = () => ({ received: 0, bytes: 0, gapMax: 0, decoded: 0, decodeSum: 0, decodeMax: 0,
-                          drawn: 0, shown: 0, drawMax: 0, queueMax: 0, lateMax: 0 });
+                          drawn: 0, shown: 0, drawMax: 0, queueMax: 0, lateMax: 0, recoveries: 0 });
 
-  // ---- Playback. Smooth: each frame goes to the decoder at the pace the
-  // NanoKVM made it, a little later than the fastest any frame came lately,
-  // so that a moment the network holds frames back does not show as a
-  // stutter. The delay covers the latest frames of the last seconds: it
-  // grows at once and shrinks slowly. Lowest latency: each as it arrives.
-  const SMOOTH_MAX_MS = 250;
-  let playback = "smooth";
+  let playback = "latency";
   const playbackGroup = document.getElementById("playback");
   function showPlayback() {
     for (const b of playbackGroup.children) b.setAttribute("aria-pressed", String(b.dataset.playback === playback));
@@ -281,46 +302,6 @@ function start(hook) {
     showPlayback();
   };
 
-  function pacer(decode) {
-    let base = null, transits = [], lates = [], delay = 0, queue = [], timer = 0;
-    const drain = () => {
-      timer = 0;
-      const now = performance.now();
-      while (queue.length && queue[0].due <= now + 1) decode(queue.shift().chunk);
-      if (queue.length) timer = setTimeout(drain, queue[0].due - now);
-    };
-    return {
-      // made: the device's time for the frame, in microseconds (BigInt).
-      put(chunk, made, arrived) {
-        if (playback !== "smooth" || made === null) {
-          connection.delay = null;
-          if (!queue.length) return decode(chunk);
-          queue.push({ due: 0, chunk });
-          return drain();
-        }
-        if (base === null) base = made;
-        const transit = arrived - Number(made - base) / 1000;
-        transits.push(transit);
-        if (transits.length > 150) transits.shift();
-        const fastest = Math.min(...transits);
-        lates.push(transit - fastest);
-        tally.lateMax = Math.max(tally.lateMax, transit - fastest);
-        if (lates.length > 120) lates.shift();
-        const target = Math.min(SMOOTH_MAX_MS, Math.max(...lates));
-        delay = target > delay ? target : Math.max(target, delay - 0.5);
-        connection.delay = delay;
-        const due = arrived - (transit - fastest) + delay;
-        if (!queue.length && due <= arrived + 1) return decode(chunk);
-        queue.push({ due, chunk });
-        if (!timer) timer = setTimeout(drain, Math.max(0, due - arrived));
-      },
-      clear() {
-        clearTimeout(timer);
-        timer = 0;
-        queue = [];
-      },
-    };
-  }
   let tally = second(), lastArrival = 0, drewThisFrame = false;
   // A frame drawn twice before the display refreshes shows only once.
   (function countShown() {
@@ -328,11 +309,10 @@ function start(hook) {
     requestAnimationFrame(countShown);
   })();
   const connStats = document.getElementById("connstats");
-  // From the end of a frame to the screen, about: the NanoKVM's part, half
-  // the round trip, the smoothing, decoding and drawing.
+  // This sum is an estimate, not a measurement of physical presentation.
   function screenDelay(d, b) {
     if (!d || d.ready_ms == null || b.rtt_ms == null || !b.decoded) return "–";
-    return `about ${Math.round(d.ready_ms + b.rtt_ms / 2 + (b.delay_ms || 0) + b.decode_ms + b.draw_max_ms)} ms`;
+    return `about ${Math.round((d.socket_ms ?? d.ready_ms) + b.rtt_ms / 2 + (b.delay_ms || 0) + b.decode_ms + b.draw_max_ms)} ms`;
   }
   const statsTool = document.getElementById("statstool"), statsBox = document.getElementById("statsbox");
   // Where the stats go: inside the window, under the bar.
@@ -361,15 +341,15 @@ function start(hook) {
   // Dragged anywhere, and kept there. A press on it leaves the keyboard
   // with the picture.
   let statsDrag = null;
-  statsBox.addEventListener("mousedown", (e) => e.preventDefault());
-  statsBox.addEventListener("pointerdown", (e) => {
+  listen(statsBox, "mousedown", (e) => e.preventDefault());
+  listen(statsBox, "pointerdown", (e) => {
     if (e.target.closest("button")) return;
     const r = statsBox.getBoundingClientRect();
     statsDrag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
     statsBox.setPointerCapture(e.pointerId);
     statsBox.classList.add("dragging");
   });
-  statsBox.addEventListener("pointermove", (e) => {
+  listen(statsBox, "pointermove", (e) => {
     if (statsDrag) placeStats(e.clientX - statsDrag.dx, e.clientY - statsDrag.dy);
   });
   const endStatsDrag = () => {
@@ -379,9 +359,9 @@ function start(hook) {
     const r = statsBox.getBoundingClientRect();
     prefs.set("statsAt", { x: Math.round(r.left), y: Math.round(r.top) });
   };
-  statsBox.addEventListener("pointerup", endStatsDrag);
-  statsBox.addEventListener("pointercancel", endStatsDrag);
-  window.addEventListener("resize", () => {
+  listen(statsBox, "pointerup", endStatsDrag);
+  listen(statsBox, "pointercancel", endStatsDrag);
+  listen(window, "resize", () => {
     if (!statsBox.hidden) {
       const r = statsBox.getBoundingClientRect();
       placeStats(r.left, r.top);
@@ -394,19 +374,26 @@ function start(hook) {
       ["The NanoKVM"],
       ["Captured", d ? `${per(d.captured)} fps` : "–"],
       ["Encoded", d ? `${per(d.encoded)} fps, ${d.skipped} skipped` : "–"],
+      ["Encoded bitrate", d?.seconds ? `${(d.bytes * 8 / d.seconds / 1e6).toFixed(2)} Mbit/s, ${d.keys} keys` : "–"],
+      ...(d?.key_max_bytes == null ? [] : [["Largest key / delta", `${Math.round(d.key_max_bytes / 1024)} / ${Math.round(d.delta_max_bytes / 1024)} KiB`]]),
       ["Encode time", d ? `${d.encode_ms} ms, ${d.encode_max_ms} max` : "–"],
       ["Frame end to encoded", d && d.ready_ms != null ? `${d.ready_ms} ms, ${d.ready_max_ms} max` : "–"],
+      ...[
+        ["Writer wait", "writer_queue"], ["Bitstream copy", "copy"], ["Pipe write", "pipe"],
+        ["Frame end to BEAM", "port"], ["Frame end to socket", "socket"],
+      ].filter(([, field]) => d?.[`${field}_ms`] != null).map(([label, field]) =>
+        [label, `${d[`${field}_ms`].toFixed(1)} ms, ${d[`${field}_max_ms`].toFixed(1)} max`]),
       ["QP", d ? `${d.qp}, ${d.qp_max} max` : "–"],
       ["This browser"],
       ["Received", `${b.received} fps, ${b.mbit} Mbit/s`],
       ["Longest wait", `${b.gap_max_ms} ms`],
-      ["Network jitter", `${b.late_max_ms} ms`],
+      ["Arrival variation", `${b.late_max_ms} ms`],
       ["Decoded", `${b.decoded} fps, ${b.decode_ms} ms, ${b.decode_max_ms} max`],
       ["Shown", `${b.shown} of ${b.drawn}, ${connection.renderer || "–"}`],
       ["Smoothing", b.delay_ms == null ? "off" : `${b.delay_ms} ms`],
       ["Draw time", `${b.draw_max_ms} ms max`],
       ["Input round trip", b.rtt_ms == null ? "–" : `${b.rtt_ms} ms`],
-      ["Frame end to screen", screenDelay(d, b)],
+      ["Estimated capture to draw", screenDelay(d, b)],
     ];
     connStats.replaceChildren(...rows.flatMap(([term, value]) => {
       if (value === undefined) return [Object.assign(document.createElement("div"), { className: "side", textContent: term })];
@@ -414,18 +401,14 @@ function start(hook) {
               Object.assign(document.createElement("dd"), { textContent: value })];
     }));
   }
+  let sampleAt = performance.now();
   setInterval(() => {
+    const now = performance.now(), elapsed = now - sampleAt;
+    sampleAt = now;
     if (view !== canvas) return;
     const t = tally;
     tally = second();
-    const sample = {
-      type: "stats", received: t.received, mbit: +(t.bytes * 8 / 1e6).toFixed(2), gap_max_ms: Math.round(t.gapMax),
-      decoded: t.decoded, decode_ms: t.decoded ? +(t.decodeSum / t.decoded).toFixed(1) : 0,
-      decode_max_ms: Math.round(t.decodeMax), drawn: t.drawn, shown: t.shown, draw_max_ms: +t.drawMax.toFixed(1),
-      queue_max: t.queueMax, rtt_ms: connection.rtt == null ? undefined : Math.round(connection.rtt),
-      delay_ms: connection.delay == null ? undefined : Math.round(connection.delay),
-      late_max_ms: Math.round(t.lateMax),
-    };
+    const sample = sampleVideo(t, elapsed, connection, !document.hidden);
     send(sample);
     send({ type: "ping", t: performance.now() });
     showConnection(sample);
@@ -436,20 +419,24 @@ function start(hook) {
   const chunkCodec = (type) => (type <= 2 ? "h264" : "h265");
 
   function startVideo(codecs) {
+    if (!scope.active) return;
     view = canvas;
     canvas.hidden = false;
     quality.hidden = false;
     loadQuality();
     const renderer = frameRenderer(canvas);
     connection.renderer = renderer.name;
-    let stopped = false;
+    let stopped = false, socket = null, reconnect = null;
     const open = () => {
-      const ws = new WebSocket(wsUrl(`/video?codecs=${codecs.join(",")}&timestamps=1`));
+      if (stopped || document.hidden || socket) return;
+      const ws = openSocket(wsUrl(`/video?codecs=${codecs.join(",")}&timestamps=1`));
+      socket = ws;
       ws.binaryType = "arraybuffer";
       let synced = false;
       let streamInput;  // input of the stream this decoder gets
       const decoder = new VideoDecoder({
         output: (frame) => {
+          if (stopped || !scope.active || document.hidden) { frame.close(); return; }
           const t = performance.now(), waited = t - frame.timestamp / 1000;
           tally.decoded++;
           tally.decodeSum += waited;
@@ -467,9 +454,30 @@ function start(hook) {
         },
         error: () => ws.close(),
       });
-      const pace = pacer((chunk) => {
-        tally.queueMax = Math.max(tally.queueMax, decoder.decodeQueueSize);
-        decoder.decode(new EncodedVideoChunk({ ...chunk, timestamp: Math.round(performance.now() * 1000) }));
+      const recover = () => {
+        pace.clear();
+        if (decoder.state === "configured") decoder.reset();
+        synced = false;
+        tally.recoveries++;
+        if (streamCodec) decoder.configure({ codec: CODECS[streamCodec].config, optimizeForLatency: true });
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "keyframe" }));
+      };
+      const pace = createPacer({
+        smooth: () => playback === "smooth",
+        observe: ({ late, delay }) => {
+          tally.lateMax = Math.max(tally.lateMax, late);
+          connection.delay = playback === "smooth" ? delay : null;
+        },
+        recover,
+        decode: (chunk) => {
+          if (ws.readyState !== WebSocket.OPEN || decoder.state !== "configured") return false;
+          tally.queueMax = Math.max(tally.queueMax, decoder.decodeQueueSize);
+          if (decoder.decodeQueueSize >= 8) { recover(); return false; }
+          try {
+            decoder.decode(new EncodedVideoChunk({ ...chunk, timestamp: Math.round(performance.now() * 1000) }));
+            return true;
+          } catch (_) { recover(); return false; }
+        },
       });
       // A new codec or input restarts the stream, from a keyframe.
       const reconfigure = (codec) => {
@@ -480,6 +488,7 @@ function start(hook) {
         synced = false;
       };
       ws.onmessage = (ev) => {
+        if (stopped || !scope.active || document.hidden) return;
         if (typeof ev.data === "string") {
           const message = JSON.parse(ev.data);
           if ("stats" in message) {
@@ -513,17 +522,32 @@ function start(hook) {
         }
         if (!key && !synced) return;
         synced = true;
-        // Falling behind: reconnecting gets a fresh keyframe.
-        if (decoder.decodeQueueSize > 30) return ws.close();
         pace.put({ type: key ? "key" : "delta", data: data.subarray(9) }, made, arrived);
       };
       ws.onclose = () => {
+        socket = null;
         lastArrival = 0;
         pace.clear();
         if (decoder.state !== "closed") decoder.close();
         streamCodec = null;
-        if (!stopped) setTimeout(open, 1000);
+        if (!stopped && !document.hidden) reconnect = setTimeout(open, 1000);
       };
+    };
+    const visibility = () => {
+      clearTimeout(reconnect);
+      tally = second();
+      sampleAt = performance.now();
+      lastArrival = 0;
+      if (document.hidden) socket?.close();
+      else if (socket?.readyState === WebSocket.CLOSING) reconnect = setTimeout(open, 100);
+      else open();
+    };
+    listen(document, "visibilitychange", visibility);
+    hook.stopVideo = () => {
+      stopped = true;
+      clearTimeout(reconnect);
+      document.removeEventListener("visibilitychange", visibility);
+      socket?.close();
     };
     open();
     attachInput(canvas);
@@ -532,7 +556,7 @@ function start(hook) {
   let ws = null;
   let target = "usb";
   function connect() {
-    ws = new WebSocket(wsUrl("/ws"));
+    ws = openSocket(wsUrl("/ws"));
     // Each connection starts on USB: tell it the target chosen.
     ws.onopen = () => { mark("input", true); send({ type: "target", target }); };
     ws.onmessage = (ev) => {
@@ -587,8 +611,8 @@ function start(hook) {
   };
 
   for (const el of [canvas, img]) {
-    el.addEventListener("focus", () => document.body.classList.add("controlling"));
-    el.addEventListener("blur", () => document.body.classList.remove("controlling"));
+    listen(el, "focus", () => document.body.classList.add("controlling"));
+    listen(el, "blur", () => document.body.classList.remove("controlling"));
   }
 
   // Wheel deltas, pixels or lines, in steps of about a notch.
@@ -630,7 +654,7 @@ function start(hook) {
     };
     // A press carries the position and the steps so far itself.
     const dropMove = () => { clearTimeout(timer); timer = 0; waiting = null; };
-    el.addEventListener("mousemove", (e) => {
+    listen(el, "mousemove", (e) => {
       if (mouseMode === "relative") {
         if (!locked()) return;
         dx += e.movementX;
@@ -642,7 +666,7 @@ function start(hook) {
       if (wait <= 0) sendMove();
       else timer = setTimeout(sendMove, wait);
     });
-    el.addEventListener("mousedown", (e) => {
+    listen(el, "mousedown", (e) => {
       el.focus();
       e.preventDefault();
       dropMove();
@@ -651,14 +675,14 @@ function start(hook) {
       if (!locked()) return el.requestPointerLock();
       relative(e);
     });
-    el.addEventListener("mouseup", (e) => {
+    listen(el, "mouseup", (e) => {
       // The back and forward buttons would leave the page.
       e.preventDefault();
       dropMove();
       if (mouseMode !== "relative") mouse(e);
       else if (locked()) relative(e);
     });
-    el.addEventListener("wheel", (e) => {
+    listen(el, "wheel", (e) => {
       e.preventDefault();
       const steps = wheelSteps(e);
       if (!steps.wheel && !steps.pan) return;
@@ -689,16 +713,16 @@ function start(hook) {
       send({ type: "touch", touches });
     };
     for (const type of ["touchstart", "touchmove", "touchend", "touchcancel"]) {
-      el.addEventListener(type, touch, { passive: false });
+      listen(el, type, touch, { passive: false });
     }
-    el.addEventListener("contextmenu", (e) => e.preventDefault());
-    el.addEventListener("dragstart", (e) => e.preventDefault());
-    el.addEventListener("keydown", (e) => {
+    listen(el, "contextmenu", (e) => e.preventDefault());
+    listen(el, "dragstart", (e) => e.preventDefault());
+    listen(el, "keydown", (e) => {
       e.preventDefault();
       if (!e.repeat) send({ type: "key", code: e.code, down: true });
     });
-    el.addEventListener("keyup", (e) => { e.preventDefault(); send({ type: "key", code: e.code, down: false }); });
-    el.addEventListener("blur", () => send({ type: "release" }));
+    listen(el, "keyup", (e) => { e.preventDefault(); send({ type: "key", code: e.code, down: false }); });
+    listen(el, "blur", () => send({ type: "release" }));
   }
 
   // ---- Sound ----
@@ -822,7 +846,7 @@ function start(hook) {
       .then(() => ctx.state === "running");
 
   async function makePlayer(rate) {
-    const ctx = new AudioContext(rate ? { latencyHint: "interactive", sampleRate: rate }
+    const ctx = audioContext(rate ? { latencyHint: "interactive", sampleRate: rate }
                                       : { latencyHint: "interactive" });
     const p = { ctx };
     if (ctx.audioWorklet) {
@@ -873,7 +897,7 @@ function start(hook) {
     s.player = await makePlayer();
     const open = () => {
       if (sound !== s) return;
-      const ws = new WebSocket(wsUrl("/audio"));
+      const ws = openSocket(wsUrl("/audio"));
       ws.binaryType = "arraybuffer";
       s.ws = ws;
       ws.onmessage = (ev) => {
@@ -1001,7 +1025,7 @@ function start(hook) {
 
   async function startMic() {
     // Made in the click, before the permission prompt ends the user gesture.
-    const m = { stream: null, ctx: new AudioContext(), node: null, ws: null, limit: 0 };
+    const m = { stream: null, ctx: audioContext(), node: null, ws: null, limit: 0 };
     mic = m;
     const voice = prefs.get("voice", true);
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -1009,9 +1033,11 @@ function start(hook) {
                autoGainControl: voice },
     });
     m.stream = stream;
-    if (mic !== m) return stream.getTracks().forEach((track) => track.stop());
+    scope.own(() => stream.getTracks().forEach((track) => track.stop()));
+    if (!scope.active || mic !== m) return stream.getTracks().forEach((track) => track.stop());
     await started(m.ctx);
-    const ws = new WebSocket(wsUrl("/microphone"));
+    if (!scope.active || mic !== m) return;
+    const ws = openSocket(wsUrl("/microphone"));
     ws.binaryType = "arraybuffer";
     m.ws = ws;
     ws.onmessage = (ev) => {
@@ -1041,7 +1067,7 @@ function start(hook) {
     if (!m.node) {
       let ctx = null;
       try {
-        ctx = new AudioContext({ sampleRate: f.rate });
+        ctx = audioContext({ sampleRate: f.rate });
         await record(m, ctx);
         m.ctx.close();
         m.ctx = ctx;
@@ -1172,11 +1198,11 @@ function start(hook) {
   // which only a request can.
   const postJson = (path, body) => fetch(path, { method: "POST",
     headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  window.addEventListener("kvm:logout", async () => {
+  listen(window, "kvm:logout", async () => {
     await postJson("/api/auth/logout", {}).catch(() => null);
     location.reload();
   });
-  window.addEventListener("kvm:password", async (e) => {
+  listen(window, "kvm:password", async (e) => {
     const form = e.target, state = form.querySelector(".message");
     const { current, password, again } = Object.fromEntries(new FormData(form));
     state.classList.toggle("error", false);
@@ -1227,7 +1253,7 @@ function start(hook) {
       view.focus();
     }
   };
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) loadQuality(); });
+  listen(document, "visibilitychange", () => { if (!document.hidden) loadQuality(); });
 
   // ---- Virtual disk ----
   document.getElementById("disk").onclick = () => KuronekoDisk.open({ onClose: () => view.focus() });
@@ -1249,7 +1275,7 @@ function start(hook) {
     if (!on) view.focus();
   }
   ocrButton.onclick = () => ocrSelecting(ocrLayer.hidden);
-  document.addEventListener("keydown", (e) => {
+  listen(document, "keydown", (e) => {
     if (e.key === "Escape" && !ocrLayer.hidden) { e.preventDefault(); ocrSelecting(false); }
   }, true);
 
@@ -1304,10 +1330,10 @@ function start(hook) {
     ocrDialog.close();
   };
   document.getElementById("ocrclose").onclick = () => ocrDialog.close();
-  ocrDialog.addEventListener("close", () => view.focus());
+  listen(ocrDialog, "close", () => view.focus());
 
   updateMicButton();
-  playback = prefs.get("playback", "smooth") === "latency" ? "latency" : "smooth";
+  playback = prefs.get("playback", "latency") === "smooth" ? "smooth" : "latency";
   showPlayback();
   const statsAt = prefs.get("statsAt", null);
   if (statsAt && Number.isFinite(statsAt.x) && Number.isFinite(statsAt.y)) {

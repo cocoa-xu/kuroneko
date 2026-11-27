@@ -992,6 +992,10 @@ defmodule Kuroneko.VideoSocket do
   that the page can show the frames at the pace they were made. Text messages, `{"input": ...}`,
   come when the video input changes, and `{"stats": ...}` once a second
   with what the capture and the encoder did (`t:NanoKVMGo.Video.stats/0`).
+  Timestamped streams add capture-to-callback mean/max `socket_ms` and
+  `socket_max_ms` over `socket_frames`; this excludes the subsequent TLS send.
+  A `{"type":"keyframe"}` request restarts decoding after dropped references;
+  requests within 500 ms are coalesced into one deferred request.
   The socket closes, with 1011, when the video process stops: the page
   connects again to the one that follows.
   """
@@ -1025,6 +1029,28 @@ defmodule Kuroneko.VideoSocket do
   end
 
   @impl WebSock
+  def handle_in({text, opcode: :text}, state) when byte_size(text) <= 128 do
+    now = System.monotonic_time(:millisecond)
+    previous = Map.get(state, :key_request_at, now - 500)
+
+    if Jason.decode(text) == {:ok, %{"type" => "keyframe"}} do
+      cond do
+        Map.get(state, :key_pending?, false) ->
+          {:ok, state}
+
+        now - previous >= 500 ->
+          NanoKVMGo.Video.request_keyframe()
+          {:ok, Map.put(state, :key_request_at, now)}
+
+        true ->
+          Process.send_after(self(), :video_keyframe, 500 - (now - previous))
+          {:ok, Map.put(state, :key_pending?, true)}
+      end
+    else
+      {:ok, state}
+    end
+  end
+
   def handle_in(_frame, state), do: {:ok, state}
 
   @impl WebSock
@@ -1033,6 +1059,9 @@ defmodule Kuroneko.VideoSocket do
   end
 
   def handle_info({NanoKVMGo.Video, {codec, kind, au, at}}, state) do
+    age = max(0, System.monotonic_time(:microsecond) - at)
+    {count, sum, longest} = Map.get(state, :socket_timing, {0, 0, 0})
+    state = Map.put(state, :socket_timing, {count + 1, sum + age, max(longest, age)})
     {:push, {:binary, [type(codec, kind), <<at::signed-64>>, au]}, state}
   end
 
@@ -1041,7 +1070,23 @@ defmodule Kuroneko.VideoSocket do
   end
 
   def handle_info({NanoKVMGo.Video, {:stats, stats}}, state) do
-    {:push, {:text, Jason.encode!(%{stats: stats})}, state}
+    {count, sum, longest} = Map.get(state, :socket_timing, {0, 0, 0})
+
+    stats =
+      Map.merge(stats, %{
+        socket_frames: count,
+        socket_ms: if(count > 0, do: sum / count / 1000, else: 0),
+        socket_max_ms: longest / 1000
+      })
+
+    {:push, {:text, Jason.encode!(%{stats: stats})}, Map.put(state, :socket_timing, {0, 0, 0})}
+  end
+
+  def handle_info(:video_keyframe, %{key_pending?: true} = state) do
+    NanoKVMGo.Video.request_keyframe()
+
+    {:ok,
+     Map.merge(state, %{key_pending?: false, key_request_at: System.monotonic_time(:millisecond)})}
   end
 
   def handle_info({:DOWN, monitor, :process, _pid, _reason}, %{video: monitor} = state) do

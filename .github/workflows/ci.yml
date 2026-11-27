@@ -46,6 +46,7 @@ jobs:
       - run: mix format --check-formatted
       - run: mix compile --warnings-as-errors --force
       - run: mix test
+      - run: node --test test/js/*.test.mjs
 
   firmware:
     runs-on: ubuntu-24.04
