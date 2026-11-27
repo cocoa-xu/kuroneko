@@ -8,7 +8,10 @@ defmodule KuronekoWeb.Endpoint do
   use Phoenix.Endpoint, otp_app: :kuroneko
 
   socket "/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [session: {Kuroneko.Web, :session_options, []}], check_origin: :conn],
+    websocket: [
+      connect_info: [session: {Kuroneko.Web, :session_options, []}],
+      check_origin: :conn
+    ],
     longpoll: false
 
   plug Plug.Static, at: "/", from: :kuroneko, gzip: false, only: KuronekoWeb.static_paths()

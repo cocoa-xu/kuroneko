@@ -657,8 +657,8 @@ defmodule Kuroneko.Web do
   defp authenticate(conn, _opts) do
     if {conn.method, conn.request_path} in @public or
          String.starts_with?(conn.request_path, "/assets/") or logged_in?(conn),
-      do: conn,
-      else: conn |> json(401, %{error: "log in first"}) |> halt()
+       do: conn,
+       else: conn |> json(401, %{error: "log in first"}) |> halt()
   end
 
   defp logged_in?(conn) do
