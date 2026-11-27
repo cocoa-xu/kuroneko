@@ -562,7 +562,7 @@
   // stutter. The delay covers the latest frames of the last seconds: it
   // grows at once and shrinks slowly. Lowest latency: each as it arrives.
   const SMOOTH_MAX_MS = 250;
-  let playback = prefs.get("playback", "smooth") === "latency" ? "latency" : "smooth";
+  let playback = "smooth";
   const playbackGroup = document.getElementById("playback");
   function showPlayback() {
     for (const b of playbackGroup.children) b.setAttribute("aria-pressed", String(b.dataset.playback === playback));
@@ -574,7 +574,6 @@
     prefs.set("playback", playback);
     showPlayback();
   };
-  showPlayback();
 
   function pacer(decode) {
     let base = null, transits = [], lates = [], delay = 0, queue = [], timer = 0;
@@ -1542,6 +1541,8 @@
   ocrDialog.addEventListener("close", () => view.focus());
 
   updateMicButton();
+  playback = prefs.get("playback", "smooth") === "latency" ? "latency" : "smooth";
+  showPlayback();
   mouseMode = prefs.get("mouseMode", "absolute") === "relative" ? "relative" : "absolute";
   showMouseMode();
   const localPointer = prefs.get("localPointer", "dot");
