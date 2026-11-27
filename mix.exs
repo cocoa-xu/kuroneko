@@ -11,6 +11,7 @@ defmodule Kuroneko.MixProject do
       version: @version,
       elixir: "~> 1.20",
       archives: [nerves_bootstrap: "~> 1.17"],
+      compilers: [:phoenix_live_view] ++ Mix.compilers(),
       listeners: listeners(Mix.target(), Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
