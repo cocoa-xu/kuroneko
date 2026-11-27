@@ -7,6 +7,11 @@
   took, and what the browser received, decoded and showed, the longest
   wait for a frame and the input's round trip. The page tells the NanoKVM
   its side as well (`Kuroneko.ViewerStats`)
+* Smooth playback on the KVM page, as WebRTC players do: frames go to the
+  decoder at the pace the NanoKVM's encoder made them (the video socket's
+  `&timestamps=1`), a little later than the fastest lately, the delay
+  growing at once to cover frames the network held back and shrinking
+  slowly; Lowest latency in the picture's menu shows each as it arrives
 * The KVM page draws the picture with WebGL, from the decoder's memory, a
   2D canvas only where there is no WebGL; this computer's pointer shows
   over the picture (a dot by default); the mouse's last position and every

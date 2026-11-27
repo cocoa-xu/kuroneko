@@ -173,6 +173,13 @@
     <select id="quality" title="Presets as the stock firmware's, and more on the device page" hidden></select>
   </section>
   <section>
+    <span class="label">Playback</span>
+    <div class="seg" id="playback" role="group" aria-label="Playback">
+      <button data-playback="smooth" title="Frames at the pace the NanoKVM made them, a little later than they could come, so that the network's hiccups do not show">Smooth</button>
+      <button data-playback="latency" title="Each frame as soon as it arrives">Lowest latency</button>
+    </div>
+  </section>
+  <section>
     <span class="label">Connection quality, each second</span>
     <dl class="stats" id="connstats"></dl>
   </section>
@@ -545,9 +552,69 @@
   // ---- Connection quality: each second, what the device did with the
   // picture, as it says, and what this browser did with it. The page tells
   // the device its side too (Kuroneko.ViewerStats).
-  const connection = { device: null, rtt: null, renderer: null };
+  const connection = { device: null, rtt: null, renderer: null, delay: null };
   const second = () => ({ received: 0, bytes: 0, gapMax: 0, decoded: 0, decodeSum: 0, decodeMax: 0,
                           drawn: 0, shown: 0, drawMax: 0, queueMax: 0 });
+
+  // ---- Playback. Smooth: each frame goes to the decoder at the pace the
+  // NanoKVM made it, a little later than the fastest any frame came lately,
+  // so that a moment the network holds frames back does not show as a
+  // stutter. The delay covers the latest frames of the last seconds: it
+  // grows at once and shrinks slowly. Lowest latency: each as it arrives.
+  const SMOOTH_MAX_MS = 250;
+  let playback = prefs.get("playback", "smooth") === "latency" ? "latency" : "smooth";
+  const playbackGroup = document.getElementById("playback");
+  function showPlayback() {
+    for (const b of playbackGroup.children) b.setAttribute("aria-pressed", String(b.dataset.playback === playback));
+  }
+  playbackGroup.onclick = (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    playback = b.dataset.playback;
+    prefs.set("playback", playback);
+    showPlayback();
+  };
+  showPlayback();
+
+  function pacer(decode) {
+    let base = null, transits = [], lates = [], delay = 0, queue = [], timer = 0;
+    const drain = () => {
+      timer = 0;
+      const now = performance.now();
+      while (queue.length && queue[0].due <= now + 1) decode(queue.shift().chunk);
+      if (queue.length) timer = setTimeout(drain, queue[0].due - now);
+    };
+    return {
+      // made: the device's time for the frame, in microseconds (BigInt).
+      put(chunk, made, arrived) {
+        if (playback !== "smooth" || made === null) {
+          connection.delay = null;
+          if (!queue.length) return decode(chunk);
+          queue.push({ due: 0, chunk });
+          return drain();
+        }
+        if (base === null) base = made;
+        const transit = arrived - Number(made - base) / 1000;
+        transits.push(transit);
+        if (transits.length > 150) transits.shift();
+        const fastest = Math.min(...transits);
+        lates.push(transit - fastest);
+        if (lates.length > 120) lates.shift();
+        const target = Math.min(SMOOTH_MAX_MS, Math.max(...lates));
+        delay = target > delay ? target : Math.max(target, delay - 0.5);
+        connection.delay = delay;
+        const due = arrived - (transit - fastest) + delay;
+        if (!queue.length && due <= arrived + 1) return decode(chunk);
+        queue.push({ due, chunk });
+        if (!timer) timer = setTimeout(drain, Math.max(0, due - arrived));
+      },
+      clear() {
+        clearTimeout(timer);
+        timer = 0;
+        queue = [];
+      },
+    };
+  }
   let tally = second(), lastArrival = 0, drewThisFrame = false;
   // A frame drawn twice before the display refreshes shows only once.
   (function countShown() {
@@ -569,6 +636,7 @@
       ["Longest wait for a frame", `${b.gap_max_ms} ms`],
       ["Decoded", `${b.decoded} fps, ${b.decode_ms} ms, ${b.decode_max_ms} at most`],
       ["Shown", `${b.shown} of ${b.drawn} drawn, ${connection.renderer || "–"}`],
+      ["Smoothing", b.delay_ms == null ? "off" : `${b.delay_ms} ms behind`],
       ["Drawing a frame", `${b.draw_max_ms} ms at most`],
       ["Input round trip", b.rtt_ms == null ? "–" : `${b.rtt_ms} ms`],
     ];
@@ -587,6 +655,7 @@
       decoded: t.decoded, decode_ms: t.decoded ? +(t.decodeSum / t.decoded).toFixed(1) : 0,
       decode_max_ms: Math.round(t.decodeMax), drawn: t.drawn, shown: t.shown, draw_max_ms: +t.drawMax.toFixed(1),
       queue_max: t.queueMax, rtt_ms: connection.rtt == null ? undefined : Math.round(connection.rtt),
+      delay_ms: connection.delay == null ? undefined : Math.round(connection.delay),
     };
     send(sample);
     send({ type: "ping", t: performance.now() });
@@ -606,7 +675,7 @@
     connection.renderer = renderer.name;
     let stopped = false;
     const open = () => {
-      const ws = new WebSocket(wsUrl(`/video?codecs=${codecs.join(",")}`));
+      const ws = new WebSocket(wsUrl(`/video?codecs=${codecs.join(",")}&timestamps=1`));
       ws.binaryType = "arraybuffer";
       let synced = false;
       let streamInput;  // input of the stream this decoder gets
@@ -629,8 +698,13 @@
         },
         error: () => ws.close(),
       });
+      const pace = pacer((chunk) => {
+        tally.queueMax = Math.max(tally.queueMax, decoder.decodeQueueSize);
+        decoder.decode(new EncodedVideoChunk({ ...chunk, timestamp: Math.round(performance.now() * 1000) }));
+      });
       // A new codec or input restarts the stream, from a keyframe.
       const reconfigure = (codec) => {
+        pace.clear();
         if (decoder.state === "configured") decoder.reset();
         decoder.configure({ codec: CODECS[codec].config, optimizeForLatency: true });
         streamCodec = codec;
@@ -655,6 +729,8 @@
         tally.received++;
         tally.bytes += ev.data.byteLength;
         const data = new Uint8Array(ev.data);
+        // The type, then the time the NanoKVM's encoder made the frame.
+        const made = new DataView(ev.data).getBigInt64(1);
         const codec = chunkCodec(data[0]);
         const key = data[0] === 2 || data[0] === 4;
         if (codec !== streamCodec) {
@@ -670,12 +746,11 @@
         synced = true;
         // Falling behind: reconnecting gets a fresh keyframe.
         if (decoder.decodeQueueSize > 30) return ws.close();
-        decoder.decode(new EncodedVideoChunk({ type: key ? "key" : "delta",
-          timestamp: Math.round(arrived * 1000), data: data.subarray(1) }));
-        tally.queueMax = Math.max(tally.queueMax, decoder.decodeQueueSize);
+        pace.put({ type: key ? "key" : "delta", data: data.subarray(9) }, made, arrived);
       };
       ws.onclose = () => {
         lastArrival = 0;
+        pace.clear();
         if (decoder.state !== "closed") decoder.close();
         streamCodec = null;
         if (!stopped) setTimeout(open, 1000);

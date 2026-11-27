@@ -3,14 +3,15 @@ defmodule Kuroneko.ViewerStats do
   What the viewers' pages saw of the video, a sample a second from each over
   the input socket: frames received and the longest gap between two,
   frames decoded, drawn and shown, the time to decode and to draw, the
-  decoder's queue and the input's round trip. The last five minutes of
+  decoder's queue, the input's round trip and how far behind smooth
+  playback keeps the picture. The last five minutes of
   samples are kept, for looking into a picture that stutters.
   """
   use Agent
 
   @keep 300
   @numbers Map.new(
-             ~w(received mbit gap_max_ms decoded decode_ms decode_max_ms drawn shown draw_max_ms queue_max rtt_ms)a,
+             ~w(received mbit gap_max_ms decoded decode_ms decode_max_ms drawn shown draw_max_ms queue_max rtt_ms delay_ms)a,
              &{Atom.to_string(&1), &1}
            )
 
