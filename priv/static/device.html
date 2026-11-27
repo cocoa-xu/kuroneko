@@ -105,6 +105,7 @@
   .segmented button { height: 28px; padding: 0 12px; border: 0; border-radius: 7px; background: transparent;
     color: var(--text-2); font: inherit; font-weight: 550; cursor: pointer; }
   .segmented button[aria-pressed="true"] { background: var(--line-2); color: var(--text); }
+  .segmented button:disabled { opacity: 0.5; cursor: default; }
 
   /* Layout */
   main { max-width: 1280px; margin: 0 auto; padding: 30px 24px 72px; }
@@ -235,6 +236,9 @@
   #usb .control > .label { padding-top: 6px; }
   #usb .control > :not(.label) { grid-column: 2; }
   #usb .control > .more:empty { display: none; }
+  /* A setting of the device above it, as the extra networks are */
+  .control .field.sub { padding-left: 12px; border-left: 2px solid var(--line-2); }
+  .field.sub .sublabel { color: var(--text-2); }
   #epsummary.over { color: #ffc2c2; }
   .check { display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); }
   .more { display: grid; gap: 8px; }
@@ -553,6 +557,18 @@
       <p class="note" id="noxpansion" hidden>This system's kernel has no driver for the auxiliary port's
         lines.</p>
     </section>
+
+    <section class="card" id="bluetooth">
+      <header>
+        <h2><svg class="icon"><use href="#i-bluetooth"/></svg>Bluetooth</h2>
+        <button class="btn small" id="btpair" type="button" disabled>Pair a device…</button>
+      </header>
+      <dl class="facts" id="btfacts"></dl>
+      <div class="ifaces" id="btdevices"></div>
+      <p class="note">While pairing is open, a phone, tablet or computer finds the NanoKVM in its Bluetooth
+        settings as a keyboard and mouse, and stays paired. The KVM page's Input button then sends the
+        keyboard and mouse there instead of to USB.</p>
+    </section>
     </div>
 
     <div class="column">
@@ -651,18 +667,6 @@
           addresses where those are taken on the computer's networks.</p>
       </div>
     </section>
-
-    <section class="card" id="bluetooth">
-      <header>
-        <h2><svg class="icon"><use href="#i-bluetooth"/></svg>Bluetooth</h2>
-        <button class="btn small" id="btpair" type="button" disabled>Pair a device…</button>
-      </header>
-      <dl class="facts" id="btfacts"></dl>
-      <div class="ifaces" id="btdevices"></div>
-      <p class="note">While pairing is open, a phone, tablet or computer finds the NanoKVM in its Bluetooth
-        settings as a keyboard and mouse, and stays paired. The KVM page's Input button then sends the
-        keyboard and mouse there instead of to USB.</p>
-    </section>
     </div>
 
     <section class="card wide" id="usb">
@@ -697,8 +701,14 @@
               <option value="stylus">Pen (Android, iPad)</option>
               <option value="touch">Touch screen</option>
             </select>
-            <label class="check"><input type="checkbox" id="usbjiggler"> Mouse jiggler: a pixel and back
-              each minute, so that the target stays awake</label>
+          </div>
+          <div class="field sub">
+            <span class="sublabel" id="jigglerlabel">Mouse jiggler</span>
+            <div class="segmented" role="group" aria-labelledby="jigglerlabel" data-setting="jiggler" id="usbjiggler">
+              <button type="button" data-value="false">Off</button>
+              <button type="button" data-value="true">On</button>
+            </div>
+            <span class="muted">a pixel and back each minute, so that the target stays awake</span>
           </div>
         </div>
         <div class="control">
@@ -1636,8 +1646,7 @@ function renderUsbDraft() {
   }
   $("usbpointer").value = d.pointer;
   $("usbpointer").disabled = !d.hid;
-  $("usbjiggler").checked = d.jiggler;
-  $("usbjiggler").disabled = !d.hid;
+  for (const button of $("usbjiggler").children) button.disabled = !d.hid;
   $("usbdrives").value = String(d.drives);
   $("usbdrives").disabled = !d.storage;
   renderMoreDevices();
@@ -1751,7 +1760,6 @@ $("usbdevices").addEventListener("click", (e) => {
   renderUsbDraft();
 });
 $("usbpointer").addEventListener("change", () => { usbDraft.pointer = $("usbpointer").value; refreshUsb(); });
-$("usbjiggler").addEventListener("change", () => { usbDraft.jiggler = $("usbjiggler").checked; refreshUsb(); });
 $("usbdrives").addEventListener("change", () => { usbDraft.drives = +$("usbdrives").value; refreshUsb(); });
 $("usbaddnetwork").addEventListener("click", () => {
   usbDraft.networks.push(nextName("usb", ["usb0", ...usbDraft.networks], 1));
