@@ -19,7 +19,7 @@ defmodule KuronekoWeb.DeviceLive.Overview do
           <span class="hidden sm:inline">NanoKVM-Go</span>
         </a>
         <nav
-          class="ml-2 flex gap-0.5 rounded-field bg-base-300/70 p-0.5 text-[13px]"
+          class="flex gap-0.5 rounded-field bg-base-300/70 p-0.5 text-[13px] sm:ml-2"
           aria-label="Pages"
         >
           <a
@@ -37,19 +37,29 @@ defmodule KuronekoWeb.DeviceLive.Overview do
           >Settings</a>
         </nav>
         <div class="flex-1" />
-        <span class="hidden items-center gap-1.5 text-xs text-base-content/60 phx-connected:inline-flex">
-          <span class="size-2 animate-pulse rounded-full bg-success" /> Live
+        <span
+          class="hidden items-center gap-1.5 text-xs text-base-content/60 phx-connected:inline-flex"
+          title="Live"
+        >
+          <span class="size-2 animate-pulse rounded-full bg-success" />
+          <span class="max-sm:hidden">Live</span>
         </span>
-        <span class="inline-flex items-center gap-1.5 text-xs text-warning phx-connected:hidden">
-          <span class="size-2 rounded-full bg-warning" /> Connecting
+        <span
+          class="inline-flex items-center gap-1.5 text-xs text-warning phx-connected:hidden"
+          title="Connecting"
+        >
+          <span class="size-2 rounded-full bg-warning" />
+          <span class="max-sm:hidden">Connecting</span>
         </span>
         <.button
           size={:sm}
           kind={:danger}
           phx-click={JS.show(to: "#restart-dialog")}
           disabled={@restarting}
+          aria-label="Restart"
         >
-          <.icon name="hero-power-mini" class="size-4" /> Restart
+          <.icon name="hero-power-mini" class="size-4" />
+          <span class="max-sm:hidden">Restart</span>
         </.button>
       </div>
     </header>
