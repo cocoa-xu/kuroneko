@@ -69,6 +69,13 @@ defmodule Kuroneko.VirtualDisk do
   def state, do: GenServer.call(__MODULE__, :state, 30_000)
 
   @doc """
+  What is in the drives and what is under way, as `state/0` says them,
+  without reading the library: `%{drives: [...], busy: nil | %{...}}`.
+  """
+  @spec drives() :: %{drives: [map()], busy: map() | nil}
+  def drives, do: GenServer.call(__MODULE__, :drives, 30_000)
+
+  @doc """
   Puts an image file or a folder of the library in a drive. Options:
 
     * `:drive`: the drive, by default the one that has it already, else the
@@ -275,20 +282,20 @@ defmodule Kuroneko.VirtualDisk do
     state = check_drives(state)
     {items, state} = items(state)
 
-    drives =
-      for {{storage, lun} = slot, drive} <- Enum.with_index(slots()) do
-        %{drive: drive, storage: storage, lun: lun, medium: view(medium(state, slot), drive)}
-      end
-
     reply = %{
       items: items,
-      drives: drives,
+      drives: drive_list(state),
       busy: state.busy,
       free: free_space(),
       error: state.error
     }
 
     {:reply, reply, state}
+  end
+
+  def handle_call(:drives, _from, state) do
+    state = check_drives(state)
+    {:reply, %{drives: drive_list(state), busy: state.busy}, state}
   end
 
   def handle_call(:media, _from, state) do
@@ -397,6 +404,12 @@ defmodule Kuroneko.VirtualDisk do
 
   # A medium as the page and the API see it: its drive by number, not by
   # function and LUN.
+  defp drive_list(state) do
+    for {{storage, lun} = slot, drive} <- Enum.with_index(slots()) do
+      %{drive: drive, storage: storage, lun: lun, medium: view(medium(state, slot), drive)}
+    end
+  end
+
   defp view(nil, _drive), do: nil
   defp view(medium, drive), do: medium |> Map.delete(:request) |> Map.put(:drive, drive)
 
