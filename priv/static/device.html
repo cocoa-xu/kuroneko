@@ -401,6 +401,7 @@
   <symbol id="i-network" viewBox="0 0 24 24"><path d="M7 20V5M3 9l4-4 4 4M17 4v15M13 15l4 4 4-4"/></symbol>
   <symbol id="i-video" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
   <symbol id="i-usb" viewBox="0 0 24 24"><path d="M12 21V4M9.5 6 12 3l2.5 3"/><path d="M12 14 7.5 11.5V9M12 16.5l4.5-2.5v-3"/><rect x="15" y="8.5" width="3" height="2.5" rx=".5"/><circle cx="7.5" cy="8" r="1.4"/><circle cx="12" cy="20" r="1.5"/></symbol>
+  <symbol id="i-bluetooth" viewBox="0 0 24 24"><path d="m7 7 10 10-5 5V2l5 5L7 17"/></symbol>
   <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M2 8.8a15 15 0 0 1 20 0M5 12.5a10.5 10.5 0 0 1 14 0M8.5 16.1a5.5 5.5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1"/></symbol>
   <symbol id="i-storage" viewBox="0 0 24 24"><path d="M7 2.5h8l4.5 4.5v13a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 20V4A1.5 1.5 0 0 1 7 2.5Z"/><path d="M9.5 6v3M12.5 6v3M15.5 6.5V9"/></symbol>
   <symbol id="i-firmware" viewBox="0 0 24 24"><path d="m21 8-9-5-9 5 9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8M12 13v8"/></symbol>
@@ -649,6 +650,18 @@
         <p class="note">By default the NanoKVM takes a /30 in 172.31.0.0/16, made from its name. Choose other
           addresses where those are taken on the computer's networks.</p>
       </div>
+    </section>
+
+    <section class="card" id="bluetooth">
+      <header>
+        <h2><svg class="icon"><use href="#i-bluetooth"/></svg>Bluetooth</h2>
+        <button class="btn small" id="btpair" type="button" disabled>Pair a device…</button>
+      </header>
+      <dl class="facts" id="btfacts"></dl>
+      <div class="ifaces" id="btdevices"></div>
+      <p class="note">While pairing is open, a phone, tablet or computer finds the NanoKVM in its Bluetooth
+        settings as a keyboard and mouse, and stays paired. The KVM page's Input button then sends the
+        keyboard and mouse there instead of to USB.</p>
     </section>
     </div>
 
@@ -1203,6 +1216,9 @@ function renderStatus(s) {
     const up = wifi.connection === "internet" || wifi.connection === "lan";
     chips.push(chip("wifi", up ? "ok" : "warn", "Wi-Fi ", h("b", null, up ? "connected" : "not connected")));
   }
+  const bt = s.bluetooth;
+  if (bt) chips.push(chip("bluetooth", bt.host ? "ok" : "", "Bluetooth ",
+    h("b", null, bt.host ? "host connected" : bt.pairing ? "pairing" : "on")));
   if (state.metrics) chips.push(chip("clock", "", "Up ", h("b", { class: "num" }, fmt.duration(state.metrics.uptime))));
   if (o) {
     const running = o.firmware.slots.find((slot) => slot.active);
@@ -1216,6 +1232,7 @@ function renderStatus(s) {
   renderUsb(s.usb);
   renderExpansion(s.expansion);
   renderNetwork(s.network);
+  renderBluetooth(s.bluetooth);
   renderUsbNetwork(s.usb.network);
   renderUsbAddresses(s.usb.addresses);
   renderBeam(s.beam);
@@ -1964,6 +1981,59 @@ function renderNetwork(network) {
         h("a", { class: "btn small primary", href: "/settings#wifi" }, "Set up Wi-Fi")) : null);
   }));
 }
+
+// ---- Bluetooth: pairing, the paired devices
+
+let btPairing = false;
+
+function renderBluetooth(bt) {
+  $("btpair").disabled = !bt;
+  if (!bt) {
+    facts($("btfacts"), [["State", "Not running: the system has no Bluetooth"]]);
+    $("btdevices").replaceChildren();
+    return;
+  }
+  btPairing = bt.pairing;
+  $("btpair").textContent = bt.pairing ? "Stop pairing" : "Pair a device…";
+  $("btpair").classList.toggle("primary", bt.pairing);
+  facts($("btfacts"), [
+    ["Name", bt.name],
+    ["Address", h("span", { class: "mono" }, bt.address)],
+    ["Pairing", bt.pairing ? "Open for 2 minutes: pair from the other device's Bluetooth settings" : "Closed"],
+    ["Keyboard and mouse", bt.host ? "In use by a paired device" : "No paired device connected"],
+  ]);
+  $("btdevices").replaceChildren(...bt.devices.map((d) =>
+    h("div", { class: "iface" },
+      h("header", null, icon("bluetooth"), h("b", null, d.name || d.address),
+        h("span", { class: "spacer" }),
+        h("span", { class: `badge ${d.connected ? "ok" : ""}` }, d.connected ? "Connected" : "Paired"),
+        forgetButton(d)))));
+}
+
+function forgetButton(device) {
+  const button = h("button", { class: "btn small danger", type: "button" }, "Forget");
+  button.onclick = async () => {
+    button.disabled = true;
+    try {
+      renderBluetooth(await post("/api/bluetooth/forget", { address: device.address }));
+      toast(`${device.name || device.address} forgotten`);
+    } catch (err) {
+      toast(`Not forgotten: ${err.message}`, true);
+      button.disabled = false;
+    }
+  };
+  return button;
+}
+
+$("btpair").onclick = async () => {
+  $("btpair").disabled = true;
+  try {
+    renderBluetooth(await post("/api/bluetooth/pairing", { open: !btPairing }));
+  } catch (err) {
+    toast(`Pairing not changed: ${err.message}`, true);
+    $("btpair").disabled = false;
+  }
+};
 
 // ---- The USB network's MAC addresses
 

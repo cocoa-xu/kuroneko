@@ -446,6 +446,28 @@ defmodule Kuroneko.Web do
     end
   end
 
+  # Pairing stays open 2 minutes, or until closed.
+  post "/api/bluetooth/pairing" do
+    with {:ok, %{"open" => open}, conn} when is_boolean(open) <- page_json(conn) do
+      bluetooth_reply(conn, fn ->
+        if open,
+          do: NanoKVMGo.Bluetooth.open_pairing(120),
+          else: NanoKVMGo.Bluetooth.close_pairing()
+      end)
+    else
+      other -> refused(conn, other)
+    end
+  end
+
+  post "/api/bluetooth/forget" do
+    with {:ok, %{"address" => address}, conn} when is_binary(address) <- page_json(conn),
+         true <- address =~ ~r/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/ do
+      bluetooth_reply(conn, fn -> NanoKVMGo.Bluetooth.forget(address) end)
+    else
+      other -> refused(conn, other)
+    end
+  end
+
   # The Wi-Fi restarts with the country's rules: the reply leaves first.
   post "/api/wifi/country" do
     with {:ok, %{"country" => code}, conn} <- page_json(conn),
@@ -551,6 +573,7 @@ defmodule Kuroneko.Web do
         },
         mjpeg_token: Application.get_env(:kuroneko, :mjpeg_token),
         ocr: Kuroneko.OCR.available?(),
+        bluetooth: Kuroneko.Bluetooth.status(),
         temperature: temperature(),
         metrics: metrics()
       })
@@ -648,6 +671,15 @@ defmodule Kuroneko.Web do
        do: {:ok, %{x: x, y: y, width: w, height: h}}
 
   defp ocr_area(_data), do: :error
+
+  defp bluetooth_reply(conn, change) do
+    case change.() do
+      :ok -> json(conn, 200, Kuroneko.Bluetooth.status())
+      {:error, reason} -> json(conn, 409, %{error: inspect(reason)})
+    end
+  catch
+    :exit, _not_running -> json(conn, 503, %{error: "Bluetooth is not running"})
+  end
 
   defp refused(conn, {:page, false}), do: send_resp(conn, 403, "forbidden")
   defp refused(conn, _other), do: send_resp(conn, 400, "bad request")
@@ -875,19 +907,28 @@ end
 
 defmodule Kuroneko.InputSocket do
   @moduledoc false
+  # The viewer's input goes to the USB devices, or after
+  # {"type": "target", "target": "bluetooth"} to the Bluetooth ones.
   @behaviour WebSock
 
+  @targets %{"usb" => Kuroneko.Gadget.Input, "bluetooth" => Kuroneko.Bluetooth.Input}
+
   @impl WebSock
-  def init(state), do: {:ok, state}
+  def init(_args), do: {:ok, %{input: Kuroneko.Gadget.Input}}
 
   @impl WebSock
   def handle_in({text, opcode: :text}, state) do
     case Jason.decode(text) do
-      {:ok, event} when is_map(event) -> Kuroneko.BrowserInput.handle(event)
-      _ -> :ok
-    end
+      {:ok, %{"type" => "target", "target" => target}} when is_map_key(@targets, target) ->
+        {:ok, retarget(state, @targets[target])}
 
-    {:ok, state}
+      {:ok, event} when is_map(event) ->
+        Kuroneko.BrowserInput.handle(event, state.input)
+        {:ok, state}
+
+      _ ->
+        {:ok, state}
+    end
   end
 
   def handle_in(_frame, state), do: {:ok, state}
@@ -895,10 +936,18 @@ defmodule Kuroneko.InputSocket do
   @impl WebSock
   def handle_info(_message, state), do: {:ok, state}
 
-  # Keys held when the browser goes away must not stay pressed on the target.
+  # Keys held when the browser goes away, or turns to the other target,
+  # must not stay pressed.
   @impl WebSock
-  def terminate(_reason, _state) do
-    Kuroneko.Gadget.Input.release_all()
+  def terminate(_reason, state) do
+    Kuroneko.Gadget.Input.release_all(state.input)
+  end
+
+  defp retarget(%{input: input} = state, input), do: state
+
+  defp retarget(state, input) do
+    Kuroneko.Gadget.Input.release_all(state.input)
+    %{state | input: input}
   end
 end
 

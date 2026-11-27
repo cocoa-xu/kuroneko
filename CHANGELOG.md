@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+* The KVM as a Bluetooth keyboard and mouse, for a phone, tablet or computer
+  that pairs with it: the device page's Bluetooth card opens pairing for 2
+  minutes and lists the paired devices, which it can forget; the KVM page's
+  Input button sends the keyboard and mouse there instead of to USB. It
+  needs the system with BlueZ
 * Text in the picture: Text on the KVM page, then a drag over a part of the
   picture, and the NanoKVM's NPU reads the text there (PP-OCRv5, Chinese and
   English) in about half a second; it can be copied or typed on the target.

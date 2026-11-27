@@ -41,6 +41,7 @@ defmodule Kuroneko.DeviceInfo do
       screen: screen(),
       expansion: expansion(),
       network: network(),
+      bluetooth: Kuroneko.Bluetooth.status(),
       beam: %{
         memory: :erlang.memory(:total),
         processes: :erlang.system_info(:process_count),

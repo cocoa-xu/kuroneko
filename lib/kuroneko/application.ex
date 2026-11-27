@@ -85,6 +85,7 @@ defmodule Kuroneko.Application do
         {NanoKVMGo.Audio, source: :usb, name: Kuroneko.Speaker},
         NanoKVMGo.Microphone,
         Kuroneko.Gadget.Input,
+        rest_for_one(:bluetooth, Kuroneko.Bluetooth.children()),
         Kuroneko.Jiggler,
         NanoKVMGo.Metrics,
         rest_for_one(:expansion, [NanoKVMGo.Expansion, Kuroneko.ExpansionWatch]),

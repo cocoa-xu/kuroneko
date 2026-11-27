@@ -206,6 +206,37 @@ defmodule Kuroneko.WebTest do
     assert Jason.decode!(reply.resp_body)["error"] =~ "NPU"
   end
 
+  test "Bluetooth pairing and forgetting from the page only, and only with Bluetooth" do
+    json_only = [{"content-type", "application/json"}]
+    assert request(:post, "/api/bluetooth/pairing", ~s({"open":true}), json_only).status == 403
+    assert request(:post, "/api/bluetooth/pairing", ~s({"open":"yes"}), @page).status == 400
+    assert request(:post, "/api/bluetooth/forget", ~s({"address":"AA:BB"}), @page).status == 400
+
+    # The host has no Bluetooth.
+    assert request(:post, "/api/bluetooth/pairing", ~s({"open":true}), @page).status == 503
+
+    assert request(:post, "/api/bluetooth/forget", ~s({"address":"AA:BB:CC:DD:EE:FF"}), @page).status ==
+             503
+  end
+
+  test "the viewer's input goes to USB, or to Bluetooth once the page asks" do
+    target = fn state, target ->
+      {:ok, state} =
+        Kuroneko.InputSocket.handle_in(
+          {~s({"type":"target","target":"#{target}"}), opcode: :text},
+          state
+        )
+
+      state.input
+    end
+
+    {:ok, state} = Kuroneko.InputSocket.init(%{})
+    assert state.input == Kuroneko.Gadget.Input
+    assert target.(state, "bluetooth") == Kuroneko.Bluetooth.Input
+    assert target.(%{state | input: Kuroneko.Bluetooth.Input}, "usb") == Kuroneko.Gadget.Input
+    assert target.(state, "serial") == Kuroneko.Gadget.Input
+  end
+
   test "Wake-on-LAN only from the page, and only for a MAC address" do
     json_only = [{"content-type", "application/json"}]
     assert request(:post, "/api/wol", ~s({"mac":"aa:bb:cc:dd:ee:ff"}), json_only).status == 403

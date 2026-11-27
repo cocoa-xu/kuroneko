@@ -81,6 +81,7 @@
   </button>
   <span id="hint">click the picture to send keyboard and mouse</span>
   <button id="mousemode" title="Absolute: the pointer goes where you point. Relative: the mouse moves by steps, for BIOS setups and games (Esc lets go)">Mouse: absolute</button>
+  <button id="target" title="Where the keyboard and mouse go: the computer on USB, or the phone, tablet or computer paired over Bluetooth (see the device page)" hidden>Input: USB</button>
   <select id="actions" title="Keys the browser keeps for itself, and more">
     <option value="">Keys…</option>
     <optgroup label="Keys">
@@ -215,6 +216,7 @@
       showAudioMode(status.audio.mode);
       showSystem(status.metrics);
       document.getElementById("ocr").hidden = !status.ocr;
+      showBluetooth(status.bluetooth);
       const hid = status.usb.includes("keyboard") && status.usb.includes("mouse");
       text("hint", !hid ? "keyboard and mouse are off, see USB…"
                    : mouseMode === "relative" ? "click the picture to take the mouse, Esc to let go"
@@ -223,6 +225,28 @@
   }
   setInterval(pollStatus, 2000);
   pollStatus();
+
+  // The input's target: USB, or the Bluetooth keyboard and mouse once a
+  // device paired with them listens.
+  const targetButton = document.getElementById("target");
+  let lastBluetooth = null;
+  function showTarget(bluetooth) {
+    const host = bluetooth && bluetooth.host;
+    targetButton.textContent = target === "bluetooth" ? (host ? "Input: Bluetooth" : "Input: Bluetooth (none connected)")
+                                                       : "Input: USB";
+  }
+  function showBluetooth(bluetooth) {
+    targetButton.hidden = !bluetooth;
+    if (!bluetooth && target === "bluetooth") chooseTarget("usb");
+    showTarget(bluetooth);
+    lastBluetooth = bluetooth;
+  }
+  function chooseTarget(next) {
+    target = next;
+    send({ type: "target", target });
+    showTarget(lastBluetooth);
+  }
+  targetButton.onclick = () => chooseTarget(target === "usb" ? "bluetooth" : "usb");
 
   // The stream's codec, as its messages say: "h264" or "h265".
   let streamCodec = null;
@@ -346,9 +370,11 @@
   }
 
   let ws = null;
+  let target = "usb";
   function connect() {
     ws = new WebSocket(wsUrl("/ws"));
-    ws.onopen = () => mark("input", true);
+    // Each connection starts on USB: tell it the target chosen.
+    ws.onopen = () => { mark("input", true); send({ type: "target", target }); };
     ws.onclose = () => { mark("input", false); setTimeout(connect, 1000); };
   }
   connect();
