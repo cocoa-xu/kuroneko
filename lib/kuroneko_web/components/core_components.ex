@@ -68,10 +68,7 @@ defmodule KuronekoWeb.CoreComponents do
 
   def row(assigns) do
     ~H"""
-    <div class={[
-      "flex items-center gap-4 border-t border-base-300/60 py-3 first:border-t-0 first:pt-0",
-      @class
-    ]}>
+    <div class={["flex items-center gap-4", @class]}>
       <div class="min-w-0 flex-1">
         <div class="text-sm">{@label}</div>
         <div :if={@detail} class="mt-0.5 truncate text-xs text-base-content/55">{@detail}</div>
@@ -208,6 +205,45 @@ defmodule KuronekoWeb.CoreComponents do
     >
       {render_slot(@inner_block)}
     </button>
+    """
+  end
+
+  @doc """
+  Rows, with a hairline between each two and none before the first or after
+  the last: each child is one row, with what belongs under it.
+  """
+  attr :class, :any, default: nil
+  slot :inner_block, required: true
+
+  def group(assigns) do
+    ~H"""
+    <div class={[
+      "divide-y divide-base-content/10 [&>*]:py-3 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0",
+      @class
+    ]}>
+      {render_slot(@inner_block)}
+    </div>
+    """
+  end
+
+  @doc """
+  A part of a card under its own heading, set off by space rather than
+  lines; actions sit at the heading's right, centred with it.
+  """
+  attr :title, :string, required: true
+  attr :class, :any, default: nil
+  slot :actions
+  slot :inner_block, required: true
+
+  def section(assigns) do
+    ~H"""
+    <section class={["mt-8", @class]} aria-label={@title}>
+      <div class="mb-2 flex min-h-8 items-center justify-between gap-3">
+        <h3 class="text-sm font-semibold">{@title}</h3>
+        <div :if={@actions != []} class="flex items-center gap-2">{render_slot(@actions)}</div>
+      </div>
+      {render_slot(@inner_block)}
+    </section>
     """
   end
 

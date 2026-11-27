@@ -40,7 +40,7 @@ defmodule KuronekoWeb.DeviceLive.Bluetooth do
 
         <ul
           :if={@bluetooth.devices != []}
-          class="mt-4 divide-y divide-base-300/60 rounded-field bg-base-200/60"
+          class="mt-4 divide-y divide-base-content/10 rounded-field bg-base-200/60"
         >
           <li :for={device <- @bluetooth.devices} class="flex items-center gap-3 px-3 py-2.5 text-sm">
             <.icon name={device_icon(device.icon)} class="size-5 text-base-content/50" />

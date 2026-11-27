@@ -86,96 +86,96 @@ defmodule KuronekoWeb.DeviceLive.Video do
       </:actions>
       <.facts rows={@facts} />
 
-      <div class="mt-5 border-t border-base-300/60 pt-4">
-        <div class="mb-2 flex items-baseline justify-between">
-          <h3 class="text-sm font-semibold">Video stream</h3>
+      <.section title="Video stream">
+        <:actions>
           <span class="text-xs text-base-content/55">{@now}</span>
-        </div>
+        </:actions>
+        <.group>
+          <.row label="Codec">
+            <.segmented
+              label="Codec"
+              event="video:codec"
+              value={@s["codec"]}
+              options={[{"auto", "Auto"}, {"h264", "H.264"}, {"h265", "H.265"}]}
+            />
+          </.row>
+          <.row label="Preset">
+            <.segmented
+              label="Preset"
+              event="video:preset"
+              value={@encoding.preset}
+              options={Enum.map(@encoding.presets, &{&1["name"], &1["label"]})}
+              class="flex-wrap"
+            />
+          </.row>
+          <.row label="Rate control">
+            <.segmented
+              label="Rate control"
+              event="video:rate_control"
+              value={@s["rate_control"]}
+              options={[{"vbr", "VBR"}, {"cbr", "CBR"}, {"constant_qp", "Constant QP"}]}
+            />
+          </.row>
+          <.row label="Bitrate">
+            <.select
+              name="bitrate"
+              event="video:bitrate"
+              value={@s["bitrate"]}
+              disabled={@s["rate_control"] == "constant_qp"}
+              options={
+                Enum.map(
+                  @bitrates,
+                  &{&1, if(@s["rate_control"] == "cbr", do: mbit(&1), else: "Up to #{mbit(&1)}")}
+                )
+              }
+            />
+          </.row>
+          <.row label="Quality">
+            <.select
+              name="qp"
+              event="video:qp"
+              value={@s["qp"]}
+              disabled={@s["rate_control"] == "cbr"}
+              options={Enum.map(@qps, &{&1, qp_label(&1)})}
+            />
+          </.row>
+          <.row label="Keyframes">
+            <.select
+              name="keyframe_interval"
+              event="video:keyframe_interval"
+              value={@s["keyframe_interval"]}
+              options={Enum.map(@keyframes, &{&1, keyframe_label(&1, @fps)})}
+            />
+          </.row>
+          <.row label="Frame rate">
+            <.select
+              name="max_fps"
+              event="video:max_fps"
+              value={@s["max_fps"]}
+              options={
+                Enum.map(@fps_caps, &{&1, if(&1 == 0, do: "As the input", else: "At most #{&1} FPS")})
+              }
+            />
+          </.row>
+          <.row label="Colour">
+            <.segmented
+              label="Colour"
+              event="video:color_matrix"
+              value={@s["color_matrix"]}
+              options={[{"auto", "Auto"}, {"bt709", "BT.709"}, {"bt601", "BT.601"}]}
+            />
+          </.row>
+          <.row label="Range">
+            <.segmented
+              label="Range"
+              event="video:color_range"
+              value={@s["color_range"]}
+              options={[{"auto", "Auto"}, {"full", "Full"}, {"limited", "Limited"}]}
+            />
+          </.row>
+        </.group>
 
-        <.row label="Codec">
-          <.segmented
-            label="Codec"
-            event="video:codec"
-            value={@s["codec"]}
-            options={[{"auto", "Auto"}, {"h264", "H.264"}, {"h265", "H.265"}]}
-          />
-        </.row>
-        <.row label="Preset">
-          <.segmented
-            label="Preset"
-            event="video:preset"
-            value={@encoding.preset}
-            options={Enum.map(@encoding.presets, &{&1["name"], &1["label"]})}
-            class="flex-wrap"
-          />
-        </.row>
-        <.row label="Rate control">
-          <.segmented
-            label="Rate control"
-            event="video:rate_control"
-            value={@s["rate_control"]}
-            options={[{"vbr", "VBR"}, {"cbr", "CBR"}, {"constant_qp", "Constant QP"}]}
-          />
-        </.row>
-        <.row label="Bitrate">
-          <.select
-            name="bitrate"
-            event="video:bitrate"
-            value={@s["bitrate"]}
-            disabled={@s["rate_control"] == "constant_qp"}
-            options={
-              Enum.map(
-                @bitrates,
-                &{&1, if(@s["rate_control"] == "cbr", do: mbit(&1), else: "Up to #{mbit(&1)}")}
-              )
-            }
-          />
-        </.row>
-        <.row label="Quality">
-          <.select
-            name="qp"
-            event="video:qp"
-            value={@s["qp"]}
-            disabled={@s["rate_control"] == "cbr"}
-            options={Enum.map(@qps, &{&1, qp_label(&1)})}
-          />
-        </.row>
-        <.row label="Keyframes">
-          <.select
-            name="keyframe_interval"
-            event="video:keyframe_interval"
-            value={@s["keyframe_interval"]}
-            options={Enum.map(@keyframes, &{&1, keyframe_label(&1, @fps)})}
-          />
-        </.row>
-        <.row label="Frame rate">
-          <.select
-            name="max_fps"
-            event="video:max_fps"
-            value={@s["max_fps"]}
-            options={
-              Enum.map(@fps_caps, &{&1, if(&1 == 0, do: "As the input", else: "At most #{&1} FPS")})
-            }
-          />
-        </.row>
-        <.row label="Colour">
-          <.segmented
-            label="Colour"
-            event="video:color_matrix"
-            value={@s["color_matrix"]}
-            options={[{"auto", "Auto"}, {"bt709", "BT.709"}, {"bt601", "BT.601"}]}
-          />
-        </.row>
-        <.row label="Range">
-          <.segmented
-            label="Range"
-            event="video:color_range"
-            value={@s["color_range"]}
-            options={[{"auto", "Auto"}, {"full", "Full"}, {"limited", "Limited"}]}
-          />
-        </.row>
-
-        <p class="mt-3 text-xs text-base-content/55">
+        <p class="mt-4 text-xs text-base-content/55">
           Auto streams H.265 when every viewer's browser decodes it, H.264 otherwise; H.265 needs about half the
           bitrate for the same picture. VBR keeps the quality, a QP, and takes a higher QP only where the bitrate
           would go over its most; CBR keeps to the bitrate; a constant QP takes what each frame needs.
@@ -185,7 +185,7 @@ defmodule KuronekoWeb.DeviceLive.Video do
           Browsers decode the MJPEG view as BT.601, so BT.709 leaves its strongest colours a little off there;
           H.264 and H.265 tell the browser which they carry.
         </p>
-      </div>
+      </.section>
     </.card>
     """
   end

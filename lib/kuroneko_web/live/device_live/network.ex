@@ -71,11 +71,10 @@ defmodule KuronekoWeb.DeviceLive.Network do
         <p :if={@interfaces == []} class="text-sm text-base-content/60">No network interfaces.</p>
       </div>
 
-      <div class="mt-5 border-t border-base-300/60 pt-4">
-        <div class="mb-2 flex items-center justify-between">
-          <h3 class="text-sm font-semibold">USB network MAC addresses</h3>
+      <.section title="USB network MAC addresses">
+        <:actions>
           <.button size={:sm} phx-click="network:mac_edit" disabled={!@usb.network}>Change…</.button>
-        </div>
+        </:actions>
         <%= if @usb.network do %>
           <.facts rows={[
             {"NanoKVM", mac_value(@usb.network, :device_address)},
@@ -88,13 +87,12 @@ defmodule KuronekoWeb.DeviceLive.Network do
           The target computer keeps one network adapter for the NanoKVM as long as these stay the same, restart
           after restart.
         </p>
-      </div>
+      </.section>
 
-      <div class="mt-5 border-t border-base-300/60 pt-4">
-        <div class="mb-2 flex items-center justify-between">
-          <h3 class="text-sm font-semibold">USB network addresses</h3>
+      <.section title="USB network addresses">
+        <:actions>
           <.button size={:sm} phx-click="network:ip_edit" disabled={!@usb.addresses}>Change…</.button>
-        </div>
+        </:actions>
         <.facts
           :if={@usb.addresses}
           rows={[
@@ -108,7 +106,7 @@ defmodule KuronekoWeb.DeviceLive.Network do
           By default the NanoKVM takes a /30 in 172.31.0.0/16, made from its name. Choose other addresses where
           those are taken on the computer's networks.
         </p>
-      </div>
+      </.section>
 
       <.modal
         :if={@mac_form}

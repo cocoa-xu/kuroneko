@@ -402,7 +402,7 @@ defmodule KuronekoWeb.DiskDialog do
             <h4 class="text-sm font-semibold">Library</h4>
             <span class="text-xs text-base-content/55">{Format.bytes(@disk.free)} free</span>
           </div>
-          <ul :if={@rows != []} class="divide-y divide-base-300/60 rounded-field bg-base-200/50">
+          <ul :if={@rows != []} class="divide-y divide-base-content/10 rounded-field bg-base-200/50">
             <li
               :for={row <- @rows}
               id={"#{@id}-#{row.id}"}
@@ -520,7 +520,7 @@ defmodule KuronekoWeb.DiskDialog do
           phx-hook=".Upload"
           phx-update="ignore"
           phx-target={@myself}
-          class="mt-5 flex flex-wrap items-center gap-2 border-t border-base-300/60 pt-4"
+          class="mt-4 flex flex-wrap items-center gap-2"
         >
           <button
             type="button"

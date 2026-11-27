@@ -37,94 +37,96 @@ defmodule KuronekoWeb.DeviceLive.Screen do
       </:actions>
 
       <%= if @screen do %>
-        <.row label="Brightness">
-          <form
-            id="screen-brightness"
-            phx-change="screen:brightness"
-            phx-auto-recover="ignore"
-            class="flex w-48 items-center gap-3"
-          >
-            <input
-              type="range"
-              name="brightness"
-              min="5"
-              max="100"
-              value={@screen.brightness}
-              phx-debounce="120"
-              class="range range-primary range-xs flex-1"
-              oninput="this.nextElementSibling.textContent = this.value + '%'"
-            />
-            <output class="w-10 text-right text-sm tabular-nums">{@screen.brightness}%</output>
-          </form>
-        </.row>
+        <.group>
+          <.row label="Brightness">
+            <form
+              id="screen-brightness"
+              phx-change="screen:brightness"
+              phx-auto-recover="ignore"
+              class="flex w-48 items-center gap-3"
+            >
+              <input
+                type="range"
+                name="brightness"
+                min="5"
+                max="100"
+                value={@screen.brightness}
+                phx-debounce="120"
+                class="range range-primary range-xs flex-1"
+                oninput="this.nextElementSibling.textContent = this.value + '%'"
+              />
+              <output class="w-10 text-right text-sm tabular-nums">{@screen.brightness}%</output>
+            </form>
+          </.row>
 
-        <.row label="Backlight PWM">
-          <div class="flex items-center gap-2">
-            <form id="screen-pwm" phx-change="screen:pwm" phx-auto-recover="ignore">
-              <select name="pwm" class="select select-sm w-44">
+          <.row label="Backlight PWM">
+            <div class="flex items-center gap-2">
+              <form id="screen-pwm" phx-change="screen:pwm" phx-auto-recover="ignore">
+                <select name="pwm" class="select select-sm w-44">
+                  <option
+                    :for={{value, label} <- @pwm_options}
+                    value={value}
+                    selected={selected?(@screen, value, @custom)}
+                  >
+                    {label}
+                  </option>
+                </select>
+              </form>
+              <form
+                :if={@custom}
+                id="screen-pwm-hz"
+                phx-submit="screen:pwm_hz"
+                class="flex items-center gap-1.5"
+              >
+                <input
+                  type="number"
+                  name="hz"
+                  min="1"
+                  max="1000000"
+                  step="1"
+                  placeholder="Hz"
+                  class="input input-sm w-24"
+                  aria-label="Frequency in Hz"
+                />
+                <.button size={:sm} type="submit">Set</.button>
+              </form>
+            </div>
+          </.row>
+
+          <.row label="Rotation">
+            <.segmented
+              label="Rotation"
+              event="screen:rotate"
+              value={@screen.rotate}
+              options={[{0, "Upright"}, {180, "Upside down"}]}
+            />
+          </.row>
+
+          <.row label="Screen off">
+            <form id="screen-sleep" phx-change="screen:sleep" phx-auto-recover="ignore">
+              <select name="sleep" class="select select-sm w-44">
                 <option
-                  :for={{value, label} <- @pwm_options}
+                  :for={{value, label} <- @sleep_options}
                   value={value}
-                  selected={selected?(@screen, value, @custom)}
+                  selected={value == @screen.sleep}
                 >
                   {label}
                 </option>
               </select>
             </form>
-            <form
-              :if={@custom}
-              id="screen-pwm-hz"
-              phx-submit="screen:pwm_hz"
-              class="flex items-center gap-1.5"
-            >
-              <input
-                type="number"
-                name="hz"
-                min="1"
-                max="1000000"
-                step="1"
-                placeholder="Hz"
-                class="input input-sm w-24"
-                aria-label="Frequency in Hz"
-              />
-              <.button size={:sm} type="submit">Set</.button>
-            </form>
-          </div>
-        </.row>
+          </.row>
 
-        <.row label="Rotation">
-          <.segmented
-            label="Rotation"
-            event="screen:rotate"
-            value={@screen.rotate}
-            options={[{0, "Upright"}, {180, "Upside down"}]}
-          />
-        </.row>
+          <.row
+            label="Touch panel"
+            detail={if @screen.calibration, do: "Calibrated", else: "Not calibrated"}
+          >
+            <.button size={:sm} phx-click="screen:reset_calibration" disabled={!@screen.calibration}>
+              Reset calibration
+            </.button>
+          </.row>
+        </.group>
 
-        <.row label="Screen off">
-          <form id="screen-sleep" phx-change="screen:sleep" phx-auto-recover="ignore">
-            <select name="sleep" class="select select-sm w-44">
-              <option
-                :for={{value, label} <- @sleep_options}
-                value={value}
-                selected={value == @screen.sleep}
-              >
-                {label}
-              </option>
-            </select>
-          </form>
-        </.row>
-
-        <.row
-          label="Touch panel"
-          detail={if @screen.calibration, do: "Calibrated", else: "Not calibrated"}
-        >
-          <.button size={:sm} phx-click="screen:reset_calibration" disabled={!@screen.calibration}>
-            Reset calibration
-          </.button>
-        </.row>
-
-        <p class="mt-3 text-xs text-base-content/55">
+        <p class="mt-4 text-xs text-base-content/55">
           Brightness follows the same curve at any PWM frequency. Below about 100 Hz the light flickers; from
           about 100 kHz low brightness may come out brighter. Calibrate the touch panel on the screen itself:
           Settings, Touch panel, Calibrate.
