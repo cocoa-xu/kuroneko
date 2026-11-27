@@ -100,7 +100,12 @@
   /* The picture */
   .screen { position: fixed; inset: var(--bar) 0 0 0; width: 100%; height: calc(100% - var(--bar));
     object-fit: contain; outline: none; cursor: crosshair; }
-  .screen:focus { cursor: none; }
+  /* This computer's pointer over the picture moves at the display's rate, at
+     once; the target's follows in the picture. */
+  body[data-local-pointer="dot"] .screen {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Ccircle cx='6' cy='6' r='4' fill='%23fff' stroke='%23000' stroke-opacity='.6' stroke-width='1.5'/%3E%3C/svg%3E") 6 6, crosshair; }
+  body[data-local-pointer="arrow"] .screen { cursor: default; }
+  body[data-local-pointer="none"] .screen:focus { cursor: none; }
   #notice { position: fixed; inset: var(--bar) 0 0 0; display: flex; align-items: center;
     justify-content: center; background: rgba(11, 12, 14, 0.85); color: var(--text-2);
     font-size: 18px; pointer-events: none; }
@@ -201,6 +206,14 @@
     <div class="seg" id="mousemode" role="group" aria-label="Pointer">
       <button data-mode="absolute" title="The pointer goes where you point">Absolute</button>
       <button data-mode="relative" title="The mouse moves by steps, for BIOS setups and games (Esc lets go)">Relative</button>
+    </div>
+  </section>
+  <section>
+    <span class="label">This computer's pointer</span>
+    <div class="seg" id="localpointer" role="group" aria-label="This computer's pointer over the picture">
+      <button data-pointer="dot" title="A dot that follows the mouse at once; the target's pointer follows in the picture">Dot</button>
+      <button data-pointer="arrow" title="An arrow that follows the mouse at once">Arrow</button>
+      <button data-pointer="none" title="Only the target's pointer, in the picture">None</button>
     </div>
   </section>
   <section id="targetfield" hidden>
@@ -587,6 +600,18 @@
     showMouseMode();
   };
 
+  const localPointerGroup = document.getElementById("localpointer");
+  function showLocalPointer(pointer) {
+    document.body.dataset.localPointer = pointer;
+    for (const b of localPointerGroup.children) b.setAttribute("aria-pressed", String(b.dataset.pointer === pointer));
+  }
+  localPointerGroup.onclick = (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    prefs.set("localPointer", b.dataset.pointer);
+    showLocalPointer(b.dataset.pointer);
+  };
+
   for (const el of [canvas, img]) {
     el.addEventListener("focus", () => document.body.classList.add("controlling"));
     el.addEventListener("blur", () => document.body.classList.remove("controlling"));
@@ -604,9 +629,14 @@
     return { wheel, pan };
   }
 
+  // Moves go at once, then at most one each MOVE_MS: the last always goes,
+  // so the pointer stops where the mouse stopped, and relative steps add up
+  // meanwhile. A press or a wheel goes at once and takes a waiting move with it.
+  const MOVE_MS = 4;
+
   function attachInput(el) {
-    let lastMove = 0;
     let dx = 0, dy = 0;
+    let lastSent = 0, waiting = null, timer = 0;
     const locked = () => document.pointerLockElement === el;
     const relative = (e, extra) => {
       const x = Math.round(dx), y = Math.round(dy);
@@ -614,21 +644,34 @@
       dy -= y;
       send({ type: "relative", dx: x, dy: y, buttons: e.buttons, ...extra });
     };
+    const sendMove = () => {
+      clearTimeout(timer);
+      timer = 0;
+      const e = waiting;
+      waiting = null;
+      if (!e) return;
+      lastSent = performance.now();
+      if (mouseMode !== "relative") mouse(e);
+      else if (locked()) relative(e);
+    };
+    // A press carries the position and the steps so far itself.
+    const dropMove = () => { clearTimeout(timer); timer = 0; waiting = null; };
     el.addEventListener("mousemove", (e) => {
-      const now = performance.now();
       if (mouseMode === "relative") {
         if (!locked()) return;
         dx += e.movementX;
         dy += e.movementY;
-        if (now - lastMove >= 8) { lastMove = now; relative(e); }
-      } else if (now - lastMove >= 16) {
-        lastMove = now;
-        mouse(e);
       }
+      waiting = e;
+      if (timer) return;
+      const wait = lastSent + MOVE_MS - performance.now();
+      if (wait <= 0) sendMove();
+      else timer = setTimeout(sendMove, wait);
     });
     el.addEventListener("mousedown", (e) => {
       el.focus();
       e.preventDefault();
+      dropMove();
       if (mouseMode !== "relative") return mouse(e);
       // The first click takes the mouse.
       if (!locked()) return el.requestPointerLock();
@@ -637,6 +680,7 @@
     el.addEventListener("mouseup", (e) => {
       // The back and forward buttons would leave the page.
       e.preventDefault();
+      dropMove();
       if (mouseMode !== "relative") mouse(e);
       else if (locked()) relative(e);
     });
@@ -644,6 +688,7 @@
       e.preventDefault();
       const steps = wheelSteps(e);
       if (!steps.wheel && !steps.pan) return;
+      dropMove();
       if (mouseMode !== "relative") mouse(e, steps);
       else if (locked()) relative(e, steps);
     }, { passive: false });
@@ -1294,6 +1339,8 @@
   updateMicButton();
   mouseMode = prefs.get("mouseMode", "absolute") === "relative" ? "relative" : "absolute";
   showMouseMode();
+  const localPointer = prefs.get("localPointer", "dot");
+  showLocalPointer(["dot", "arrow", "none"].includes(localPointer) ? localPointer : "dot");
 
   start();
 </script>
