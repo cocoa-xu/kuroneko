@@ -68,7 +68,10 @@ defmodule KuronekoWeb.CoreComponents do
 
   def row(assigns) do
     ~H"""
-    <div class={["flex items-center gap-4 border-t border-base-300/60 py-3 first:border-t-0 first:pt-0", @class]}>
+    <div class={[
+      "flex items-center gap-4 border-t border-base-300/60 py-3 first:border-t-0 first:pt-0",
+      @class
+    ]}>
       <div class="min-w-0 flex-1">
         <div class="text-sm">{@label}</div>
         <div :if={@detail} class="mt-0.5 truncate text-xs text-base-content/55">{@detail}</div>
@@ -106,11 +109,17 @@ defmodule KuronekoWeb.CoreComponents do
   attr :event, :string, required: true
   attr :label, :string, required: true
   attr :disabled, :boolean, default: false
+  attr :class, :any, default: nil
   attr :rest, :global
 
   def segmented(assigns) do
     ~H"""
-    <div role="group" aria-label={@label} class="inline-flex gap-0.5 rounded-field bg-base-300/70 p-0.5" {@rest}>
+    <div
+      role="group"
+      aria-label={@label}
+      class={["inline-flex gap-0.5 rounded-field bg-base-300/70 p-0.5", @class]}
+      {@rest}
+    >
       <button
         :for={{value, label} <- @options}
         type="button"
@@ -176,7 +185,7 @@ defmodule KuronekoWeb.CoreComponents do
     """
   end
 
-  @doc "A button: `:primary`, `:danger` or plain."
+  @doc "A button: `:primary`, `:danger` (a quiet red), `:destructive` (a solid one) or plain."
   attr :kind, :atom, default: nil
   attr :size, :atom, default: :md
   attr :rest, :global, include: ~w(disabled type phx-click phx-value-name href target)
@@ -191,6 +200,7 @@ defmodule KuronekoWeb.CoreComponents do
         case @kind do
           :primary -> "btn-primary"
           :danger -> "bg-error/12 text-error hover:bg-error/20"
+          :destructive -> "btn-error"
           _ -> "bg-base-300/80 hover:bg-base-300"
         end
       ]}
@@ -198,6 +208,58 @@ defmodule KuronekoWeb.CoreComponents do
     >
       {render_slot(@inner_block)}
     </button>
+    """
+  end
+
+  @doc """
+  A modal sheet over the page: Escape, the backdrop and its close button
+  send `cancel`, to `target` when a component's. With `show` false it stays
+  in the page, hidden.
+  """
+  attr :id, :string, required: true
+  attr :title, :string, required: true
+  attr :cancel, :string, required: true
+  attr :target, :any, default: nil
+  attr :show, :boolean, default: true
+  attr :class, :any, default: "max-w-[30rem]"
+  slot :inner_block, required: true
+
+  def modal(assigns) do
+    ~H"""
+    <div
+      id={@id}
+      class={["fixed inset-0 z-50 overflow-y-auto", !@show && "hidden"]}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={"#{@id}-title"}
+      phx-window-keydown={@show && @cancel}
+      phx-key="Escape"
+      phx-target={@target}
+    >
+      <div
+        class="fixed inset-0 bg-black/35 backdrop-blur-[2px]"
+        phx-click={@cancel}
+        phx-target={@target}
+      />
+      <div class={[
+        "relative mx-4 my-10 rounded-box bg-base-100 p-6 shadow-2xl sm:mx-auto sm:my-20",
+        @class
+      ]}>
+        <div class="mb-3 flex items-start justify-between gap-4">
+          <h3 id={"#{@id}-title"} class="text-lg font-semibold">{@title}</h3>
+          <button
+            type="button"
+            class="btn btn-circle btn-ghost btn-sm -mr-2 -mt-1"
+            aria-label="Close"
+            phx-click={@cancel}
+            phx-target={@target}
+          >
+            <.icon name="hero-x-mark" class="size-5" />
+          </button>
+        </div>
+        {render_slot(@inner_block)}
+      </div>
+    </div>
     """
   end
 

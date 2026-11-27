@@ -85,6 +85,8 @@
 @custom-variant phx-click-loading (.phx-click-loading&, .phx-click-loading &);
 @custom-variant phx-submit-loading (.phx-submit-loading&, .phx-submit-loading &);
 @custom-variant phx-change-loading (.phx-change-loading&, .phx-change-loading &);
+/* The LiveView's state: connected, or still (or again) connecting */
+@custom-variant phx-connected (.phx-connected&, .phx-connected &);
 
 /* Translucent surfaces over what is behind them, as macOS draws menus */
 @utility glass {
