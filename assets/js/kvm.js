@@ -1,3 +1,4 @@
+import { PcmQueue, PLAYER } from "./audio-playback.mjs";
 import { createInputCapture } from "./input-capture.mjs";
 import { createPageScope } from "./page-scope.mjs";
 import { createPacer, sampleVideo } from "./video-playback.mjs";
@@ -794,72 +795,6 @@ function start(hook) {
   // ---- Sound ----
   const workletUrl = (code) => URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
 
-  // Samples waiting to be played, at the AudioContext's rate, interpolated
-  // from the source's. The AudioWorklet runs it on the audio thread; pages
-  // without a secure context have no AudioWorklet and run it in a
-  // ScriptProcessor.
-  class PcmQueue {
-    constructor(rate) { this.rate = rate; this.sourceRate = rate; this.step = 1; this.reset(); }
-    reset() { this.chunks = []; this.index = 0; this.frac = 0; this.queued = 0; this.playing = false; }
-    push(rate, channels) {
-      if (rate !== this.sourceRate) {
-        this.reset();
-        this.sourceRate = rate;
-        this.step = rate / this.rate;
-      }
-      this.chunks.push(channels);
-      this.queued += channels[0].length;
-      // More than 300 ms behind: drop the oldest, so the sound never lags.
-      while (this.queued > this.sourceRate * 0.3 && this.chunks.length > 1) {
-        this.queued -= this.chunks.shift()[0].length - this.index;
-        this.index = 0;
-      }
-    }
-    fill(out) {
-      // After running dry, wait for 60 ms of samples.
-      if (!this.playing && this.queued < this.sourceRate * 0.06) {
-        for (const o of out) o.fill(0);
-        return;
-      }
-      this.playing = true;
-      for (let i = 0; i < out[0].length; i++) {
-        const cur = this.chunks[0];
-        if (!cur) {
-          for (const o of out) o[i] = 0;
-          this.playing = false;
-          continue;
-        }
-        let next = cur, j = this.index + 1;
-        if (j >= cur[0].length) {
-          if (this.chunks.length > 1) { next = this.chunks[1]; j = 0; } else j = this.index;
-        }
-        for (let c = 0; c < out.length; c++) {
-          const a = cur[Math.min(c, cur.length - 1)][this.index];
-          const b = next[Math.min(c, next.length - 1)][j];
-          out[c][i] = a + (b - a) * this.frac;
-        }
-        this.frac += this.step;
-        while (this.frac >= 1 && this.chunks.length) {
-          this.frac -= 1;
-          this.queued--;
-          if (++this.index >= this.chunks[0][0].length) { this.chunks.shift(); this.index = 0; }
-        }
-      }
-    }
-  }
-
-  const PLAYER = `${PcmQueue.toString()}
-    class Player extends AudioWorkletProcessor {
-      constructor() {
-        super();
-        this.queue = new PcmQueue(sampleRate);
-        this.port.onmessage = ({ data }) =>
-          data === "reset" ? this.queue.reset() : this.queue.push(data.rate, data.channels);
-      }
-      process(_inputs, outputs) { this.queue.fill(outputs[0]); return true; }
-    }
-    registerProcessor("kuroneko-player", Player);`;
-
   const soundButton = document.getElementById("sound");
   let sound = null;
   const BYTES = { s16_le: 2, s24_3le: 3, s24_le: 4, s32_le: 4 };
@@ -914,29 +849,37 @@ function start(hook) {
   async function makePlayer(rate) {
     const ctx = audioContext(rate ? { latencyHint: "interactive", sampleRate: rate }
                                       : { latencyHint: "interactive" });
-    const p = { ctx };
-    if (ctx.audioWorklet) {
-      await ctx.audioWorklet.addModule(workletUrl(PLAYER));
-      const node = new AudioWorkletNode(ctx, "kuroneko-player",
-                                        { numberOfInputs: 0, outputChannelCount: [2] });
-      node.connect(ctx.destination);
-      p.deliver = (rate, channels) =>
-        node.port.postMessage({ rate, channels }, channels.map((c) => c.buffer));
-      p.reset = () => node.port.postMessage("reset");
-    } else {
-      const queue = new PcmQueue(ctx.sampleRate);
-      const node = ctx.createScriptProcessor(2048, 0, 2);
-      node.onaudioprocess = (e) =>
-        queue.fill([e.outputBuffer.getChannelData(0), e.outputBuffer.getChannelData(1)]);
-      node.connect(ctx.destination);
-      p.deliver = (rate, channels) => queue.push(rate, channels);
-      p.reset = () => queue.reset();
+    const p = { ctx, error: null, onerror: null };
+    try {
+      if (ctx.audioWorklet) {
+        await ctx.audioWorklet.addModule(workletUrl(PLAYER));
+        const node = new AudioWorkletNode(ctx, "kuroneko-player",
+                                          { numberOfInputs: 0, outputChannelCount: [2] });
+        node.onprocessorerror = () => {
+          p.error = new Error("Audio playback failed. Turn sound on to retry.");
+          p.onerror?.(p.error);
+        };
+        node.connect(ctx.destination);
+        p.deliver = (rate, channels) =>
+          node.port.postMessage({ rate, channels }, channels.map((c) => c.buffer));
+        p.reset = () => node.port.postMessage("reset");
+      } else {
+        const queue = new PcmQueue(ctx.sampleRate);
+        const node = ctx.createScriptProcessor(2048, 0, 2);
+        node.onaudioprocess = (e) =>
+          queue.fill([e.outputBuffer.getChannelData(0), e.outputBuffer.getChannelData(1)]);
+        node.connect(ctx.destination);
+        p.deliver = (rate, channels) => queue.push(rate, channels);
+        p.reset = () => queue.reset();
+      }
+      if (!(await started(ctx)) || p.error) {
+        throw p.error || new Error("the browser does not let the sound start");
+      }
+      return p;
+    } catch (error) {
+      ctx.close().catch(() => {});
+      throw error;
     }
-    if (!(await started(ctx))) {
-      ctx.close();
-      throw new Error("the browser does not let the sound start");
-    }
-    return p;
   }
 
   // At the source's rate the browser resamples for the speakers, better
@@ -947,6 +890,7 @@ function start(hook) {
     try {
       const player = await makePlayer(rate);
       if (sound !== s || player.ctx.sampleRate !== rate) return player.ctx.close();
+      watchPlayer(s, player);
       const old = s.player;
       s.player = player;
       old.ctx.close();
@@ -961,6 +905,8 @@ function start(hook) {
     const s = { player: null, ws: null, format: null, failed: new Set(), switching: false };
     sound = s;
     s.player = await makePlayer();
+    if (sound !== s) return s.player.ctx.close();
+    watchPlayer(s, s.player);
     const open = () => {
       if (sound !== s) return;
       const ws = openSocket(wsUrl("/audio"));
@@ -993,6 +939,14 @@ function start(hook) {
     if (s.player) s.player.ctx.close();
     switchOn(soundButton, false);
     text("sounddetail", "In this browser");
+  }
+
+  function watchPlayer(s, player) {
+    player.onerror = (error) => {
+      if (sound !== s || s.player !== player) return;
+      stopSound();
+      text("sounddetail", error.message);
+    };
   }
 
   soundButton.onclick = async () => {
