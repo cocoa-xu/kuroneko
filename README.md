@@ -151,7 +151,7 @@ a CD, UDF a DVD, UDF 2.50 and later a Blu-ray disc, any of them larger when
 a smaller disc cannot hold it), any other image as a USB drive. The page
 shows what it found under each image, and any of these can be forced.
 What is in a drive goes in again after the device restarts, unless asked
-not to. **USB…** gives the virtual disk up to 16 drives, which the target
+not to. The device page's USB card gives the virtual disk up to 16 drives, which the target
 sees at once, each with its own image or folder, and adds storage devices,
 each a USB drive of its own, for BIOSes that boot only a device's first
 drive. A CUE sheet goes in as a CD of its tracks, audio and data, from its
@@ -167,15 +167,29 @@ older systems, with files of at most 4 GiB.
 
 The USB network puts the device in a /30 of 172.31.0.0/16 made from its
 name. Where that is taken, the device page sets another address, such as
-`10.55.0.1/24`: the target gets the next one. **USB…** adds more USB
-networks, each in a /30 of its own.
+`10.55.0.1/24`: the target gets the next one. The device page's USB card
+adds more USB networks, each in a /30 of its own.
 
 The device has seven USB endpoints each way besides the control one, which
 the USB devices share: a network takes two IN and one OUT, the keyboard and
 each mouse one IN, a storage device one each way whatever its drives, the
-microphone one IN and the speaker one OUT. **USB…** counts them as you
-choose, and what does not fit is refused: drop the sound card, the mice or
-even the USB network for more storage devices.
+microphone one IN and the speaker one OUT. The device page's USB card
+counts them as you choose, and what does not fit is refused: drop the sound
+card, the mice or even the USB network for more storage devices.
+
+The pulse icon on the KVM page shows the connection's stats over the
+picture, each second: what the NanoKVM captured, encoded and skipped and
+how long a frame took, what the browser received, decoded and showed, the
+longest wait for a frame and the network's jitter. A Mac on Wi-Fi may stop
+receiving for about 100 ms twice a second, the longest wait and the
+jitter jumping while the rest stays low: it shares its Wi-Fi radio with
+AWDL, which AirDrop, Handoff, Universal Control and Sidecar use.
+`sudo ifconfig awdl0 down` stops it until the next restart or until one of
+them needs it again; AirDrop set to No One and Handoff off keep it off
+longer. Smooth playback, in the picture's menu, hides such stalls by
+showing the picture that much later; Lowest latency shows each frame as
+it arrives. The target's refresh rate sets how often the picture changes:
+the NanoKVM offers 2560×1440 at up to 90 Hz besides 3840×2160 at 30 Hz.
 
 The memory for video and the NPU (192 and 64 MiB) changes at the next boot,
 over SSH: `NanoKVMGo.CMA.put_sizes(%{video: 160, npu: 96})`. With
