@@ -11,7 +11,7 @@ defmodule Kuroneko.ViewerStats do
 
   @keep 300
   @numbers Map.new(
-             ~w(received mbit gap_max_ms decoded decode_ms decode_max_ms drawn shown draw_max_ms queue_max rtt_ms delay_ms)a,
+             ~w(received mbit gap_max_ms decoded decode_ms decode_max_ms drawn shown draw_max_ms queue_max rtt_ms delay_ms late_max_ms)a,
              &{Atom.to_string(&1), &1}
            )
 

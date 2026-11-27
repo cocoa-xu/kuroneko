@@ -260,7 +260,7 @@ function start(hook) {
   // the device its side too (Kuroneko.ViewerStats).
   const connection = { device: null, rtt: null, renderer: null, delay: null };
   const second = () => ({ received: 0, bytes: 0, gapMax: 0, decoded: 0, decodeSum: 0, decodeMax: 0,
-                          drawn: 0, shown: 0, drawMax: 0, queueMax: 0 });
+                          drawn: 0, shown: 0, drawMax: 0, queueMax: 0, lateMax: 0 });
 
   // ---- Playback. Smooth: each frame goes to the decoder at the pace the
   // NanoKVM made it, a little later than the fastest any frame came lately,
@@ -304,6 +304,7 @@ function start(hook) {
         if (transits.length > 150) transits.shift();
         const fastest = Math.min(...transits);
         lates.push(transit - fastest);
+        tally.lateMax = Math.max(tally.lateMax, transit - fastest);
         if (lates.length > 120) lates.shift();
         const target = Math.min(SMOOTH_MAX_MS, Math.max(...lates));
         delay = target > delay ? target : Math.max(target, delay - 0.5);
@@ -327,6 +328,12 @@ function start(hook) {
     requestAnimationFrame(countShown);
   })();
   const connStats = document.getElementById("connstats");
+  // From the end of a frame to the screen, about: the NanoKVM's part, half
+  // the round trip, the smoothing, decoding and drawing.
+  function screenDelay(d, b) {
+    if (!d || d.ready_ms == null || b.rtt_ms == null || !b.decoded) return "–";
+    return `about ${Math.round(d.ready_ms + b.rtt_ms / 2 + (b.delay_ms || 0) + b.decode_ms + b.draw_max_ms)} ms`;
+  }
   const statsTool = document.getElementById("statstool"), statsBox = document.getElementById("statsbox");
   // Where the stats go: inside the window, under the bar.
   function placeStats(x, y) {
@@ -388,15 +395,18 @@ function start(hook) {
       ["Captured", d ? `${per(d.captured)} fps` : "–"],
       ["Encoded", d ? `${per(d.encoded)} fps, ${d.skipped} skipped` : "–"],
       ["Encode time", d ? `${d.encode_ms} ms, ${d.encode_max_ms} max` : "–"],
+      ["Frame end to encoded", d && d.ready_ms != null ? `${d.ready_ms} ms, ${d.ready_max_ms} max` : "–"],
       ["QP", d ? `${d.qp}, ${d.qp_max} max` : "–"],
       ["This browser"],
       ["Received", `${b.received} fps, ${b.mbit} Mbit/s`],
       ["Longest wait", `${b.gap_max_ms} ms`],
+      ["Network jitter", `${b.late_max_ms} ms`],
       ["Decoded", `${b.decoded} fps, ${b.decode_ms} ms, ${b.decode_max_ms} max`],
       ["Shown", `${b.shown} of ${b.drawn}, ${connection.renderer || "–"}`],
       ["Smoothing", b.delay_ms == null ? "off" : `${b.delay_ms} ms`],
       ["Draw time", `${b.draw_max_ms} ms max`],
       ["Input round trip", b.rtt_ms == null ? "–" : `${b.rtt_ms} ms`],
+      ["Frame end to screen", screenDelay(d, b)],
     ];
     connStats.replaceChildren(...rows.flatMap(([term, value]) => {
       if (value === undefined) return [Object.assign(document.createElement("div"), { className: "side", textContent: term })];
@@ -414,6 +424,7 @@ function start(hook) {
       decode_max_ms: Math.round(t.decodeMax), drawn: t.drawn, shown: t.shown, draw_max_ms: +t.drawMax.toFixed(1),
       queue_max: t.queueMax, rtt_ms: connection.rtt == null ? undefined : Math.round(connection.rtt),
       delay_ms: connection.delay == null ? undefined : Math.round(connection.delay),
+      late_max_ms: Math.round(t.lateMax),
     };
     send(sample);
     send({ type: "ping", t: performance.now() });
