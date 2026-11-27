@@ -1,7 +1,20 @@
 # Changelog
 
-## Unreleased
+## v0.3.0 (2026-11-28)
 
+This release moves to AArch64. Upgrading from v0.2.0 or older requires a
+full SD card burn; an SSH firmware update cannot replace the 32-bit bootloader.
+
+* Fullscreen viewing with an explicit local exit, Shift+Escape, and optional
+  locked relative mouse control. Remote-only Command Q and other shortcut
+  buttons avoid relying on browser capture of system shortcuts
+* Audio playback works in minified firmware builds; worklet failures now show
+  an error instead of leaving an enabled but silent player
+* Lowest latency is the default. Optional smoothing is capped at 50 ms;
+  decoder queues are bounded, hidden viewers stop streaming, and a stalled
+  subscriber requests a recovery keyframe only after catching up
+* Video statistics use actual elapsed time and include capture age, bitstream
+  copy, writer queue and pipe timings, and keyframe/delta burst sizes
 * Video settings offer on-demand keyframes, the default for new settings;
   saved intervals remain available
 
@@ -14,10 +27,9 @@
   wait for a frame and the input's round trip. The page tells the NanoKVM
   its side as well (`Kuroneko.ViewerStats`)
 * Smooth playback on the KVM page, as WebRTC players do: frames go to the
-  decoder at the pace the NanoKVM's encoder made them (the video socket's
-  `&timestamps=1`), a little later than the fastest lately, the delay
-  growing at once to cover frames the network held back and shrinking
-  slowly; Lowest latency in the picture's menu shows each as it arrives
+  decoder using capture timestamps (the video socket's `&timestamps=1`),
+  with optional bounded buffering for network variation; Lowest latency in
+  the picture's menu shows each as it arrives
 * The KVM page draws the picture with WebGL, from the decoder's memory, a
   2D canvas only where there is no WebGL; this computer's pointer shows
   over the picture (a dot by default); the mouse's last position and every

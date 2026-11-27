@@ -6,7 +6,8 @@ Nerves, on open mainline drivers, with no vendor software on the device's
 processor.
 
 * **Video** - the HDMI/DisplayPort input up to 3840 × 2160 at 30 fps, as
-  H.264 for browsers with WebCodecs and MJPEG for the others
+  H.264 or H.265 for browsers with WebCodecs and MJPEG for the others;
+  2560 × 1440 at 90 fps is also supported
 * **Sound** - what the target plays over HDMI or to its USB speaker, and
   your microphone as the target's USB microphone (over HTTPS)
 * **Keyboard and mouse** - keys as you press them, an absolute mouse, a pen
@@ -83,6 +84,10 @@ HTTPS, which the microphone needs, uses a certificate the device made
 itself: the browser asks once whether to trust it.
 
 ## Updating
+
+Version 0.3.0 uses a 64-bit system. Moving from 0.2.0 or older requires a
+full SD card burn using the steps above; SSH updates cannot replace the
+32-bit bootloader. Save any files and settings you need before reburning.
 
 New firmware goes over SSH, with your key or the password:
 
@@ -177,22 +182,27 @@ microphone one IN and the speaker one OUT. The device page's USB card
 counts them as you choose, and what does not fit is refused: drop the sound
 card, the mice or even the USB network for more storage devices.
 
-The pulse icon on the KVM page shows the connection's stats over the
-picture, each second: what the NanoKVM captured, encoded and skipped and
-how long a frame took, what the browser received, decoded and showed, the
-longest wait for a frame and the network's jitter. A Mac on Wi-Fi may stop
-receiving for about 100 ms twice a second, the longest wait and the
-jitter jumping while the rest stays low: it shares its Wi-Fi radio with
-AWDL, which AirDrop, Handoff, Universal Control and Sidecar use.
-`sudo ifconfig awdl0 down` stops it until the next restart or until one of
-them needs it again; AirDrop set to No One and Handoff off keep it off
-longer. Smooth playback, in the picture's menu, hides such stalls by
-showing the picture that much later; Lowest latency shows each frame as
-it arrives. The target's refresh rate sets how often the picture changes:
-the NanoKVM offers 2560×1440 at up to 90 Hz besides 3840×2160 at 30 Hz.
+The fullscreen button expands the picture. Shift+Escape exits locally;
+holding Escape also provides a browser escape. Mouse > Fullscreen game
+control locks and hides the pointer for relative movement. Leaving capture,
+losing focus or disconnecting releases held input. Keyboard > Send Command Q
+sends that shortcut only to the target: the OS or browser may retain a
+physical system shortcut even with keyboard capture enabled.
+
+The pulse icon shows capture, encoding, transport and browser statistics.
+Lowest latency is the default. Optional Smooth playback buffers at most
+50 ms; it cannot hide every network stall. Arrival variation can come from
+the device, transport or browser scheduling and does not identify a Wi-Fi
+cause by itself. The target's refresh rate sets how often the picture changes.
+
+Text recognition uses the NPU and separately supplied PP-OCRv5 models in
+`priv/ocr` (`det.axmodel`, `rec.axmodel` and `keys.txt`). These models are not
+bundled in the release image; the Text tool is available when they and the
+NPU are present. Model preparation is documented in
+[axera_npu](https://github.com/cocoa-xu/axera_npu/tree/main/models/ppocrv5).
 
 The memory for video and the NPU (192 and 64 MiB) changes at the next boot,
-over SSH: `NanoKVMGo.CMA.put_sizes(%{video: 160, npu: 96})`. With
+over SSH: `NanoKVMGo.CMA.persist_sizes(%{video: 160, npu: 96})`. With
 `trial: true` the next boot runs the new sizes on trial, kept the same way
 as a new firmware.
 
@@ -202,7 +212,6 @@ on the device are in `/data/nerves_ssh`, the Wi-Fi in `/data/vintage_net`.
 
 ## Known limits
 
-* The NanoKVM-Go with 256 MB is not supported yet.
 * Wi-Fi networks that need a user name (WPA2-Enterprise) and WEP ones
   cannot be joined from the page. Networks that offer WPA2 and WPA3 are
   joined with WPA2: WPA3 through this Wi-Fi chip is not proven yet.

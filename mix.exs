@@ -2,7 +2,7 @@ defmodule Kuroneko.MixProject do
   use Mix.Project
 
   @app :kuroneko
-  @version "0.2.0"
+  @version "0.3.0"
   @all_targets [:nano_kvm_go]
 
   def project do
@@ -42,9 +42,9 @@ defmodule Kuroneko.MixProject do
       {:ring_logger, "~> 0.11.0"},
       {:toolshed, "~> 0.5.0"},
       {:muontrap, "~> 2.0"},
-      sibling(:nano_kvm_go, "v0.3.0"),
-      sibling(:kuroneko_gadget, "v0.4.0"),
-      sibling(:axera_npu, "v0.1.0"),
+      sibling(:nano_kvm_go, "v0.4.0"),
+      sibling(:kuroneko_gadget, "v0.5.0"),
+      sibling(:axera_npu, "v0.2.0"),
       {:bandit, "~> 1.6"},
       {:websock_adapter, "~> 0.5"},
       {:jason, "~> 1.4"},
@@ -85,7 +85,7 @@ defmodule Kuroneko.MixProject do
       # bumps to Nerves systems. Since these include Linux kernel and Erlang
       # version updates, please review their release notes in case
       # changes to your application are needed.
-      sibling(:nerves_system_nano_kvm_go, "v0.1.4",
+      sibling(:nerves_system_nano_kvm_go, "v0.2.0",
         runtime: false,
         targets: :nano_kvm_go,
         nerves: [compile: true]
