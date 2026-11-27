@@ -92,10 +92,14 @@
   .stats dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
   .stats .side { grid-column: 1 / -1; margin-top: 6px; color: var(--text); font-weight: 600; }
   .stats .side:first-child { margin-top: 0; }
-  /* Over the picture, where it does not take the mouse */
+  /* Over the picture, wherever it is dragged */
   #statsbox { position: fixed; top: calc(var(--bar) + 10px); left: 10px; z-index: 6; width: 270px;
-    padding: 10px 12px; border-radius: 10px; background: rgba(12, 13, 16, 0.72); pointer-events: none;
-    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border: 1px solid var(--line); }
+    padding: 10px 12px; border-radius: 8px; background: rgba(0, 0, 0, 0.6); cursor: move;
+    touch-action: none; user-select: none; -webkit-user-select: none; }
+  #statsbox.dragging { cursor: grabbing; }
+  #statsclose { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; padding: 0; border: 0;
+    border-radius: 6px; background: none; color: var(--text-2); font-size: 16px; line-height: 22px; cursor: pointer; }
+  #statsclose:hover { background: var(--fill-2); color: var(--text); }
   .meterrow { display: grid; grid-template-columns: 52px minmax(0, 1fr) 42px; align-items: center; gap: 8px;
     margin: 6px 0; }
   .meterrow b { color: var(--text); font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
@@ -189,7 +193,10 @@
   </section>
 </div>
 
-<div id="statsbox" hidden><dl class="stats" id="connstats"></dl></div>
+<div id="statsbox" hidden>
+  <button type="button" id="statsclose" aria-label="Hide the connection stats" title="Hide">×</button>
+  <dl class="stats" id="connstats"></dl>
+</div>
 
 <div class="pop" id="pop-keyboard" hidden>
   <h4>Keyboard</h4>
@@ -643,16 +650,58 @@
   })();
   const connStats = document.getElementById("connstats");
   const statsTool = document.getElementById("statstool"), statsBox = document.getElementById("statsbox");
+  // Where the stats go: inside the window, under the bar.
+  function placeStats(x, y) {
+    const r = statsBox.getBoundingClientRect(), top = document.getElementById("bar").offsetHeight;
+    x = Math.min(Math.max(0, x), innerWidth - r.width);
+    y = Math.min(Math.max(top, y), innerHeight - r.height);
+    statsBox.style.left = `${x}px`;
+    statsBox.style.top = `${y}px`;
+  }
   function showStats(on) {
     statsBox.hidden = !on;
     statsTool.classList.toggle("on", on);
     statsTool.setAttribute("aria-pressed", String(on));
+    if (on) {
+      const r = statsBox.getBoundingClientRect();
+      placeStats(r.left, r.top);
+    }
   }
-  statsTool.onclick = () => {
-    const on = statsBox.hidden;
+  const toggleStats = (on) => {
     prefs.set("stats", on);
     showStats(on);
   };
+  statsTool.onclick = () => toggleStats(statsBox.hidden);
+  document.getElementById("statsclose").onclick = () => toggleStats(false);
+  // Dragged anywhere, and kept there. A press on it leaves the keyboard
+  // with the picture.
+  let statsDrag = null;
+  statsBox.addEventListener("mousedown", (e) => e.preventDefault());
+  statsBox.addEventListener("pointerdown", (e) => {
+    if (e.target.closest("button")) return;
+    const r = statsBox.getBoundingClientRect();
+    statsDrag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+    statsBox.setPointerCapture(e.pointerId);
+    statsBox.classList.add("dragging");
+  });
+  statsBox.addEventListener("pointermove", (e) => {
+    if (statsDrag) placeStats(e.clientX - statsDrag.dx, e.clientY - statsDrag.dy);
+  });
+  const endStatsDrag = () => {
+    if (!statsDrag) return;
+    statsDrag = null;
+    statsBox.classList.remove("dragging");
+    const r = statsBox.getBoundingClientRect();
+    prefs.set("statsAt", { x: Math.round(r.left), y: Math.round(r.top) });
+  };
+  statsBox.addEventListener("pointerup", endStatsDrag);
+  statsBox.addEventListener("pointercancel", endStatsDrag);
+  window.addEventListener("resize", () => {
+    if (!statsBox.hidden) {
+      const r = statsBox.getBoundingClientRect();
+      placeStats(r.left, r.top);
+    }
+  });
   function showConnection(b) {
     const d = connection.device;
     const per = (n) => (d && d.seconds ? Math.round(n / d.seconds) : n);
@@ -1575,6 +1624,11 @@
   updateMicButton();
   playback = prefs.get("playback", "smooth") === "latency" ? "latency" : "smooth";
   showPlayback();
+  const statsAt = prefs.get("statsAt", null);
+  if (statsAt && Number.isFinite(statsAt.x) && Number.isFinite(statsAt.y)) {
+    statsBox.style.left = `${statsAt.x}px`;
+    statsBox.style.top = `${statsAt.y}px`;
+  }
   showStats(prefs.get("stats", false) === true);
   mouseMode = prefs.get("mouseMode", "absolute") === "relative" ? "relative" : "absolute";
   showMouseMode();
