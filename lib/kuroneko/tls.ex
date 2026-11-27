@@ -10,8 +10,12 @@ defmodule Kuroneko.TLS do
 
   @doc """
   The Bandit options for the certificate in `dir`, made first if missing.
+
+  The server picks the cipher, ChaCha20-Poly1305 first: these cores have
+  no AES instructions, and AES-GCM in software costs them about five times
+  as much per byte of video.
   """
-  @spec options(Path.t()) :: [certfile: Path.t(), keyfile: Path.t()]
+  @spec options(Path.t()) :: keyword()
   def options(dir \\ "/data/kuroneko/tls") do
     certfile = Path.join(dir, "cert.pem")
     keyfile = Path.join(dir, "key.pem")
@@ -21,7 +25,19 @@ defmodule Kuroneko.TLS do
       make(certfile, keyfile)
     end
 
-    [certfile: certfile, keyfile: keyfile]
+    [
+      certfile: certfile,
+      keyfile: keyfile,
+      thousand_island_options: [
+        transport_options: [ciphers: ciphers(), honor_cipher_order: true]
+      ]
+    ]
+  end
+
+  defp ciphers do
+    (:ssl.cipher_suites(:default, :"tlsv1.3") ++ :ssl.cipher_suites(:default, :"tlsv1.2"))
+    |> Enum.uniq()
+    |> Enum.sort_by(&(&1.cipher != :chacha20_poly1305))
   end
 
   defp make(certfile, keyfile) do

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+* HTTPS picks ChaCha20-Poly1305 before AES-GCM, whatever the browser
+  prefers: the NanoKVM's cores have no AES instructions, and a 140 KB frame
+  took 8.3 ms to encrypt with AES-128-GCM against 1.8 ms with ChaCha20
 * The KVM page's connection quality, under the picture's menu, each second:
   what the NanoKVM captured, encoded and skipped and how long its encoder
   took, and what the browser received, decoded and showed, the longest
