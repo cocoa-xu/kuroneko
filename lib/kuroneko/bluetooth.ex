@@ -98,11 +98,27 @@ defmodule Kuroneko.Bluetooth.Writer do
   # takes buttons and wheels from the relative one only: the absolute
   # mouse's go there, where the pointer is, which on hosts of one pointer
   # comes to the same.
+  #
+  # Movement goes at most once a connection interval. The page moves the
+  # mouse faster than LE carries notifications, and a queue in bluetoothd
+  # would leave the pointer further behind the longer it moves: a position
+  # not sent yet gives way to a newer one, relative steps add up. Buttons
+  # and wheels go at once, after the movement before them.
 
   alias NanoKVMGo.Bluetooth.HID
 
+  # The connection interval BlueZ asks hosts for (main.conf's [LE]).
+  @interval_ms 15
+
   @spec start_link(atom()) :: {:ok, pid()}
-  def start_link(:mouse), do: {:ok, spawn_link(fn -> pointer(nil, 0) end)}
+  def start_link(:mouse),
+    do:
+      {:ok,
+       spawn_link(fn -> pointer(%{position: nil, sent: nil, buttons: 0, at: nil, due: false}) end)}
+
+  def start_link(:relative_mouse),
+    do: {:ok, spawn_link(fn -> relative(%{dx: 0, dy: 0, buttons: 0, at: nil, due: false}) end)}
+
   def start_link(kind), do: {:ok, spawn_link(fn -> loop(kind) end)}
 
   defp loop(kind) do
@@ -113,16 +129,74 @@ defmodule Kuroneko.Bluetooth.Writer do
     loop(kind)
   end
 
-  defp pointer(position, buttons) do
+  defp pointer(state) do
     receive do
-      {:report, <<new_buttons, x::little-16, y::little-16, wheel, pan>>} ->
-        if {x, y} != position,
-          do: HID.report(:mouse, <<0, x::little-16, y::little-16, 0, 0>>)
+      {:report, <<buttons, x::little-16, y::little-16, wheel, pan>>} ->
+        state = %{state | position: {x, y}}
 
-        if new_buttons != buttons or wheel != 0 or pan != 0,
-          do: HID.report(:relative_mouse, <<new_buttons, 0, 0, wheel, pan>>)
+        if buttons != state.buttons or wheel != 0 or pan != 0 do
+          state = send_position(state)
+          HID.report(:relative_mouse, <<buttons, 0, 0, wheel, pan>>)
+          pointer(%{state | buttons: buttons})
+        else
+          pointer(pace(state, &send_position/1))
+        end
 
-        pointer({x, y}, new_buttons)
+      :due ->
+        pointer(send_position(%{state | due: false}))
     end
   end
+
+  defp send_position(%{position: nil} = state), do: state
+  defp send_position(%{position: same, sent: same} = state), do: %{state | position: nil}
+
+  defp send_position(%{position: {x, y}} = state) do
+    HID.report(:mouse, <<0, x::little-16, y::little-16, 0, 0>>)
+    %{state | position: nil, sent: {x, y}, at: now()}
+  end
+
+  defp relative(state) do
+    receive do
+      {:report, <<buttons, dx::signed, dy::signed, wheel::signed, pan::signed>>} ->
+        state = %{state | dx: state.dx + dx, dy: state.dy + dy}
+
+        if buttons != state.buttons or wheel != 0 or pan != 0 do
+          state = send_steps(state)
+          HID.report(:relative_mouse, <<buttons, 0, 0, wheel::signed, pan::signed>>)
+          relative(%{state | buttons: buttons})
+        else
+          relative(pace(state, &send_steps/1))
+        end
+
+      :due ->
+        relative(send_steps(%{state | due: false}))
+    end
+  end
+
+  # What added up, in steps of at most 127 each way.
+  defp send_steps(%{dx: 0, dy: 0} = state), do: state
+
+  defp send_steps(state) do
+    {dx, dy} = {clamp(state.dx), clamp(state.dy)}
+    HID.report(:relative_mouse, <<state.buttons, dx::signed, dy::signed, 0, 0>>)
+    send_steps(%{state | dx: state.dx - dx, dy: state.dy - dy, at: now()})
+  end
+
+  # At once when an interval has passed since the last movement went, else
+  # once it has.
+  defp pace(%{due: true} = state, _send), do: state
+
+  defp pace(state, send) do
+    wait = if state.at, do: state.at + @interval_ms - now(), else: 0
+
+    if wait > 0 do
+      Process.send_after(self(), :due, wait)
+      %{state | due: true}
+    else
+      send.(state)
+    end
+  end
+
+  defp clamp(n), do: n |> max(-127) |> min(127)
+  defp now, do: System.monotonic_time(:millisecond)
 end
