@@ -29,6 +29,23 @@ defmodule Kuroneko.WakeOnLan do
   @spec packet(<<_::48>>) :: binary()
   def packet(<<_::48>> = mac), do: :binary.copy(<<0xFF>>, 6) <> :binary.copy(mac, 16)
 
+  @doc "The MAC address woken last, kept for next time; `\"\"` before any."
+  @spec saved_mac() :: String.t()
+  def saved_mac do
+    case File.read(saved_path()) do
+      {:ok, text} -> String.trim(text)
+      {:error, _reason} -> ""
+    end
+  end
+
+  @doc "Keeps a MAC address as the one to wake next time."
+  @spec save_mac(String.t()) :: :ok | {:error, term()}
+  def save_mac(text) do
+    with :ok <- File.mkdir_p(Path.dirname(saved_path())), do: File.write(saved_path(), text)
+  end
+
+  defp saved_path, do: Application.get_env(:kuroneko, :wake_file, "/data/kuroneko/wake_mac")
+
   @doc """
   Broadcasts the magic packet for a MAC address to port 9.
   """
