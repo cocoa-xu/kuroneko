@@ -1,3 +1,4 @@
+import { createInputCapture } from "./input-capture.mjs";
 import { createPageScope } from "./page-scope.mjs";
 import { createPacer, sampleVideo } from "./video-playback.mjs";
 
@@ -31,7 +32,7 @@ function start(hook) {
     scope.own(() => { if (ctx.state !== "closed") ctx.close().catch(() => {}); });
     return ctx;
   };
-  hook.stop = () => { hook.stopVideo?.(); scope.stop(); };
+  hook.stop = () => { hook.inputCapture?.dispose(); hook.stopVideo?.(); scope.stop(); };
 
   const canvas = document.getElementById("canvas");
   const img = document.getElementById("mjpeg");
@@ -151,7 +152,7 @@ function start(hook) {
       const hid = status.usb.includes("keyboard") && status.usb.includes("mouse");
       text("hint", !hid ? "Keyboard and mouse are off: turn them on in USB devices"
                    : mouseMode === "relative" ? "Click the picture to take the mouse, Esc lets go"
-                   : "Click the picture to send keyboard and mouse");
+                   : "Click to control the computer. Shift + Esc releases control.");
     } catch (_) {}
   }
   setInterval(pollStatus, 2000);
@@ -565,10 +566,70 @@ function start(hook) {
         if (typeof message.pong === "number") connection.rtt = performance.now() - message.pong;
       } catch (_) {}
     };
-    ws.onclose = () => { mark("input", false); setTimeout(connect, 1000); };
+    ws.onclose = () => { capture.release({ exit: true }); mark("input", false); setTimeout(connect, 1000); };
   }
   connect();
   const send = (event) => ws && ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify(event));
+  const inputResets = new Set();
+  const fullscreenButton = document.getElementById("fullscreen");
+  const captureStatus = document.getElementById("capturestatus");
+  let gameMouseMode = null, hadCapture = false;
+  const restoreMouse = () => {
+    if (gameMouseMode === null) return;
+    mouseMode = gameMouseMode;
+    gameMouseMode = null;
+    showMouseMode();
+  };
+  const capture = createInputCapture({
+    document, keyboard: navigator.keyboard, root: document.documentElement,
+    picture: () => view, send,
+    reset: () => { for (const reset of inputResets) reset(); wheelX = wheelY = 0; },
+    focusLocal: () => fullscreenButton.focus(),
+    schedule: setTimeout, cancel: clearTimeout,
+    changed: ({ fullscreen, locked, keyboard, message }) => {
+      document.documentElement.classList.toggle("kvm-fullscreen", fullscreen);
+      document.documentElement.classList.toggle("pointer-captured", locked);
+      fullscreenButton.setAttribute("aria-pressed", String(fullscreen));
+      fullscreenButton.title = fullscreen ? "Exit fullscreen" : "Fullscreen";
+      document.getElementById("fullscreenstrip").hidden = !fullscreen;
+      const active = fullscreen || locked;
+      if (hadCapture && !active) restoreMouse();
+      hadCapture = active;
+      if (!fullscreen) document.documentElement.classList.remove("fullscreen-tools");
+      captureStatus.textContent = message || (keyboard === "on" || keyboard === "requested"
+        ? "Keyboard capture requested. System shortcuts may still stay on this computer."
+        : "Browser shortcuts are not captured. Use the remote key buttons.");
+    },
+  });
+  hook.inputCapture = capture;
+  fullscreenButton.disabled = !document.fullscreenEnabled;
+  document.getElementById("gamecontrol").disabled = !document.fullscreenEnabled || !canvas.requestPointerLock;
+  fullscreenButton.onclick = () => {
+    closePop();
+    if (document.fullscreenElement) capture.exit();
+    else capture.enter();
+  };
+  document.getElementById("exitfullscreen").onclick = () => capture.exit();
+  document.getElementById("fullscreentools").onclick = () => {
+    capture.releaseKeys();
+    document.documentElement.classList.toggle("fullscreen-tools");
+  };
+  document.getElementById("gamecontrol").onclick = () => {
+    closePop();
+    if (gameMouseMode === null) gameMouseMode = mouseMode;
+    mouseMode = "relative";
+    showMouseMode();
+    capture.enter({ pointer: true }).then(() => {
+      if (!document.fullscreenElement && !document.pointerLockElement) restoreMouse();
+    });
+  };
+  listen(document, "fullscreenchange", () => capture.fullscreenChanged());
+  listen(document, "pointerlockchange", () => capture.pointerChanged());
+  listen(document, "pointerlockerror", () => capture.pointerError());
+  listen(document, "keydown", (e) => capture.localKey(e), true);
+  listen(window, "blur", () => capture.release({ exit: true }));
+  listen(document, "visibilitychange", () => { if (document.hidden) capture.release({ exit: true }); });
+
 
   // Position inside the picture, which object-fit: contain may letterbox.
   function position(e) {
@@ -592,6 +653,8 @@ function start(hook) {
   mouseModeGroup.onclick = (e) => {
     const b = e.target.closest("button");
     if (!b) return;
+    capture.releaseKeys();
+    gameMouseMode = null;
     mouseMode = b.dataset.mode;
     prefs.set("mouseMode", mouseMode);
     if (document.pointerLockElement) document.exitPointerLock();
@@ -654,7 +717,11 @@ function start(hook) {
     };
     // A press carries the position and the steps so far itself.
     const dropMove = () => { clearTimeout(timer); timer = 0; waiting = null; };
+    const resetInput = () => { dropMove(); dx = dy = 0; slots.clear(); };
+    inputResets.add(resetInput);
+    scope.own(() => inputResets.delete(resetInput));
     listen(el, "mousemove", (e) => {
+      if (document.activeElement !== el) return;
       if (mouseMode === "relative") {
         if (!locked()) return;
         dx += e.movementX;
@@ -672,10 +739,11 @@ function start(hook) {
       dropMove();
       if (mouseMode !== "relative") return mouse(e);
       // The first click takes the mouse.
-      if (!locked()) return el.requestPointerLock();
+      if (!locked()) return capture.lockPointer();
       relative(e);
     });
     listen(el, "mouseup", (e) => {
+      if (document.activeElement !== el) return;
       // The back and forward buttons would leave the page.
       e.preventDefault();
       dropMove();
@@ -683,6 +751,7 @@ function start(hook) {
       else if (locked()) relative(e);
     });
     listen(el, "wheel", (e) => {
+      if (document.activeElement !== el) return;
       e.preventDefault();
       const steps = wheelSteps(e);
       if (!steps.wheel && !steps.pan) return;
@@ -717,12 +786,9 @@ function start(hook) {
     }
     listen(el, "contextmenu", (e) => e.preventDefault());
     listen(el, "dragstart", (e) => e.preventDefault());
-    listen(el, "keydown", (e) => {
-      e.preventDefault();
-      if (!e.repeat) send({ type: "key", code: e.code, down: true });
-    });
-    listen(el, "keyup", (e) => { e.preventDefault(); send({ type: "key", code: e.code, down: false }); });
-    listen(el, "blur", () => send({ type: "release" }));
+    listen(el, "keydown", (e) => capture.key(e, true));
+    listen(el, "keyup", (e) => capture.key(e, false));
+    listen(el, "blur", () => capture.releaseKeys());
   }
 
   // ---- Sound ----
@@ -1187,6 +1253,7 @@ function start(hook) {
       const typed = prompt("Text to type on the target, as a US keyboard would:");
       if (typed) send({ type: "text", text: typed });
     } else if (value) {
+      capture.releaseKeys();
       const codes = value.split("+");
       for (const code of codes) send({ type: "key", code, down: true });
       for (const code of codes.reverse()) send({ type: "key", code, down: false });

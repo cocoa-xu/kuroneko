@@ -9,6 +9,9 @@
     <symbol id="i-stats" viewBox="0 0 24 24">
       <path d="M3 12.5h4.2l2.4-6 4.8 11.5 2.4-5.5H21" />
     </symbol>
+    <symbol id="i-fullscreen" viewBox="0 0 24 24">
+      <path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" />
+    </symbol>
     <symbol id="i-sound" viewBox="0 0 24 24">
       <path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z" /><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" />
     </symbol>
@@ -28,6 +31,13 @@
     </button>
     <span class="spacer"></span>
     <div class="tools">
+      <button
+        class="tool"
+        id="fullscreen"
+        title="Fullscreen"
+        aria-label="Fullscreen"
+        aria-pressed="false"
+      ><svg><use href="#i-fullscreen" /></svg></button>
       <button class="tool" data-pop="keyboard" title="Keyboard"><svg><use href="#i-keyboard" /></svg></button>
       <button class="tool" data-pop="pointer" id="pointertool" title="Mouse"><svg><use href="#i-pointer" /></svg><span
         class="badge"
@@ -50,6 +60,12 @@
       <button class="tool" data-pop="kvm" id="system" title="The NanoKVM: CPU and memory"><span class="glyph"><i><b id="cpuglyph"></b></i><i><b id="memglyph"></b></i></span></button>
     </div>
   </header>
+
+  <div id="fullscreenstrip" hidden>
+    <span>Shift + Esc exits. Hold Esc to exit through the browser.</span>
+    <button type="button" id="fullscreentools">Tools</button>
+    <button type="button" id="exitfullscreen">Exit fullscreen</button>
+  </div>
 
   <div class="pop" id="pop-picture" hidden>
     <h4>Picture</h4>
@@ -80,9 +96,21 @@
 
   <div class="pop" id="pop-keyboard" hidden>
     <h4>Keyboard</h4>
+    <p class="note" id="capturestatus" role="status">
+      Browser shortcuts are not captured. Use the remote key buttons.
+    </p>
     <section>
-      <span class="label">Keys the browser keeps for itself</span>
+      <span class="label">Send only to the remote computer</span>
+      <p class="note">
+        For Command Q, use the button below. macOS or the browser may keep a physical shortcut even in fullscreen.
+      </p>
       <div class="chips">
+        <button data-keys="MetaLeft+KeyQ" title="Quit the active app on the remote computer only">Send Command Q</button>
+        <button
+          data-keys="ControlLeft+MetaLeft+KeyF"
+          title="Toggle the remote Mac app's fullscreen"
+        >Remote fullscreen</button>
+        <button data-keys="Escape">Send Esc</button>
         <button data-keys="ControlLeft+AltLeft+Delete">Ctrl Alt Delete</button>
         <button data-keys="ControlLeft+AltLeft+Backspace">Ctrl Alt Backspace</button>
         <button data-keys="AltLeft+Tab">Alt Tab</button>
@@ -110,6 +138,12 @@
 
   <div class="pop" id="pop-pointer" hidden>
     <h4>Mouse</h4>
+    <section>
+      <button type="button" class="button" id="gamecontrol">Fullscreen game control</button>
+      <p class="note">
+        Locks and hides the pointer, using relative movement. Shift + Esc exits locally. Hold Esc for the browser's exit. Capture always needs your click.
+      </p>
+    </section>
     <section>
       <span class="label">Pointer</span>
       <div class="seg" id="mousemode" role="group" aria-label="Pointer">

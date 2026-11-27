@@ -118,6 +118,17 @@
           /* The picture */
           .screen { position: fixed; inset: var(--bar) 0 0 0; width: 100%; height: calc(100% - var(--bar));
             object-fit: contain; outline: none; cursor: crosshair; }
+          .kvm-fullscreen .screen { inset: 0; height: 100%; }
+          .kvm-fullscreen #bar { transform: translateY(-100%); }
+          .kvm-fullscreen.fullscreen-tools #bar, .kvm-fullscreen #bar:focus-within { transform: none; }
+          #fullscreenstrip { position: fixed; right: 10px; top: 10px; z-index: 11; display: flex;
+            align-items: center; gap: 8px; max-width: calc(100vw - 20px); box-sizing: border-box;
+            padding: 5px 8px; border-radius: 8px; background: rgba(22, 24, 28, 0.85); font-size: 12px; }
+          #fullscreenstrip button { border: 1px solid var(--line); border-radius: 5px; padding: 4px 7px;
+            color: var(--text); background: var(--fill-2); cursor: pointer; white-space: nowrap; }
+          .fullscreen-tools #fullscreenstrip { top: auto; bottom: 12px; }
+          .pointer-captured #fullscreenstrip button { display: none; }
+          .pointer-captured #fullscreenstrip { pointer-events: none; }
           /* This computer's pointer over the picture moves at the display's rate, at
              once; the target's follows in the picture. */
           body[data-local-pointer="dot"] .screen {

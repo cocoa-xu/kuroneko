@@ -26,6 +26,11 @@ defmodule KuronekoWeb.KVMLiveTest do
   test "the picture and its tools for the hook, the menu from here", %{conn: conn} do
     {:ok, view, html} = live(conn, "/")
     assert html =~ ~s(id="canvas")
+    assert has_element?(view, ~s(#fullscreen[aria-label="Fullscreen"]))
+    assert has_element?(view, "#exitfullscreen", "Exit fullscreen")
+    assert has_element?(view, "#gamecontrol", "Fullscreen game control")
+    assert has_element?(view, ~s(button[data-keys="MetaLeft+KeyQ"]), "Send Command Q")
+    assert has_element?(view, "#fullscreenstrip", "Shift + Esc exits")
     assert has_element?(view, ~s(#kvm-page[phx-hook="KVM"][phx-update="ignore"]))
     assert has_element?(view, "#pop-kvm .menu-row", "USB devices")
     assert has_element?(view, ~s(#pop-kvm a[href="/device"]), "Status and hardware")
