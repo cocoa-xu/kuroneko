@@ -20,6 +20,7 @@ defmodule Kuroneko.Application do
         Kuroneko.WiFi.Scanner,
         Kuroneko.VideoSettings,
         Kuroneko.USBSettings,
+        Kuroneko.ViewerStats,
         Kuroneko.OCR
       ] ++ target_children()
 

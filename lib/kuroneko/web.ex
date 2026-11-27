@@ -928,13 +928,24 @@ defmodule Kuroneko.InputSocket do
   @targets %{"usb" => Kuroneko.Gadget.Input, "bluetooth" => Kuroneko.Bluetooth.Input}
 
   @impl WebSock
-  def init(_args), do: {:ok, %{input: Kuroneko.Gadget.Input}}
+  def init(_args),
+    do: {:ok, %{input: Kuroneko.Gadget.Input, viewer: System.unique_integer([:positive])}}
 
+  # {"type": "ping", "t": ...} comes back as {"pong": ...}, for the round
+  # trip; {"type": "stats", ...} is the page's second of video, kept by
+  # Kuroneko.ViewerStats.
   @impl WebSock
   def handle_in({text, opcode: :text}, state) do
     case Jason.decode(text) do
       {:ok, %{"type" => "target", "target" => target}} when is_map_key(@targets, target) ->
         {:ok, retarget(state, @targets[target])}
+
+      {:ok, %{"type" => "ping", "t" => t}} when is_number(t) ->
+        {:push, {:text, Jason.encode!(%{pong: t})}, state}
+
+      {:ok, %{"type" => "stats"} = sample} ->
+        Kuroneko.ViewerStats.put(state.viewer, sample)
+        {:ok, state}
 
       {:ok, event} when is_map(event) ->
         Kuroneko.BrowserInput.handle(event, state.input)
@@ -974,8 +985,10 @@ defmodule Kuroneko.VideoSocket do
   Binary messages are a type, then the Annex B access unit: 1 an H.264
   delta, 2 an H.264 keyframe, 3 an H.265 delta, 4 an H.265 keyframe. After
   a codec change the first is a keyframe. Text messages, `{"input": ...}`,
-  come when the video input changes. The socket closes, with 1011, when the
-  video process stops: the page connects again to the one that follows.
+  come when the video input changes, and `{"stats": ...}` once a second
+  with what the capture and the encoder did (`t:NanoKVMGo.Video.stats/0`).
+  The socket closes, with 1011, when the video process stops: the page
+  connects again to the one that follows.
   """
   @behaviour WebSock
 
@@ -1016,6 +1029,10 @@ defmodule Kuroneko.VideoSocket do
 
   def handle_info({NanoKVMGo.Video, {:input, input}}, state) do
     {:push, {:text, Jason.encode!(%{input: input})}, state}
+  end
+
+  def handle_info({NanoKVMGo.Video, {:stats, stats}}, state) do
+    {:push, {:text, Jason.encode!(%{stats: stats})}, state}
   end
 
   def handle_info({:DOWN, monitor, :process, _pid, _reason}, %{video: monitor} = state) do
