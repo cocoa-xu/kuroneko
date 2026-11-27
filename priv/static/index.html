@@ -25,6 +25,7 @@
   .status:hover, .status.open { background: var(--fill-2); }
   .state { width: 7px; height: 7px; border-radius: 50%; background: var(--red); }
   .state.on { background: var(--green); }
+  .state.part { background: var(--amber); }
   #size { color: var(--text); font-variant-numeric: tabular-nums; }
   #mode { color: var(--text-3); font-variant-numeric: tabular-nums; }
   .spacer { flex: 1; }
@@ -37,11 +38,12 @@
     stroke-linecap: round; stroke-linejoin: round; }
   .badge { position: absolute; right: 0; bottom: 1px; padding: 0 3px; border-radius: 4px;
     background: var(--accent); color: #fff; font-size: 8.5px; font-weight: 700; line-height: 12px; }
-  /* The NanoKVM's CPU and memory, two bars that fill */
-  .glyph { display: flex; align-items: flex-end; gap: 3px; height: 16px; }
-  .glyph i { width: 4px; height: 10%; border-radius: 2px; background: var(--green); transition: height 0.5s; }
-  .glyph i.warm, .meter i.warm { background: var(--amber); }
-  .glyph i.hot, .meter i.hot { background: var(--red); }
+  /* The NanoKVM's CPU and memory, two bars across that fill */
+  .glyph { display: grid; gap: 3px; width: 18px; }
+  .glyph i { display: block; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.16); overflow: hidden; }
+  .glyph b { display: block; width: 10%; height: 100%; border-radius: 2px; background: var(--green); transition: width 0.5s; }
+  .glyph b.warm, .meter i.warm { background: var(--amber); }
+  .glyph b.hot, .meter i.hot { background: var(--red); }
 
   /* Popovers, as a Mac's menu bar extras: one at a time, under their tool */
   .pop { position: fixed; top: calc(var(--bar) + 6px); z-index: 20; width: 300px;
@@ -64,7 +66,7 @@
     background: var(--fill); color: var(--text); text-align: left; cursor: pointer; white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis; }
   .chips button:hover, .pop .item:hover { background: var(--fill-2); }
-  .pop .item { display: block; width: 100%; margin-top: 6px; }
+  .pop .item { display: block; box-sizing: border-box; width: 100%; margin-top: 6px; }
   .consoles { display: flex; gap: 4px; }
   .consoles button { flex: 1; height: 28px; padding: 0; border: 0; border-radius: 7px; background: var(--fill);
     color: var(--text); cursor: pointer; font-variant-numeric: tabular-nums; }
@@ -87,9 +89,13 @@
   .pop select:disabled { opacity: 0.5; cursor: default; }
   .stats { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 0; font-size: 12px; }
   .stats dt { color: var(--text-2); white-space: nowrap; }
-  .stats dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+  .stats dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
   .stats .side { grid-column: 1 / -1; margin-top: 6px; color: var(--text); font-weight: 600; }
   .stats .side:first-child { margin-top: 0; }
+  /* Over the picture, where it does not take the mouse */
+  #statsbox { position: fixed; top: calc(var(--bar) + 10px); left: 10px; z-index: 6; width: 270px;
+    padding: 10px 12px; border-radius: 10px; background: rgba(12, 13, 16, 0.72); pointer-events: none;
+    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border: 1px solid var(--line); }
   .meterrow { display: grid; grid-template-columns: 52px minmax(0, 1fr) 42px; align-items: center; gap: 8px;
     margin: 6px 0; }
   .meterrow b { color: var(--text); font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
@@ -97,7 +103,7 @@
   .meter i { display: block; width: 0; height: 100%; background: var(--green); transition: width 0.4s; }
   #net { display: block; margin-top: 4px; color: var(--text-3); font-size: 11.5px; font-variant-numeric: tabular-nums; }
   .links { display: grid; gap: 1px; }
-  .links a, .links button { display: block; width: 100%; padding: 7px 8px; border: 0; border-radius: 7px;
+  .links a, .links button { display: block; box-sizing: border-box; width: 100%; padding: 7px 8px; border: 0; border-radius: 7px;
     background: none; color: var(--text); text-align: left; text-decoration: none; cursor: pointer; }
   .links a:hover, .links button:hover { background: var(--fill-2); }
   .links .danger { color: #ff8a80; }
@@ -143,7 +149,8 @@
 <body>
 <svg width="0" height="0" style="position: absolute" aria-hidden="true">
   <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6.5 10h.01M10 10h.01M13.5 10h.01M17 10h.01M8 14h8"/></symbol>
-  <symbol id="i-pointer" viewBox="0 0 24 24"><path d="M6 3.5 18.5 11l-5.6 1.4-2.6 5.4z"/></symbol>
+  <symbol id="i-pointer" viewBox="0 0 24 24"><path d="M6 5 18.5 12.5l-5.6 1.4-2.6 5.4z"/></symbol>
+  <symbol id="i-stats" viewBox="0 0 24 24"><path d="M3 12.5h4.2l2.4-6 4.8 11.5 2.4-5.5H21"/></symbol>
   <symbol id="i-sound" viewBox="0 0 24 24"><path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></symbol>
   <symbol id="i-disk" viewBox="0 0 24 24"><path d="M4.5 13 6.8 6h10.4l2.3 7"/><rect x="3.5" y="13" width="17" height="6" rx="1.8"/><path d="M16.5 16h.01"/></symbol>
   <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16M8.5 10h7M8.5 14h4.5"/></symbol>
@@ -152,7 +159,7 @@
 <header id="bar">
   <span class="brand">NanoKVM-Go</span>
   <button class="status" data-pop="picture" title="The picture">
-    <span id="video" class="state"></span><span id="input" class="state"></span>
+    <span id="state" class="state" title="Connecting"></span>
     <span id="size">No signal</span><span id="mode"></span>
   </button>
   <span class="spacer"></span>
@@ -162,7 +169,8 @@
     <button class="tool" data-pop="sound" id="soundtool" title="Sound"><svg><use href="#i-sound"/></svg></button>
     <button class="tool" id="disk" title="Virtual disk: images and folders the target sees as a USB drive"><svg><use href="#i-disk"/></svg></button>
     <button class="tool" id="ocr" title="Read the text in a part of the picture: drag over it (Esc cancels)" hidden><svg><use href="#i-text"/></svg></button>
-    <button class="tool" data-pop="kvm" id="system" title="The NanoKVM: CPU and memory"><span class="glyph"><i id="cpuglyph"></i><i id="memglyph"></i></span></button>
+    <button class="tool" id="statstool" title="Connection stats" aria-pressed="false"><svg><use href="#i-stats"/></svg></button>
+    <button class="tool" data-pop="kvm" id="system" title="The NanoKVM: CPU and memory"><span class="glyph"><i><b id="cpuglyph"></b></i><i><b id="memglyph"></b></i></span></button>
   </div>
 </header>
 
@@ -179,11 +187,9 @@
       <button data-playback="latency" title="Each frame as soon as it arrives">Lowest latency</button>
     </div>
   </section>
-  <section>
-    <span class="label">Connection quality, each second</span>
-    <dl class="stats" id="connstats"></dl>
-  </section>
 </div>
+
+<div id="statsbox" hidden><dl class="stats" id="connstats"></dl></div>
 
 <div class="pop" id="pop-keyboard" hidden>
   <h4>Keyboard</h4>
@@ -308,7 +314,22 @@
   const canvas = document.getElementById("canvas");
   const img = document.getElementById("mjpeg");
   const notice = document.getElementById("notice");
-  const mark = (id, on) => document.getElementById(id).classList.toggle("on", on);
+  // The picture's and the input's connections, as one dot: green with both,
+  // amber with one, red with neither; its title says which.
+  const live = { video: false, input: false };
+  const STATE_TEXT = {
+    "true true": "Picture and input connected",
+    "true false": "Picture connected, input connecting",
+    "false true": "Input connected, no picture",
+    "false false": "Connecting",
+  };
+  const mark = (id, on) => {
+    live[id] = on;
+    const dot = document.getElementById("state");
+    dot.classList.toggle("on", live.video && live.input);
+    dot.classList.toggle("part", live.video !== live.input);
+    dot.title = STATE_TEXT[`${live.video} ${live.input}`];
+  };
   const text = (id, s) => { document.getElementById(id).textContent = s; };
   // A switch in a popover; the sound tool lights while sound or the microphone is on.
   function switchOn(button, on) {
@@ -391,7 +412,7 @@
 
   function glyph(id, percent) {
     const bar = document.getElementById(id);
-    bar.style.height = `${Math.min(100, Math.max(10, percent))}%`;
+    bar.style.width = `${Math.min(100, Math.max(10, percent))}%`;
     bar.className = percent >= 85 ? "hot" : percent >= 60 ? "warm" : "";
   }
 
@@ -621,6 +642,17 @@
     requestAnimationFrame(countShown);
   })();
   const connStats = document.getElementById("connstats");
+  const statsTool = document.getElementById("statstool"), statsBox = document.getElementById("statsbox");
+  function showStats(on) {
+    statsBox.hidden = !on;
+    statsTool.classList.toggle("on", on);
+    statsTool.setAttribute("aria-pressed", String(on));
+  }
+  statsTool.onclick = () => {
+    const on = statsBox.hidden;
+    prefs.set("stats", on);
+    showStats(on);
+  };
   function showConnection(b) {
     const d = connection.device;
     const per = (n) => (d && d.seconds ? Math.round(n / d.seconds) : n);
@@ -628,15 +660,15 @@
       ["The NanoKVM"],
       ["Captured", d ? `${per(d.captured)} fps` : "–"],
       ["Encoded", d ? `${per(d.encoded)} fps, ${d.skipped} skipped` : "–"],
-      ["A frame through the encoder", d ? `${d.encode_ms} ms, ${d.encode_max_ms} at most` : "–"],
-      ["QP", d ? `${d.qp}, ${d.qp_max} at most` : "–"],
+      ["Encode time", d ? `${d.encode_ms} ms, ${d.encode_max_ms} max` : "–"],
+      ["QP", d ? `${d.qp}, ${d.qp_max} max` : "–"],
       ["This browser"],
       ["Received", `${b.received} fps, ${b.mbit} Mbit/s`],
-      ["Longest wait for a frame", `${b.gap_max_ms} ms`],
-      ["Decoded", `${b.decoded} fps, ${b.decode_ms} ms, ${b.decode_max_ms} at most`],
-      ["Shown", `${b.shown} of ${b.drawn} drawn, ${connection.renderer || "–"}`],
-      ["Smoothing", b.delay_ms == null ? "off" : `${b.delay_ms} ms behind`],
-      ["Drawing a frame", `${b.draw_max_ms} ms at most`],
+      ["Longest wait", `${b.gap_max_ms} ms`],
+      ["Decoded", `${b.decoded} fps, ${b.decode_ms} ms, ${b.decode_max_ms} max`],
+      ["Shown", `${b.shown} of ${b.drawn}, ${connection.renderer || "–"}`],
+      ["Smoothing", b.delay_ms == null ? "off" : `${b.delay_ms} ms`],
+      ["Draw time", `${b.draw_max_ms} ms max`],
       ["Input round trip", b.rtt_ms == null ? "–" : `${b.rtt_ms} ms`],
     ];
     connStats.replaceChildren(...rows.flatMap(([term, value]) => {
@@ -1543,6 +1575,7 @@
   updateMicButton();
   playback = prefs.get("playback", "smooth") === "latency" ? "latency" : "smooth";
   showPlayback();
+  showStats(prefs.get("stats", false) === true);
   mouseMode = prefs.get("mouseMode", "absolute") === "relative" ? "relative" : "absolute";
   showMouseMode();
   const localPointer = prefs.get("localPointer", "dot");
