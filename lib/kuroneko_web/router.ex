@@ -16,5 +16,12 @@ defmodule KuronekoWeb.Router do
     live_session :signed_in, on_mount: KuronekoWeb.SignedIn do
       live "/device", DeviceLive
     end
+
+    # The KVM page has a layout of its own: its CSS, not the app's.
+    live_session :kvm,
+      on_mount: KuronekoWeb.SignedIn,
+      root_layout: {KuronekoWeb.Layouts, :kvm_root} do
+      live "/", KVMLive
+    end
   end
 end

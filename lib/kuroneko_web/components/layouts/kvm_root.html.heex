@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf-token" content={get_csrf_token()} />
+    <.live_title default="NanoKVM-Go">{assigns[:page_title]}</.live_title>
+    <link rel="stylesheet" href="/disk.css" />
+    <style>
+          :root { --bar: 40px; --line: rgba(255, 255, 255, 0.08); --fill: rgba(255, 255, 255, 0.06);
+            --fill-2: rgba(255, 255, 255, 0.11); --text: #eceef1; --text-2: #b0b5bc; --text-3: #80868e;
+            --accent: #4c9dff; --green: #34c759; --amber: #ffb340; --red: #ff5f57; }
+          html, body { margin: 0; height: 100%; background: #0b0c0e; color: var(--text-2);
+            font: 13px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; }
+          button, select { font: inherit; }
+          [hidden] { display: none !important; }
+
+          /* The bar: the state at the left, the tools as icons at the right */
+          #bar { position: fixed; inset: 0 0 auto 0; z-index: 10; height: var(--bar); box-sizing: border-box;
+            display: flex; align-items: center; gap: 10px; padding: 0 8px 0 14px;
+            background: rgba(22, 24, 28, 0.8); -webkit-backdrop-filter: saturate(170%) blur(18px);
+            backdrop-filter: saturate(170%) blur(18px); border-bottom: 1px solid var(--line); }
+          .brand { color: var(--text); font-weight: 650; white-space: nowrap; }
+          .status { display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 11px;
+            border: 0; border-radius: 13px; background: var(--fill); color: var(--text-2); cursor: pointer;
+            white-space: nowrap; }
+          .status:hover, .status.open { background: var(--fill-2); }
+          .state { width: 7px; height: 7px; border-radius: 50%; background: var(--red); }
+          .state.on { background: var(--green); }
+          .state.part { background: var(--amber); }
+          #size { color: var(--text); font-variant-numeric: tabular-nums; }
+          #mode { color: var(--text-3); font-variant-numeric: tabular-nums; }
+          .spacer { flex: 1; }
+          .tools { display: flex; align-items: center; gap: 2px; }
+          .tool { position: relative; display: grid; place-items: center; width: 34px; height: 30px; padding: 0;
+            border: 0; border-radius: 8px; background: transparent; color: var(--text-2); cursor: pointer; }
+          .tool:hover, .tool.open { background: var(--fill-2); color: var(--text); }
+          .tool.on { color: var(--accent); }
+          .tool svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.6;
+            stroke-linecap: round; stroke-linejoin: round; }
+          .badge { position: absolute; right: 0; bottom: 1px; padding: 0 3px; border-radius: 4px;
+            background: var(--accent); color: #fff; font-size: 8.5px; font-weight: 700; line-height: 12px; }
+          /* The NanoKVM's CPU and memory, two bars across that fill */
+          .glyph { display: grid; gap: 3px; width: 18px; }
+          .glyph i { display: block; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.16); overflow: hidden; }
+          .glyph b { display: block; width: 10%; height: 100%; border-radius: 2px; background: var(--green); transition: width 0.5s; }
+          .glyph b.warm, .meter i.warm { background: var(--amber); }
+          .glyph b.hot, .meter i.hot { background: var(--red); }
+
+          /* Popovers, as a Mac's menu bar extras: one at a time, under their tool */
+          .pop { position: fixed; top: calc(var(--bar) + 6px); z-index: 20; width: 300px;
+            max-width: calc(100vw - 16px); max-height: calc(100vh - var(--bar) - 20px); overflow-y: auto;
+            box-sizing: border-box; padding: 14px; border-radius: 14px; background: rgba(34, 36, 41, 0.9);
+            -webkit-backdrop-filter: saturate(170%) blur(24px); backdrop-filter: saturate(170%) blur(24px);
+            border: 1px solid var(--line); box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5); }
+          .pop h4 { margin: 0 0 12px; color: var(--text); font-size: 13px; font-weight: 650; }
+          .pop section + section { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+          .pop .label { display: block; margin-bottom: 6px; color: var(--text-3); font-size: 11.5px; }
+          .pop .note { margin: 8px 0 0; color: var(--text-3); font-size: 11.5px; }
+          .field:has(select[hidden]) { display: none; }
+          .seg { display: flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--fill); }
+          .seg button { flex: 1; height: 28px; border: 0; border-radius: 7px; background: transparent;
+            color: var(--text-2); cursor: pointer; }
+          .seg button[aria-pressed="true"] { background: rgba(255, 255, 255, 0.17); color: var(--text);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35); }
+          .chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+          .chips button, .pop .item { height: 32px; padding: 0 10px; border: 0; border-radius: 8px;
+            background: var(--fill); color: var(--text); text-align: left; cursor: pointer; white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis; }
+          .chips button:hover, .pop .item:hover { background: var(--fill-2); }
+          .pop .item { display: block; box-sizing: border-box; width: 100%; margin-top: 6px; }
+          .consoles { display: flex; gap: 4px; }
+          .consoles button { flex: 1; height: 28px; padding: 0; border: 0; border-radius: 7px; background: var(--fill);
+            color: var(--text); cursor: pointer; font-variant-numeric: tabular-nums; }
+          .consoles button:hover { background: var(--fill-2); }
+          .toggle { display: flex; align-items: center; gap: 12px; width: 100%; padding: 7px 0; border: 0;
+            background: none; color: inherit; text-align: left; cursor: pointer; }
+          .toggle:disabled { opacity: 0.45; cursor: default; }
+          .toggle .t { flex: 1; min-width: 0; }
+          .t-label { display: block; color: var(--text); }
+          .t-detail { display: block; margin-top: 2px; overflow: hidden; color: var(--text-3); font-size: 11.5px;
+            white-space: nowrap; text-overflow: ellipsis; }
+          .switch { position: relative; flex: none; width: 38px; height: 22px; border-radius: 11px;
+            background: rgba(255, 255, 255, 0.18); transition: background 0.2s; }
+          .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+            border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); transition: transform 0.2s; }
+          [aria-checked="true"] > .switch { background: var(--green); }
+          [aria-checked="true"] > .switch::after { transform: translateX(16px); }
+          .pop select { width: 100%; height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px;
+            background: var(--fill); color: var(--text); cursor: pointer; }
+          .pop select:disabled { opacity: 0.5; cursor: default; }
+          .stats { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 0; font-size: 12px; }
+          .stats dt { color: var(--text-2); white-space: nowrap; }
+          .stats dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
+          .stats .side { grid-column: 1 / -1; margin-top: 6px; color: var(--text); font-weight: 600; }
+          .stats .side:first-child { margin-top: 0; }
+          /* Over the picture, wherever it is dragged */
+          #statsbox { position: fixed; top: calc(var(--bar) + 10px); left: 10px; z-index: 6; width: 270px;
+            padding: 10px 12px; border-radius: 8px; background: rgba(0, 0, 0, 0.6); cursor: move;
+            touch-action: none; user-select: none; -webkit-user-select: none; }
+          #statsbox.dragging { cursor: grabbing; }
+          #statsclose { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; padding: 0; border: 0;
+            border-radius: 6px; background: none; color: var(--text-2); font-size: 16px; line-height: 22px; cursor: pointer; }
+          #statsclose:hover { background: var(--fill-2); color: var(--text); }
+          .meterrow { display: grid; grid-template-columns: 52px minmax(0, 1fr) 42px; align-items: center; gap: 8px;
+            margin: 6px 0; }
+          .meterrow b { color: var(--text); font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
+          .meter { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+          .meter i { display: block; width: 0; height: 100%; background: var(--green); transition: width 0.4s; }
+          #net { display: block; margin-top: 4px; color: var(--text-3); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+          .links { display: grid; gap: 1px; }
+          .links a, .links button { display: block; box-sizing: border-box; width: 100%; padding: 7px 8px; border: 0; border-radius: 7px;
+            background: none; color: var(--text); text-align: left; text-decoration: none; cursor: pointer; }
+          .links a:hover, .links button:hover { background: var(--fill-2); }
+          .links .danger { color: #ff8a80; }
+
+          /* The picture */
+          .screen { position: fixed; inset: var(--bar) 0 0 0; width: 100%; height: calc(100% - var(--bar));
+            object-fit: contain; outline: none; cursor: crosshair; }
+          /* This computer's pointer over the picture moves at the display's rate, at
+             once; the target's follows in the picture. */
+          body[data-local-pointer="dot"] .screen {
+            cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Ccircle cx='6' cy='6' r='4' fill='%23fff' stroke='%23000' stroke-opacity='.6' stroke-width='1.5'/%3E%3C/svg%3E") 6 6, crosshair; }
+          body[data-local-pointer="arrow"] .screen { cursor: default; }
+          body[data-local-pointer="none"] .screen:focus { cursor: none; }
+          #notice { position: fixed; inset: var(--bar) 0 0 0; display: flex; align-items: center;
+            justify-content: center; background: rgba(11, 12, 14, 0.85); color: var(--text-2);
+            font-size: 18px; pointer-events: none; }
+          /* Until the picture takes the keyboard and mouse */
+          #hint { position: fixed; left: 50%; bottom: 18px; z-index: 4; transform: translateX(-50%);
+            padding: 7px 14px; border-radius: 16px; background: rgba(22, 24, 28, 0.75);
+            -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); color: var(--text-2);
+            font-size: 12.5px; white-space: nowrap; pointer-events: none; transition: opacity 0.3s; }
+          body.controlling #hint { opacity: 0; }
+
+          dialog { box-sizing: border-box; width: min(600px, calc(100vw - 32px)); padding: 18px 20px;
+            border: 1px solid var(--line); border-radius: 14px; background: rgba(34, 36, 41, 0.96);
+            color: var(--text-2); box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5); }
+          dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+          dialog h3 { margin: 0 0 12px; color: var(--text); font-size: 15px; }
+          dialog select, dialog button { padding: 5px 12px; border: 0; border-radius: 8px; background: var(--fill-2);
+            color: var(--text); cursor: pointer; }
+          dialog menu { display: flex; justify-content: flex-end; gap: 8px; margin: 14px 0 0; padding: 0; }
+          dialog button:disabled { opacity: 0.5; cursor: default; }
+          #ocrlayer { position: fixed; inset: var(--bar) 0 0 0; z-index: 5; cursor: crosshair; }
+          #ocrbox { position: fixed; z-index: 6; border: 2px solid var(--green); background: rgba(52, 199, 89, 0.12);
+            pointer-events: none; }
+          #ocrtext { box-sizing: border-box; width: 100%; min-height: 160px; padding: 8px; resize: vertical;
+            border: 1px solid var(--line); border-radius: 8px; background: #0b0c0e; color: var(--text);
+            font: 13px/1.5 ui-monospace, Menlo, monospace; }
+          #ocrstate { min-height: 1em; margin: 6px 0 0; color: var(--text-3); font-size: 12px; }
+
+          /* The NanoKVM menu: rows that open a panel of their own, as Control Center's do */
+          .menu-row { display: flex; align-items: center; gap: 10px; box-sizing: border-box; width: 100%;
+            padding: 7px 8px; border: 0; border-radius: 7px; background: none; color: var(--text); text-align: left;
+            text-decoration: none; cursor: pointer; font: inherit; }
+          .menu-row:hover { background: var(--fill-2); }
+          .menu-row .detail { margin-left: auto; max-width: 55%; overflow: hidden; color: var(--text-3); font-size: 12px;
+            white-space: nowrap; text-overflow: ellipsis; }
+          .menu-row .chevron { margin-left: 2px; color: var(--text-3); font-size: 16px; line-height: 1; }
+          .menu-row.danger { color: #ff8a80; }
+          .seg.fit button { flex: auto; padding: 0 9px; white-space: nowrap; }
+      .menu-back { display: inline-flex; align-items: center; gap: 4px; margin: -4px 0 8px -6px; padding: 3px 6px;
+            border: 0; border-radius: 7px; background: none; color: var(--accent); font: inherit; cursor: pointer; }
+          .menu-back:hover { background: var(--fill); }
+          .pop input[type="text"], .pop input[type="password"] { box-sizing: border-box; width: 100%; height: 30px;
+            margin-top: 6px; padding: 0 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--fill);
+            color: var(--text); font: inherit; outline: none; }
+          .pop input[type="text"]:focus, .pop input[type="password"]:focus { border-color: var(--accent); }
+          .pop input[type="range"] { width: 100%; margin: 4px 0 0; accent-color: var(--accent); }
+          .pop .actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px; }
+          .pop .button { height: 28px; padding: 0 12px; border: 0; border-radius: 7px; background: var(--fill-2);
+            color: var(--text); font: inherit; cursor: pointer; }
+          .pop .button:hover { background: rgba(255, 255, 255, 0.16); }
+          .pop .button.primary { background: var(--accent); color: #fff; }
+          .pop .button.destructive { background: #e5483f; color: #fff; }
+          .pop .button.small { height: 24px; padding: 0 9px; font-size: 12px; }
+          .pop .button:disabled { opacity: 0.5; cursor: default; }
+          .pop .message { margin: 8px 0 0; color: var(--text-2); font-size: 12px; }
+          .pop .message.error { color: #ff8a80; }
+          .pop .message:empty { display: none; }
+          .pop .heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+          .pop .heading .label { margin: 0; }
+          .net { display: flex; align-items: center; gap: 8px; box-sizing: border-box; width: 100%; padding: 6px 8px;
+            border: 0; border-radius: 7px; background: none; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+          .net:hover { background: var(--fill-2); }
+          .net .name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+          .net .meta { color: var(--text-3); font-size: 11.5px; white-space: nowrap; }
+          .net.current .name { color: var(--accent); }
+          .device-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; color: var(--text); }
+          .device-row .name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+          .device-row .meta { color: var(--text-3); font-size: 11.5px; }
+          #toast { position: fixed; left: 50%; bottom: 22px; z-index: 30; transform: translateX(-50%); max-width: 80vw;
+            padding: 8px 14px; border-radius: 10px; background: rgba(34, 36, 41, 0.94); color: var(--text);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); cursor: pointer; }
+          #toast.error { color: #ff8a80; }
+            
+        
+    </style>
+    <script defer src="/disk.js">
+    </script>
+    <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
+    </script>
+  </head>
+  <body>
+    {@inner_content}
+  </body>
+</html>

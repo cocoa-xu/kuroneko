@@ -89,6 +89,7 @@ defmodule Kuroneko.Web do
   # What needs no session: the page (or the login page) and logging in.
   @public [
     {"GET", "/"},
+    {"GET", "/classic"},
     {"GET", "/device"},
     {"GET", "/settings"},
     {"GET", "/api/auth"},
@@ -122,7 +123,9 @@ defmodule Kuroneko.Web do
   match("/live/*_rest", do: phoenix(conn))
   get("/assets/*_rest", do: phoenix(conn))
 
-  get("/", do: page(conn, "index.html"))
+  get("/", do: if(logged_in?(conn), do: phoenix(conn), else: page(conn, "login.html")))
+  # The KVM page as it was before KuronekoWeb.KVMLive.
+  get("/classic", do: page(conn, "index.html"))
   get("/device", do: if(logged_in?(conn), do: phoenix(conn), else: page(conn, "login.html")))
   get("/settings", do: page(conn, "settings.html"))
   get("/disk.js", do: asset(conn, "disk.js", "text/javascript"))

@@ -1,0 +1,226 @@
+<div id="kvm-page" phx-hook="KVM" phx-update="ignore">
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+    <symbol id="i-keyboard" viewBox="0 0 24 24">
+      <rect x="2.5" y="6" width="19" height="12" rx="2.5" /><path d="M6.5 10h.01M10 10h.01M13.5 10h.01M17 10h.01M8 14h8" />
+    </symbol>
+    <symbol id="i-pointer" viewBox="0 0 24 24">
+      <path d="M6 5 18.5 12.5l-5.6 1.4-2.6 5.4z" />
+    </symbol>
+    <symbol id="i-stats" viewBox="0 0 24 24">
+      <path d="M3 12.5h4.2l2.4-6 4.8 11.5 2.4-5.5H21" />
+    </symbol>
+    <symbol id="i-sound" viewBox="0 0 24 24">
+      <path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z" /><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" />
+    </symbol>
+    <symbol id="i-disk" viewBox="0 0 24 24">
+      <path d="M4.5 13 6.8 6h10.4l2.3 7" /><rect x="3.5" y="13" width="17" height="6" rx="1.8" /><path d="M16.5 16h.01" />
+    </symbol>
+    <symbol id="i-text" viewBox="0 0 24 24">
+      <path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16M8.5 10h7M8.5 14h4.5" />
+    </symbol>
+  </svg>
+
+  <header id="bar">
+    <span class="brand">NanoKVM-Go</span>
+    <button class="status" data-pop="picture" title="The picture">
+      <span id="state" class="state" title="Connecting"></span>
+      <span id="size">No signal</span><span id="mode"></span>
+    </button>
+    <span class="spacer"></span>
+    <div class="tools">
+      <button class="tool" data-pop="keyboard" title="Keyboard"><svg><use href="#i-keyboard" /></svg></button>
+      <button class="tool" data-pop="pointer" id="pointertool" title="Mouse"><svg><use href="#i-pointer" /></svg><span
+        class="badge"
+        id="btbadge"
+        hidden
+      >BT</span></button>
+      <button class="tool" data-pop="sound" id="soundtool" title="Sound"><svg><use href="#i-sound" /></svg></button>
+      <button
+        class="tool"
+        id="disk"
+        title="Virtual disk: images and folders the target sees as a USB drive"
+      ><svg><use href="#i-disk" /></svg></button>
+      <button
+        class="tool"
+        id="ocr"
+        title="Read the text in a part of the picture: drag over it (Esc cancels)"
+        hidden
+      ><svg><use href="#i-text" /></svg></button>
+      <button class="tool" id="statstool" title="Connection stats" aria-pressed="false"><svg><use href="#i-stats" /></svg></button>
+      <button class="tool" data-pop="kvm" id="system" title="The NanoKVM: CPU and memory"><span class="glyph"><i><b id="cpuglyph"></b></i><i><b id="memglyph"></b></i></span></button>
+    </div>
+  </header>
+
+  <div class="pop" id="pop-picture" hidden>
+    <h4>Picture</h4>
+    <section class="field">
+      <span class="label">Quality</span>
+      <select
+        id="quality"
+        title="Presets as the stock firmware's, and more on the device page"
+        hidden
+      ></select>
+    </section>
+    <section>
+      <span class="label">Playback</span>
+      <div class="seg" id="playback" role="group" aria-label="Playback">
+        <button
+          data-playback="smooth"
+          title="Frames at the pace the NanoKVM made them, a little later than they could come, so that the network's hiccups do not show"
+        >Smooth</button>
+        <button data-playback="latency" title="Each frame as soon as it arrives">Lowest latency</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="statsbox" hidden>
+    <button type="button" id="statsclose" aria-label="Hide the connection stats" title="Hide">×</button>
+    <dl class="stats" id="connstats"></dl>
+  </div>
+
+  <div class="pop" id="pop-keyboard" hidden>
+    <h4>Keyboard</h4>
+    <section>
+      <span class="label">Keys the browser keeps for itself</span>
+      <div class="chips">
+        <button data-keys="ControlLeft+AltLeft+Delete">Ctrl Alt Delete</button>
+        <button data-keys="ControlLeft+AltLeft+Backspace">Ctrl Alt Backspace</button>
+        <button data-keys="AltLeft+Tab">Alt Tab</button>
+        <button data-keys="AltLeft+F4">Alt F4</button>
+        <button data-keys="MetaLeft">Windows / Command</button>
+        <button data-keys="MetaLeft+Space">Command Space</button>
+        <button data-keys="MetaLeft+Tab">Command Tab</button>
+        <button data-keys="ControlLeft+Escape">Ctrl Esc</button>
+        <button data-keys="PrintScreen">Print Screen</button>
+      </div>
+    </section>
+    <section>
+      <span class="label">Consoles: Ctrl Alt and</span>
+      <div class="consoles">
+        <button data-keys="ControlLeft+AltLeft+F1">F1</button><button data-keys="ControlLeft+AltLeft+F2">F2</button>
+        <button data-keys="ControlLeft+AltLeft+F3">F3</button><button data-keys="ControlLeft+AltLeft+F4">F4</button>
+        <button data-keys="ControlLeft+AltLeft+F5">F5</button><button data-keys="ControlLeft+AltLeft+F6">F6</button>
+        <button data-keys="ControlLeft+AltLeft+F7">F7</button>
+      </div>
+    </section>
+    <section>
+      <button class="item" data-action="type">Type text…</button>
+    </section>
+  </div>
+
+  <div class="pop" id="pop-pointer" hidden>
+    <h4>Mouse</h4>
+    <section>
+      <span class="label">Pointer</span>
+      <div class="seg" id="mousemode" role="group" aria-label="Pointer">
+        <button data-mode="absolute" title="The pointer goes where you point">Absolute</button>
+        <button
+          data-mode="relative"
+          title="The mouse moves by steps, for BIOS setups and games (Esc lets go)"
+        >Relative</button>
+      </div>
+    </section>
+    <section>
+      <span class="label">This computer's pointer</span>
+      <div
+        class="seg"
+        id="localpointer"
+        role="group"
+        aria-label="This computer's pointer over the picture"
+      >
+        <button
+          data-pointer="dot"
+          title="A dot that follows the mouse at once; the target's pointer follows in the picture"
+        >Dot</button>
+        <button data-pointer="arrow" title="An arrow that follows the mouse at once">Arrow</button>
+        <button data-pointer="none" title="Only the target's pointer, in the picture">None</button>
+      </div>
+    </section>
+    <section id="targetfield" hidden>
+      <span class="label">Keyboard and mouse go to</span>
+      <div class="seg" id="target" role="group" aria-label="Keyboard and mouse go to">
+        <button data-target="usb">USB</button>
+        <button data-target="bluetooth">Bluetooth</button>
+      </div>
+      <p class="note" id="targetnote"></p>
+    </section>
+  </div>
+
+  <div class="pop" id="pop-sound" hidden>
+    <h4>Sound</h4>
+    <section>
+      <button class="toggle" id="sound" role="switch" aria-checked="false">
+        <span class="t"><span class="t-label">Play the target's sound here</span><span
+          class="t-detail"
+          id="sounddetail"
+        >In this browser</span></span>
+        <span class="switch"></span>
+      </button>
+      <button class="toggle" id="mic" role="switch" aria-checked="false">
+        <span class="t"><span class="t-label">Talk to the target</span><span
+          class="t-detail"
+          id="micdetail"
+        >Into its USB microphone</span></span>
+        <span class="switch"></span>
+      </button>
+      <button class="toggle" id="voice" role="switch" aria-checked="true">
+        <span class="t"><span class="t-label">Echo cancellation</span><span class="t-detail">The browser's, on the microphone</span></span>
+        <span class="switch"></span>
+      </button>
+    </section>
+    <section>
+      <span class="label">USB sound card the target sees</span>
+      <select id="usbaudio">
+        <option value="off">Off</option>
+        <option value="mic">Microphone</option>
+        <option value="duplex">Microphone and speaker</option>
+      </select>
+    </section>
+  </div>
+
+  <div id="hint">Click the picture to send keyboard and mouse</div>
+  <canvas id="canvas" class="screen" tabindex="0" hidden></canvas>
+  <img id="mjpeg" class="screen" tabindex="0" alt="" hidden />
+  <div id="notice" hidden></div>
+  <div id="ocrlayer" hidden></div>
+  <div id="ocrbox" hidden></div>
+  <dialog id="ocrdialog">
+    <h3>Text in the picture</h3>
+    <textarea id="ocrtext" spellcheck="false"></textarea>
+    <p id="ocrstate"></p>
+    <menu>
+      <button id="ocrcopy">Copy</button>
+      <button id="ocrtype" title="Types the text on the target, as a US keyboard would">Type on the target</button>
+      <button id="ocrclose">Close</button>
+    </menu>
+  </dialog>
+</div>
+
+<div
+  class="pop"
+  id="pop-kvm"
+  hidden
+  phx-mounted={JS.ignore_attributes(["hidden", "style"])}
+>
+  <.menu
+    panel={@menu}
+    status={@status}
+    metrics={@metrics}
+    usb={@usb}
+    usb_busy={@usb_busy}
+    wifi={@wifi}
+    wifi_join={@wifi_join}
+    wake_mac={@wake_mac}
+    message={@message}
+  />
+</div>
+
+<div
+  :for={{kind, text} <- @flash}
+  id="toast"
+  class={kind == "error" && "error"}
+  role="status"
+  phx-click={JS.push("lv:clear-flash", value: %{key: kind}) |> JS.hide()}
+>
+  {text}
+</div>
