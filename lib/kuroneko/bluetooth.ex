@@ -94,16 +94,35 @@ end
 defmodule Kuroneko.Bluetooth.Writer do
   @moduledoc false
   # Hands the reports Kuroneko.Bluetooth.Input makes for one device to
-  # NanoKVMGo.Bluetooth.HID.
+  # NanoKVMGo.Bluetooth.HID. iOS moves its pointer by the absolute mouse but
+  # takes buttons and wheels from the relative one only: the absolute
+  # mouse's go there, where the pointer is, which on hosts of one pointer
+  # comes to the same.
+
+  alias NanoKVMGo.Bluetooth.HID
 
   @spec start_link(atom()) :: {:ok, pid()}
+  def start_link(:mouse), do: {:ok, spawn_link(fn -> pointer(nil, 0) end)}
   def start_link(kind), do: {:ok, spawn_link(fn -> loop(kind) end)}
 
   defp loop(kind) do
     receive do
-      {:report, report} -> NanoKVMGo.Bluetooth.HID.report(kind, report)
+      {:report, report} -> HID.report(kind, report)
     end
 
     loop(kind)
+  end
+
+  defp pointer(position, buttons) do
+    receive do
+      {:report, <<new_buttons, x::little-16, y::little-16, wheel, pan>>} ->
+        if {x, y} != position,
+          do: HID.report(:mouse, <<0, x::little-16, y::little-16, 0, 0>>)
+
+        if new_buttons != buttons or wheel != 0 or pan != 0,
+          do: HID.report(:relative_mouse, <<new_buttons, 0, 0, wheel, pan>>)
+
+        pointer({x, y}, new_buttons)
+    end
   end
 end
