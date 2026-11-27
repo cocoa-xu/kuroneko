@@ -120,243 +120,225 @@ defmodule KuronekoWeb.DeviceLive.USB do
         <.badge kind={@kind}>{@state}</.badge>
       </:actions>
 
-      <div class="grid gap-x-8 gap-y-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-        <div>
-          <h3 class="mb-1 text-sm font-semibold">Devices</h3>
+      <.facts rows={@link} />
 
-          <.row label="Keyboard and mice" detail="A keyboard, the pointer chosen and a relative mouse">
-            <form id="usb-pointer" phx-change="usb:pointer">
-              <select
-                name="pointer"
-                class="select select-sm w-40"
-                disabled={!@draft["hid"]}
-                aria-label="The pointer"
-              >
-                <option
-                  :for={{value, label} <- pointers()}
-                  value={value}
-                  selected={value == @draft["pointer"]}
-                >
-                  {label}
-                </option>
-              </select>
-            </form>
-            <.switch
-              checked={@draft["hid"]}
-              event="usb:toggle"
-              phx-value-key="hid"
-              label="Keyboard and mice"
-            />
-          </.row>
-          <.row
-            label="Mouse jiggler"
-            detail="A pixel and back each minute, so that the target stays awake"
-            class="pl-5"
-          >
-            <.switch
-              checked={@jiggler}
-              event="usb:jiggler"
-              label="Mouse jiggler"
-              disabled={!@hid_saved or !@draft["hid"]}
-            />
-          </.row>
-
-          <.row label="Network" detail="usb0, the NanoKVM's own">
-            <.switch
-              checked={@draft["network"]}
-              event="usb:toggle"
-              phx-value-key="network"
-              label="Network usb0"
-            />
-          </.row>
-          <div
-            :for={{name, i} <- Enum.with_index(@draft["networks"])}
-            class="flex items-center gap-2 pb-2 pl-5"
-          >
-            <form
-              id={"usb-network-#{i}"}
-              phx-change="usb:network_name"
-              class="flex min-w-0 flex-1 items-center gap-2"
+      <section class="mt-5 border-t border-base-300/60 pt-4" aria-label="Devices">
+        <h3 class="mb-1 text-sm font-semibold">Devices</h3>
+        <.row label="Keyboard and mice" detail="A keyboard, the pointer chosen and a relative mouse">
+          <form id="usb-pointer" phx-change="usb:pointer">
+            <select
+              name="pointer"
+              class="select select-sm w-40"
+              disabled={!@draft["hid"]}
+              aria-label="The pointer"
             >
-              <input type="hidden" name="index" value={i} />
-              <input
-                type="text"
-                name="name"
-                value={name}
-                maxlength="32"
-                spellcheck="false"
-                autocomplete="off"
-                phx-debounce="300"
-                class="input input-sm w-36"
-                aria-label="The network's name"
-              />
-              <span :if={interface(@config, name)} class="truncate text-xs text-base-content/55">
-                interface {interface(@config, name)}
-              </span>
-            </form>
-            <.button size={:sm} kind={:danger} phx-click="usb:remove_network" phx-value-index={i}>Remove</.button>
-          </div>
-          <div class="pb-3 pl-5">
-            <.button size={:sm} phx-click="usb:add_network" disabled={length(@draft["networks"]) >= 4}>
-              <.icon name="hero-plus-mini" class="size-4" /> Add a network
-            </.button>
-          </div>
-
-          <.row label="Virtual disk" detail="Its drives, each a LUN">
-            <form id="usb-drives" phx-change="usb:drives">
-              <select
-                name="drives"
-                class="select select-sm w-20"
-                disabled={!@draft["storage"]}
-                aria-label="Drives"
+              <option
+                :for={{value, label} <- pointers()}
+                value={value}
+                selected={value == @draft["pointer"]}
               >
-                <option :for={n <- 1..16} value={n} selected={n == @draft["drives"]}>{n}</option>
-              </select>
-            </form>
-            <.switch
-              checked={@draft["storage"]}
-              event="usb:toggle"
-              phx-value-key="storage"
-              label="Virtual disk"
-            />
-          </.row>
-          <div
-            :for={{storage, i} <- Enum.with_index(@draft["storages"])}
-            class="flex items-center gap-2 pb-2 pl-5"
-          >
-            <form
-              id={"usb-storage-#{i}"}
-              phx-change="usb:storage"
-              class="flex min-w-0 flex-1 items-center gap-2"
-            >
-              <input type="hidden" name="index" value={i} />
-              <input
-                type="text"
-                name="name"
-                value={storage["name"]}
-                maxlength="32"
-                spellcheck="false"
-                autocomplete="off"
-                phx-debounce="300"
-                class="input input-sm w-36"
-                aria-label="The storage device's name"
-              />
-              <select name="drives" class="select select-sm w-20" aria-label="Its drives">
-                <option :for={n <- 1..16} value={n} selected={n == storage["drives"]}>{n}</option>
-              </select>
-            </form>
-            <.button size={:sm} kind={:danger} phx-click="usb:remove_storage" phx-value-index={i}>Remove</.button>
-          </div>
-          <div class="pb-3 pl-5">
-            <.button size={:sm} phx-click="usb:add_storage" disabled={length(@draft["storages"]) >= 4}>
-              <.icon name="hero-plus-mini" class="size-4" /> Add a storage device
-            </.button>
-          </div>
-
-          <.row label="Sound card">
-            <.segmented
-              label="Sound card"
-              event="usb:audio"
-              value={@draft["audio"]}
-              options={[{"off", "Off"}, {"mic", "Mic"}, {"duplex", "Mic and speaker"}]}
-            />
-          </.row>
-          <.audio_format
-            :for={direction <- directions(@draft["audio"])}
-            direction={direction}
-            format={@draft[direction]}
-            using={@config.formats[direction]}
+                {label}
+              </option>
+            </select>
+          </form>
+          <.switch
+            checked={@draft["hid"]}
+            event="usb:toggle"
+            phx-value-key="hid"
+            label="Keyboard and mice"
           />
+        </.row>
+        <.row
+          label="Mouse jiggler"
+          detail="A pixel and back each minute, so that the target stays awake"
+          class="pl-5"
+        >
+          <.switch
+            checked={@jiggler}
+            event="usb:jiggler"
+            label="Mouse jiggler"
+            disabled={!@hid_saved or !@draft["hid"]}
+          />
+        </.row>
 
-          <div
-            :if={@dirty or @error}
-            class="mt-3 flex flex-wrap items-center gap-3 rounded-field bg-primary/8 p-3 ring-1 ring-primary/20"
+        <.row label="Network" detail="usb0, the NanoKVM's own">
+          <.switch
+            checked={@draft["network"]}
+            event="usb:toggle"
+            phx-value-key="network"
+            label="Network usb0"
+          />
+        </.row>
+        <div
+          :for={{name, i} <- Enum.with_index(@draft["networks"])}
+          class="flex items-center gap-2 pb-2 pl-5"
+        >
+          <form
+            id={"usb-network-#{i}"}
+            phx-change="usb:network_name"
+            class="flex min-w-0 flex-1 items-center gap-2"
           >
-            <p class="min-w-0 flex-1 basis-56 text-xs text-base-content/70">
-              Applying reconnects the NanoKVM's USB devices on the target: the keyboard and mice go away for a
-              moment.
-            </p>
-            <.button size={:sm} phx-click="usb:revert" disabled={!@dirty or @busy}>Revert</.button>
-            <.button
-              size={:sm}
-              kind={:primary}
-              phx-click="usb:apply"
-              disabled={!@dirty or !@fits or @busy}
+            <input type="hidden" name="index" value={i} />
+            <input
+              type="text"
+              name="name"
+              value={name}
+              maxlength="32"
+              spellcheck="false"
+              autocomplete="off"
+              phx-debounce="300"
+              class="input input-sm w-36"
+              aria-label="The network's name"
+            />
+            <span :if={interface(@config, name)} class="truncate text-xs text-base-content/55">
+              interface {interface(@config, name)}
+            </span>
+          </form>
+          <.button size={:sm} kind={:danger} phx-click="usb:remove_network" phx-value-index={i}>Remove</.button>
+        </div>
+        <div class="pb-3 pl-5">
+          <.button size={:sm} phx-click="usb:add_network" disabled={length(@draft["networks"]) >= 4}>
+            <.icon name="hero-plus-mini" class="size-4" /> Add a network
+          </.button>
+        </div>
+
+        <.row label="Virtual disk" detail="Its drives, each a LUN">
+          <form id="usb-drives" phx-change="usb:drives">
+            <select
+              name="drives"
+              class="select select-sm w-20"
+              disabled={!@draft["storage"]}
+              aria-label="Drives"
             >
-              {if @busy, do: "Applying…", else: "Apply"}
-            </.button>
-            <p :if={@error} class="basis-full text-sm text-error">{@error}</p>
-          </div>
+              <option :for={n <- 1..16} value={n} selected={n == @draft["drives"]}>{n}</option>
+            </select>
+          </form>
+          <.switch
+            checked={@draft["storage"]}
+            event="usb:toggle"
+            phx-value-key="storage"
+            label="Virtual disk"
+          />
+        </.row>
+        <div
+          :for={{storage, i} <- Enum.with_index(@draft["storages"])}
+          class="flex items-center gap-2 pb-2 pl-5"
+        >
+          <form
+            id={"usb-storage-#{i}"}
+            phx-change="usb:storage"
+            class="flex min-w-0 flex-1 items-center gap-2"
+          >
+            <input type="hidden" name="index" value={i} />
+            <input
+              type="text"
+              name="name"
+              value={storage["name"]}
+              maxlength="32"
+              spellcheck="false"
+              autocomplete="off"
+              phx-debounce="300"
+              class="input input-sm w-36"
+              aria-label="The storage device's name"
+            />
+            <select name="drives" class="select select-sm w-20" aria-label="Its drives">
+              <option :for={n <- 1..16} value={n} selected={n == storage["drives"]}>{n}</option>
+            </select>
+          </form>
+          <.button size={:sm} kind={:danger} phx-click="usb:remove_storage" phx-value-index={i}>Remove</.button>
+        </div>
+        <div class="pb-3 pl-5">
+          <.button size={:sm} phx-click="usb:add_storage" disabled={length(@draft["storages"]) >= 4}>
+            <.icon name="hero-plus-mini" class="size-4" /> Add a storage device
+          </.button>
         </div>
 
-        <div class="space-y-6">
-          <.facts rows={@link} />
+        <.row label="Sound card">
+          <.segmented
+            label="Sound card"
+            event="usb:audio"
+            value={@draft["audio"]}
+            options={[{"off", "Off"}, {"mic", "Mic"}, {"duplex", "Mic and speaker"}]}
+          />
+        </.row>
+        <.audio_format
+          :for={direction <- directions(@draft["audio"])}
+          direction={direction}
+          format={@draft[direction]}
+          using={@config.formats[direction]}
+        />
+      </section>
 
-          <div>
-            <div class="mb-2 flex items-baseline justify-between gap-3">
-              <h3 class="text-sm font-semibold">Endpoints</h3>
-              <span :if={!@fits} class="text-xs font-medium text-error">Too many: turn something off or remove it.</span>
+      <section class="mt-5 border-t border-base-300/60 pt-4" aria-label="Endpoints">
+        <div class="mb-3 flex flex-wrap items-baseline justify-between gap-x-3">
+          <h3 class="text-sm font-semibold">Endpoints</h3>
+          <span :if={!@fits} class="text-xs font-medium text-error">
+            Too many: turn something off or remove it.
+          </span>
+        </div>
+        <div class="space-y-2.5">
+          <div :for={bar <- @bars} class="flex items-center gap-3">
+            <span class="w-8 text-xs font-medium text-base-content/55">{bar.label}</span>
+            <div
+              class="grid h-2.5 flex-1 gap-0.5 overflow-hidden rounded-full bg-base-300"
+              style={"grid-template-columns: repeat(#{bar.columns}, minmax(0, 1fr))"}
+            >
+              <div
+                :for={cell <- bar.cells}
+                title={cell.title}
+                class={cell.over && "opacity-60"}
+                style={cell_style(cell)}
+              />
             </div>
-            <div class="space-y-2">
-              <div :for={bar <- @bars} class="flex items-center gap-3">
-                <span class="w-8 text-xs font-medium text-base-content/55">{bar.label}</span>
-                <div
-                  class="grid h-7 flex-1 gap-1"
-                  style={"grid-template-columns: repeat(#{bar.columns}, minmax(0, 1fr))"}
-                >
-                  <div
-                    :for={cell <- bar.cells}
-                    title={cell.title}
-                    class={[
-                      "flex min-w-0 items-center justify-center rounded-md px-1 text-[11px] font-medium text-white",
-                      cell.over && "opacity-50 outline-2 outline-offset-1 outline-error"
-                    ]}
-                    style={"grid-column: span #{cell.span}; background: #{cell.color}"}
-                  >
-                    <span class="truncate">{cell.short}</span>
-                  </div>
-                  <div
-                    :if={bar.free > 0}
-                    class="flex items-center justify-center rounded-md border border-dashed border-base-content/20 text-[11px] text-base-content/40"
-                    style={"grid-column: span #{bar.free}"}
-                  >
-                    free
-                  </div>
-                </div>
-                <span class={[
-                  "w-12 text-right text-xs tabular-nums",
-                  bar.over && "font-semibold text-error"
-                ]}>
-                  {bar.count}
-                </span>
-              </div>
-            </div>
-            <ul id="usb-legend" class="mt-3 grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
-              <li :for={device <- @devices} class="flex items-center gap-2">
-                <span
-                  class="size-2.5 shrink-0 rounded-sm"
-                  style={"background: #{color(device.kind)}"}
-                />
-                <span class="truncate font-medium">{device.name}</span>
-                <span class="ml-auto shrink-0 text-base-content/50">{cost_text(device.cost)}</span>
-              </li>
-            </ul>
-            <p class="mt-3 text-xs text-base-content/55">
-              Each device takes some of the USB controller's endpoints, besides endpoint 0: a network two IN and
-              one OUT, the keyboard and each mouse one IN, a storage device one of each however many drives it
-              has, the microphone one IN, the speaker one OUT. The bars count the devices on the left, changes
-              included.
-            </p>
-          </div>
-
-          <div>
-            <div class="mb-2 flex items-center justify-between">
-              <h3 class="text-sm font-semibold">Drives</h3>
-              <.button size={:sm} phx-click="usb:disk">Virtual disk…</.button>
-            </div>
-            <.drives disk={@disk} />
+            <span class={[
+              "w-12 text-right text-xs tabular-nums",
+              if(bar.over, do: "font-semibold text-error", else: "text-base-content/60")
+            ]}>
+              {bar.count}
+            </span>
           </div>
         </div>
+        <ul id="usb-legend" class="mt-4 flex flex-wrap gap-x-6 gap-y-1.5 text-xs">
+          <li :for={device <- @devices} class="flex items-center gap-2">
+            <span class="size-2.5 shrink-0 rounded-full" style={"background: #{color(device.kind)}"} />
+            <span class="font-medium">{device.name}</span>
+            <span class="text-base-content/50">{cost_text(device.cost)}</span>
+          </li>
+        </ul>
+        <p class="mt-3 text-xs text-base-content/55">
+          Each device takes some of the USB controller's endpoints, besides endpoint 0: a network two IN and
+          one OUT, the keyboard and each mouse one IN, a storage device one of each however many drives it
+          has, the microphone one IN, the speaker one OUT. The bars count the devices above, changes
+          included.
+        </p>
+      </section>
+
+      <section class="mt-5 border-t border-base-300/60 pt-4" aria-label="Drives">
+        <div class="mb-2 flex items-center justify-between">
+          <h3 class="text-sm font-semibold">Drives</h3>
+          <.button size={:sm} phx-click="usb:disk">Virtual disk…</.button>
+        </div>
+        <.drives disk={@disk} />
+      </section>
+
+      <div
+        :if={@dirty or @error}
+        class="glass sticky bottom-4 z-10 mt-5 flex flex-wrap items-center gap-3 rounded-box p-3 shadow-lg ring-1 ring-base-content/10"
+      >
+        <p class="min-w-0 flex-1 basis-56 text-xs text-base-content/70">
+          Applying reconnects the NanoKVM's USB devices on the target: the keyboard and mice go away for a
+          moment.
+        </p>
+        <.button size={:sm} phx-click="usb:revert" disabled={!@dirty or @busy}>Revert</.button>
+        <.button
+          size={:sm}
+          kind={:primary}
+          phx-click="usb:apply"
+          disabled={!@dirty or !@fits or @busy}
+        >
+          {if @busy, do: "Applying…", else: "Apply"}
+        </.button>
+        <p :if={@error} class="basis-full text-sm text-error">{@error}</p>
       </div>
     </.card>
     """
@@ -446,7 +428,7 @@ defmodule KuronekoWeb.DeviceLive.USB do
 
   defp drives(%{disk: %{drives: []}} = assigns) do
     ~H"""
-    <p class="text-sm text-base-content/60">The virtual disk is off: turn it on on the left.</p>
+    <p class="text-sm text-base-content/60">No drives: the virtual disk is off.</p>
     """
   end
 
@@ -498,6 +480,17 @@ defmodule KuronekoWeb.DeviceLive.USB do
 
   defp drive_detail(_disk, %{medium: nil}), do: "Empty"
   defp drive_detail(_disk, %{medium: medium}), do: DiskDialog.describe(medium)
+
+  # What does not fit is striped.
+  defp cell_style(cell) do
+    style = "grid-column: span #{cell.span}; background-color: #{cell.color}"
+
+    if cell.over,
+      do:
+        style <>
+          "; background-image: repeating-linear-gradient(135deg, transparent 0 3px, rgb(255 255 255 / .7) 3px 5px)",
+      else: style
+  end
 
   defp pointers, do: @pointers
   defp color(kind), do: @colors[kind]
