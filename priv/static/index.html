@@ -5,128 +5,260 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NanoKVM-Go</title>
 <style>
-  :root { --bar: 30px; }
-  html, body { margin: 0; height: 100%; background: #0e0f11; color: #c9ccd1;
-    font: 13px/1 system-ui, -apple-system, sans-serif; }
-  #bar { position: fixed; inset: 0 0 auto 0; height: var(--bar); display: flex;
-    align-items: center; gap: 14px; padding: 0 12px; background: #17191c;
-    border-bottom: 1px solid #262a2f; overflow-x: auto; scrollbar-width: none; }
-  /* One line: the hint gives way first, then the bar scrolls. */
-  #bar > * { flex: none; white-space: nowrap; }
-  #bar b { font-weight: 600; color: #e6e8eb; }
-  .state::before { content: ""; display: inline-block; width: 8px; height: 8px;
-    margin-right: 6px; border-radius: 50%; background: #b5443c; }
-  .state.on::before { background: #3fa45b; }
-  #mode, #size { color: #9aa0a8; }
-  #hint { margin-left: auto; color: #7d838b; flex: 0 1 auto; min-width: 0; overflow: hidden;
-    text-overflow: ellipsis; }
-  #system { display: inline-flex; align-items: center; gap: 5px; color: #9aa0a8; }
-  .meter { display: inline-block; width: 26px; height: 6px; background: #2a2e33;
-    border-radius: 3px; overflow: hidden; }
-  .meter i { display: block; height: 100%; width: 0; background: #3fa45b; transition: width 0.4s; }
-  .meter i.warm { background: #d6a83c; }
-  .meter i.hot { background: #d0584a; }
-  .screen { position: fixed; inset: var(--bar) 0 0 0; width: 100%;
-    height: calc(100% - var(--bar)); object-fit: contain; outline: none;
-    cursor: crosshair; }
+  :root { --bar: 40px; --line: rgba(255, 255, 255, 0.08); --fill: rgba(255, 255, 255, 0.06);
+    --fill-2: rgba(255, 255, 255, 0.11); --text: #eceef1; --text-2: #b0b5bc; --text-3: #80868e;
+    --accent: #4c9dff; --green: #34c759; --amber: #ffb340; --red: #ff5f57; }
+  html, body { margin: 0; height: 100%; background: #0b0c0e; color: var(--text-2);
+    font: 13px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  button, select { font: inherit; }
+  [hidden] { display: none !important; }
+
+  /* The bar: the state at the left, the tools as icons at the right */
+  #bar { position: fixed; inset: 0 0 auto 0; z-index: 10; height: var(--bar); box-sizing: border-box;
+    display: flex; align-items: center; gap: 10px; padding: 0 8px 0 14px;
+    background: rgba(22, 24, 28, 0.8); -webkit-backdrop-filter: saturate(170%) blur(18px);
+    backdrop-filter: saturate(170%) blur(18px); border-bottom: 1px solid var(--line); }
+  .brand { color: var(--text); font-weight: 650; white-space: nowrap; }
+  .status { display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 11px;
+    border: 0; border-radius: 13px; background: var(--fill); color: var(--text-2); cursor: pointer;
+    white-space: nowrap; }
+  .status:hover, .status.open { background: var(--fill-2); }
+  .state { width: 7px; height: 7px; border-radius: 50%; background: var(--red); }
+  .state.on { background: var(--green); }
+  #size { color: var(--text); font-variant-numeric: tabular-nums; }
+  #mode { color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .spacer { flex: 1; }
+  .tools { display: flex; align-items: center; gap: 2px; }
+  .tool { position: relative; display: grid; place-items: center; width: 34px; height: 30px; padding: 0;
+    border: 0; border-radius: 8px; background: transparent; color: var(--text-2); cursor: pointer; }
+  .tool:hover, .tool.open { background: var(--fill-2); color: var(--text); }
+  .tool.on { color: var(--accent); }
+  .tool svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.6;
+    stroke-linecap: round; stroke-linejoin: round; }
+  .badge { position: absolute; right: 0; bottom: 1px; padding: 0 3px; border-radius: 4px;
+    background: var(--accent); color: #fff; font-size: 8.5px; font-weight: 700; line-height: 12px; }
+  /* The NanoKVM's CPU and memory, two bars that fill */
+  .glyph { display: flex; align-items: flex-end; gap: 3px; height: 16px; }
+  .glyph i { width: 4px; height: 10%; border-radius: 2px; background: var(--green); transition: height 0.5s; }
+  .glyph i.warm, .meter i.warm { background: var(--amber); }
+  .glyph i.hot, .meter i.hot { background: var(--red); }
+
+  /* Popovers, as a Mac's menu bar extras: one at a time, under their tool */
+  .pop { position: fixed; top: calc(var(--bar) + 6px); z-index: 20; width: 300px;
+    max-width: calc(100vw - 16px); max-height: calc(100vh - var(--bar) - 20px); overflow-y: auto;
+    box-sizing: border-box; padding: 14px; border-radius: 14px; background: rgba(34, 36, 41, 0.9);
+    -webkit-backdrop-filter: saturate(170%) blur(24px); backdrop-filter: saturate(170%) blur(24px);
+    border: 1px solid var(--line); box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5); }
+  .pop h4 { margin: 0 0 12px; color: var(--text); font-size: 13px; font-weight: 650; }
+  .pop section + section { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .pop .label { display: block; margin-bottom: 6px; color: var(--text-3); font-size: 11.5px; }
+  .pop .note { margin: 8px 0 0; color: var(--text-3); font-size: 11.5px; }
+  .field:has(select[hidden]) { display: none; }
+  .seg { display: flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--fill); }
+  .seg button { flex: 1; height: 28px; border: 0; border-radius: 7px; background: transparent;
+    color: var(--text-2); cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: rgba(255, 255, 255, 0.17); color: var(--text);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35); }
+  .chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .chips button, .pop .item { height: 32px; padding: 0 10px; border: 0; border-radius: 8px;
+    background: var(--fill); color: var(--text); text-align: left; cursor: pointer; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+  .chips button:hover, .pop .item:hover { background: var(--fill-2); }
+  .pop .item { display: block; width: 100%; margin-top: 6px; }
+  .consoles { display: flex; gap: 4px; }
+  .consoles button { flex: 1; height: 28px; padding: 0; border: 0; border-radius: 7px; background: var(--fill);
+    color: var(--text); cursor: pointer; font-variant-numeric: tabular-nums; }
+  .consoles button:hover { background: var(--fill-2); }
+  .toggle { display: flex; align-items: center; gap: 12px; width: 100%; padding: 7px 0; border: 0;
+    background: none; color: inherit; text-align: left; cursor: pointer; }
+  .toggle:disabled { opacity: 0.45; cursor: default; }
+  .toggle .t { flex: 1; min-width: 0; }
+  .t-label { display: block; color: var(--text); }
+  .t-detail { display: block; margin-top: 2px; overflow: hidden; color: var(--text-3); font-size: 11.5px;
+    white-space: nowrap; text-overflow: ellipsis; }
+  .switch { position: relative; flex: none; width: 38px; height: 22px; border-radius: 11px;
+    background: rgba(255, 255, 255, 0.18); transition: background 0.2s; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+    border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); transition: transform 0.2s; }
+  [aria-checked="true"] > .switch { background: var(--green); }
+  [aria-checked="true"] > .switch::after { transform: translateX(16px); }
+  .pop select { width: 100%; height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--fill); color: var(--text); cursor: pointer; }
+  .pop select:disabled { opacity: 0.5; cursor: default; }
+  .meterrow { display: grid; grid-template-columns: 52px minmax(0, 1fr) 42px; align-items: center; gap: 8px;
+    margin: 6px 0; }
+  .meterrow b { color: var(--text); font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
+  .meter { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+  .meter i { display: block; width: 0; height: 100%; background: var(--green); transition: width 0.4s; }
+  #net { display: block; margin-top: 4px; color: var(--text-3); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+  .links { display: grid; gap: 1px; }
+  .links a, .links button { display: block; width: 100%; padding: 7px 8px; border: 0; border-radius: 7px;
+    background: none; color: var(--text); text-align: left; text-decoration: none; cursor: pointer; }
+  .links a:hover, .links button:hover { background: var(--fill-2); }
+  .links .danger { color: #ff8a80; }
+
+  /* The picture */
+  .screen { position: fixed; inset: var(--bar) 0 0 0; width: 100%; height: calc(100% - var(--bar));
+    object-fit: contain; outline: none; cursor: crosshair; }
   .screen:focus { cursor: none; }
   #notice { position: fixed; inset: var(--bar) 0 0 0; display: flex; align-items: center;
-    justify-content: center; background: rgba(14, 15, 17, 0.85); color: #9aa0a8;
+    justify-content: center; background: rgba(11, 12, 14, 0.85); color: var(--text-2);
     font-size: 18px; pointer-events: none; }
-  #bar button, #bar select, #bar a.button { font: inherit; padding: 2px 10px; border-radius: 4px;
-    cursor: pointer; border: 1px solid #343941; background: #1f2226; color: #c9ccd1;
-    text-decoration: none; }
-  #bar button:hover, #bar select:hover, #bar a.button:hover { background: #2a2e33; }
-  #bar button.on { border-color: #3fa45b; color: #e6e8eb; }
-  #actions { width: 92px; }
-  #usbaudio { max-width: 150px; }
-  #quality { max-width: 170px; }
-  /* Narrower windows keep the controls and the numbers, not the extras. */
-  @media (max-width: 1440px) {
-    #bar { gap: 12px; }
-    #size, .meter { display: none; }
-  }
-  #bar button:disabled, #bar select:disabled { opacity: 0.5; cursor: default; }
-  [hidden] { display: none !important; }
-  dialog { background: #17191c; color: #c9ccd1; border: 1px solid #343941; border-radius: 8px;
-    padding: 16px 20px; width: min(600px, calc(100vw - 32px)); box-sizing: border-box; }
-  dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
-  dialog h3 { margin: 0 0 10px; font-size: 15px; color: #e6e8eb; }
-  dialog select, dialog button { font: inherit; padding: 2px 10px; border-radius: 4px;
-    border: 1px solid #343941; background: #1f2226; color: #c9ccd1; cursor: pointer; }
+  /* Until the picture takes the keyboard and mouse */
+  #hint { position: fixed; left: 50%; bottom: 18px; z-index: 4; transform: translateX(-50%);
+    padding: 7px 14px; border-radius: 16px; background: rgba(22, 24, 28, 0.75);
+    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); color: var(--text-2);
+    font-size: 12.5px; white-space: nowrap; pointer-events: none; transition: opacity 0.3s; }
+  body.controlling #hint { opacity: 0; }
+
+  dialog { box-sizing: border-box; width: min(600px, calc(100vw - 32px)); padding: 18px 20px;
+    border: 1px solid var(--line); border-radius: 14px; background: rgba(34, 36, 41, 0.96);
+    color: var(--text-2); box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5); }
+  dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+  dialog h3 { margin: 0 0 12px; color: var(--text); font-size: 15px; }
+  dialog select, dialog button { padding: 5px 12px; border: 0; border-radius: 8px; background: var(--fill-2);
+    color: var(--text); cursor: pointer; }
   dialog menu { display: flex; justify-content: flex-end; gap: 8px; margin: 14px 0 0; padding: 0; }
   dialog button:disabled { opacity: 0.5; cursor: default; }
-  #ocrlayer { position: fixed; inset: var(--bar) 0 0 0; cursor: crosshair; z-index: 5; }
-  #ocrbox { position: fixed; border: 2px solid #3fa45b; background: rgba(63, 164, 91, 0.12);
-    pointer-events: none; z-index: 6; }
-  #ocrtext { width: 100%; min-height: 160px; box-sizing: border-box; resize: vertical;
-    font: 13px/1.5 ui-monospace, Menlo, monospace; background: #0e0f11; color: #e6e8eb;
-    border: 1px solid #343941; border-radius: 4px; padding: 8px; }
-  #ocrstate { color: #9aa0a8; font-size: 12px; margin: 6px 0 0; min-height: 1em; }
+  #ocrlayer { position: fixed; inset: var(--bar) 0 0 0; z-index: 5; cursor: crosshair; }
+  #ocrbox { position: fixed; z-index: 6; border: 2px solid var(--green); background: rgba(52, 199, 89, 0.12);
+    pointer-events: none; }
+  #ocrtext { box-sizing: border-box; width: 100%; min-height: 160px; padding: 8px; resize: vertical;
+    border: 1px solid var(--line); border-radius: 8px; background: #0b0c0e; color: var(--text);
+    font: 13px/1.5 ui-monospace, Menlo, monospace; }
+  #ocrstate { min-height: 1em; margin: 6px 0 0; color: var(--text-3); font-size: 12px; }
 </style>
 <link rel="stylesheet" href="/disk.css">
 </head>
 <body>
-<div id="bar">
-  <b>NanoKVM-Go</b>
-  <span id="video" class="state">video</span>
-  <span id="input" class="state">input</span>
-  <span id="mode"></span>
-  <span id="size"></span>
-  <select id="quality" title="The picture's quality and the bitrate it takes: presets as the stock firmware's, and more on the device page" hidden></select>
-  <button id="system" title="The NanoKVM's own CPU, memory and network: click for the device page">
-    CPU <span class="meter"><i id="cpumeter"></i></span><span id="cpu">-</span>
-    MEM <span class="meter"><i id="memmeter"></i></span><span id="mem">-</span>
-    <span id="net"></span>
+<svg width="0" height="0" style="position: absolute" aria-hidden="true">
+  <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6.5 10h.01M10 10h.01M13.5 10h.01M17 10h.01M8 14h8"/></symbol>
+  <symbol id="i-pointer" viewBox="0 0 24 24"><path d="M6 3.5 18.5 11l-5.6 1.4-2.6 5.4z"/></symbol>
+  <symbol id="i-sound" viewBox="0 0 24 24"><path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></symbol>
+  <symbol id="i-disk" viewBox="0 0 24 24"><path d="M4.5 13 6.8 6h10.4l2.3 7"/><rect x="3.5" y="13" width="17" height="6" rx="1.8"/><path d="M16.5 16h.01"/></symbol>
+  <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16M8.5 10h7M8.5 14h4.5"/></symbol>
+</svg>
+
+<header id="bar">
+  <span class="brand">NanoKVM-Go</span>
+  <button class="status" data-pop="picture" title="The picture">
+    <span id="video" class="state"></span><span id="input" class="state"></span>
+    <span id="size">No signal</span><span id="mode"></span>
   </button>
-  <span id="hint">click the picture to send keyboard and mouse</span>
-  <button id="mousemode" title="Absolute: the pointer goes where you point. Relative: the mouse moves by steps, for BIOS setups and games (Esc lets go)">Mouse: absolute</button>
-  <button id="target" title="Where the keyboard and mouse go: the computer on USB, or the phone, tablet or computer paired over Bluetooth (see the device page)" hidden>Input: USB</button>
-  <select id="actions" title="Keys the browser keeps for itself, and more">
-    <option value="">Keys…</option>
-    <optgroup label="Keys">
-      <option value="ControlLeft+AltLeft+Delete">Ctrl+Alt+Delete</option>
-      <option value="ControlLeft+AltLeft+Backspace">Ctrl+Alt+Backspace</option>
-      <option value="AltLeft+Tab">Alt+Tab</option>
-      <option value="AltLeft+F4">Alt+F4</option>
-      <option value="MetaLeft">Windows / Command</option>
-      <option value="MetaLeft+Space">Command+Space</option>
-      <option value="MetaLeft+Tab">Command+Tab</option>
-      <option value="ControlLeft+Escape">Ctrl+Esc</option>
-      <option value="PrintScreen">Print Screen</option>
-        <option value="ControlLeft+AltLeft+F1">Ctrl+Alt+F1</option>
-        <option value="ControlLeft+AltLeft+F2">Ctrl+Alt+F2</option>
-        <option value="ControlLeft+AltLeft+F3">Ctrl+Alt+F3</option>
-        <option value="ControlLeft+AltLeft+F4">Ctrl+Alt+F4</option>
-        <option value="ControlLeft+AltLeft+F5">Ctrl+Alt+F5</option>
-        <option value="ControlLeft+AltLeft+F6">Ctrl+Alt+F6</option>
-        <option value="ControlLeft+AltLeft+F7">Ctrl+Alt+F7</option>
-    </optgroup>
-    <optgroup label="More">
-      <option value="type">Type text…</option>
-      <option value="voice" id="voice"></option>
-      <option value="wake">Wake on LAN…</option>
-      <option value="screen">NanoKVM screen…</option>
-      <option value="device">NanoKVM status and hardware…</option>
-      <option value="settings">Wi-Fi, SSH and password…</option>
-      <option value="password">Change password…</option>
-      <option value="logout">Log out</option>
-      <option value="restart">Restart the NanoKVM…</option>
-    </optgroup>
-  </select>
-  <button id="sound" title="Play the target's sound here">Sound</button>
-  <button id="mic" title="Talk into the target's USB microphone">Mic</button>
-  <select id="usbaudio" title="The USB sound card the target sees">
-    <option value="off">USB audio off</option>
-    <option value="mic">USB microphone</option>
-    <option value="duplex">USB microphone + speaker</option>
-  </select>
-  <button id="usb" title="The USB devices the target sees, on the device page">USB…</button>
-  <button id="disk" title="Images and folders the target sees as a USB drive">Disk…</button>
-  <button id="ocr" title="Read the text in a part of the picture: drag over it (Esc cancels)" hidden>Text</button>
-  <a id="devicelink" class="button" href="/device" target="kuroneko-device"
-     title="The NanoKVM itself: its hardware, status, screen and firmware">Device</a>
+  <span class="spacer"></span>
+  <div class="tools">
+    <button class="tool" data-pop="keyboard" title="Keyboard"><svg><use href="#i-keyboard"/></svg></button>
+    <button class="tool" data-pop="pointer" id="pointertool" title="Mouse"><svg><use href="#i-pointer"/></svg><span class="badge" id="btbadge" hidden>BT</span></button>
+    <button class="tool" data-pop="sound" id="soundtool" title="Sound"><svg><use href="#i-sound"/></svg></button>
+    <button class="tool" id="disk" title="Virtual disk: images and folders the target sees as a USB drive"><svg><use href="#i-disk"/></svg></button>
+    <button class="tool" id="ocr" title="Read the text in a part of the picture: drag over it (Esc cancels)" hidden><svg><use href="#i-text"/></svg></button>
+    <button class="tool" data-pop="kvm" id="system" title="The NanoKVM: CPU and memory"><span class="glyph"><i id="cpuglyph"></i><i id="memglyph"></i></span></button>
+  </div>
+</header>
+
+<div class="pop" id="pop-picture" hidden>
+  <h4>Picture</h4>
+  <section class="field">
+    <span class="label">Quality</span>
+    <select id="quality" title="Presets as the stock firmware's, and more on the device page" hidden></select>
+  </section>
 </div>
+
+<div class="pop" id="pop-keyboard" hidden>
+  <h4>Keyboard</h4>
+  <section>
+    <span class="label">Keys the browser keeps for itself</span>
+    <div class="chips">
+      <button data-keys="ControlLeft+AltLeft+Delete">Ctrl Alt Delete</button>
+      <button data-keys="ControlLeft+AltLeft+Backspace">Ctrl Alt Backspace</button>
+      <button data-keys="AltLeft+Tab">Alt Tab</button>
+      <button data-keys="AltLeft+F4">Alt F4</button>
+      <button data-keys="MetaLeft">Windows / Command</button>
+      <button data-keys="MetaLeft+Space">Command Space</button>
+      <button data-keys="MetaLeft+Tab">Command Tab</button>
+      <button data-keys="ControlLeft+Escape">Ctrl Esc</button>
+      <button data-keys="PrintScreen">Print Screen</button>
+    </div>
+  </section>
+  <section>
+    <span class="label">Consoles: Ctrl Alt and</span>
+    <div class="consoles">
+      <button data-keys="ControlLeft+AltLeft+F1">F1</button><button data-keys="ControlLeft+AltLeft+F2">F2</button>
+      <button data-keys="ControlLeft+AltLeft+F3">F3</button><button data-keys="ControlLeft+AltLeft+F4">F4</button>
+      <button data-keys="ControlLeft+AltLeft+F5">F5</button><button data-keys="ControlLeft+AltLeft+F6">F6</button>
+      <button data-keys="ControlLeft+AltLeft+F7">F7</button>
+    </div>
+  </section>
+  <section>
+    <button class="item" data-action="type">Type text…</button>
+  </section>
+</div>
+
+<div class="pop" id="pop-pointer" hidden>
+  <h4>Mouse</h4>
+  <section>
+    <span class="label">Pointer</span>
+    <div class="seg" id="mousemode" role="group" aria-label="Pointer">
+      <button data-mode="absolute" title="The pointer goes where you point">Absolute</button>
+      <button data-mode="relative" title="The mouse moves by steps, for BIOS setups and games (Esc lets go)">Relative</button>
+    </div>
+  </section>
+  <section id="targetfield" hidden>
+    <span class="label">Keyboard and mouse go to</span>
+    <div class="seg" id="target" role="group" aria-label="Keyboard and mouse go to">
+      <button data-target="usb">USB</button>
+      <button data-target="bluetooth">Bluetooth</button>
+    </div>
+    <p class="note" id="targetnote"></p>
+  </section>
+</div>
+
+<div class="pop" id="pop-sound" hidden>
+  <h4>Sound</h4>
+  <section>
+    <button class="toggle" id="sound" role="switch" aria-checked="false">
+      <span class="t"><span class="t-label">Play the target's sound here</span><span class="t-detail" id="sounddetail">In this browser</span></span>
+      <span class="switch"></span>
+    </button>
+    <button class="toggle" id="mic" role="switch" aria-checked="false">
+      <span class="t"><span class="t-label">Talk to the target</span><span class="t-detail" id="micdetail">Into its USB microphone</span></span>
+      <span class="switch"></span>
+    </button>
+    <button class="toggle" id="voice" role="switch" aria-checked="true">
+      <span class="t"><span class="t-label">Echo cancellation</span><span class="t-detail">The browser's, on the microphone</span></span>
+      <span class="switch"></span>
+    </button>
+  </section>
+  <section>
+    <span class="label">USB sound card the target sees</span>
+    <select id="usbaudio">
+      <option value="off">Off</option>
+      <option value="mic">Microphone</option>
+      <option value="duplex">Microphone and speaker</option>
+    </select>
+  </section>
+</div>
+
+<div class="pop" id="pop-kvm" hidden>
+  <h4>NanoKVM</h4>
+  <section>
+    <div class="meterrow"><span>CPU</span><span class="meter"><i id="cpumeter"></i></span><b id="cpu">-</b></div>
+    <div class="meterrow"><span>Memory</span><span class="meter"><i id="memmeter"></i></span><b id="mem">-</b></div>
+    <span id="net"></span>
+  </section>
+  <section class="links">
+    <a id="devicelink" href="/device" target="kuroneko-device">Status and hardware</a>
+    <button id="usb">USB devices…</button>
+    <button data-action="screen">Screen…</button>
+    <button data-action="settings">Wi-Fi, SSH and password…</button>
+    <button data-action="wake">Wake on LAN…</button>
+    <button data-action="password">Change password…</button>
+    <button data-action="logout">Log out</button>
+    <button data-action="restart" class="danger">Restart the NanoKVM…</button>
+  </section>
+</div>
+
+<div id="hint">Click the picture to send keyboard and mouse</div>
 <canvas id="canvas" class="screen" tabindex="0" hidden></canvas>
 <img id="mjpeg" class="screen" tabindex="0" alt="" hidden>
 <div id="notice" hidden></div>
@@ -149,6 +281,39 @@
   const notice = document.getElementById("notice");
   const mark = (id, on) => document.getElementById(id).classList.toggle("on", on);
   const text = (id, s) => { document.getElementById(id).textContent = s; };
+  // A switch in a popover; the sound tool lights while sound or the microphone is on.
+  function switchOn(button, on) {
+    button.setAttribute("aria-checked", String(on));
+    const any = ["sound", "mic"].some((id) => document.getElementById(id).getAttribute("aria-checked") === "true");
+    document.getElementById("soundtool").classList.toggle("on", any);
+  }
+
+  // ---- The bar's popovers: one open at a time, under its tool; a click elsewhere or Esc closes it ----
+  let openPop = null;
+  function closePop() {
+    if (!openPop) return;
+    openPop.pop.hidden = true;
+    openPop.tool.classList.remove("open");
+    openPop = null;
+  }
+  for (const tool of document.querySelectorAll("[data-pop]")) {
+    tool.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const pop = document.getElementById(`pop-${tool.dataset.pop}`);
+      const again = openPop && openPop.pop === pop;
+      closePop();
+      if (again) return;
+      pop.hidden = false;
+      const r = tool.getBoundingClientRect();
+      const left = Math.min(Math.max(8, r.left + r.width / 2 - pop.offsetWidth / 2), innerWidth - pop.offsetWidth - 8);
+      pop.style.left = `${left}px`;
+      tool.classList.add("open");
+      openPop = { pop, tool };
+    });
+  }
+  document.addEventListener("click", (e) => { if (openPop && !openPop.pop.contains(e.target)) closePop(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && openPop) closePop(); });
+
   const wsUrl = (path) => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}`;
   let view = canvas;
   let decoded = 0;
@@ -168,7 +333,8 @@
     const problem = i === "none" ? "No signal" : i === "unsupported" ? "Unsupported input" : "";
     notice.textContent = problem;
     notice.hidden = !problem;
-    text("size", i && typeof i === "object" ? `${i.width}×${i.height} ${i.fps} Hz` : "");
+    text("size", i && typeof i === "object" ? `${i.width}×${i.height} ${i.fps} Hz`
+      : i === null ? "Starting" : i === "unsupported" ? "Unsupported input" : "No signal");
   }
   async function restart() {
     if (!confirm("Restart the NanoKVM? Video, keyboard and mouse stop for about 30 seconds.")) return;
@@ -187,7 +353,6 @@
 
   // The device page, in a tab of its own that later clicks reuse.
   const openDevice = (section) => window.open(`/device${section ? `#${section}` : ""}`, "kuroneko-device");
-  document.getElementById("system").onclick = () => openDevice();
 
   function meter(id, percent) {
     const bar = document.getElementById(id);
@@ -195,8 +360,16 @@
     bar.className = percent >= 85 ? "hot" : percent >= 60 ? "warm" : "";
   }
 
+  function glyph(id, percent) {
+    const bar = document.getElementById(id);
+    bar.style.height = `${Math.min(100, Math.max(10, percent))}%`;
+    bar.className = percent >= 85 ? "hot" : percent >= 60 ? "warm" : "";
+  }
+
   function showSystem(s) {
     if (!s) return;
+    glyph("cpuglyph", s.cpu.total);
+    glyph("memglyph", s.memory.percent);
     meter("cpumeter", s.cpu.total);
     text("cpu", `${Math.round(s.cpu.total)}%`);
     meter("memmeter", s.memory.percent);
@@ -218,9 +391,9 @@
       document.getElementById("ocr").hidden = !status.ocr;
       showBluetooth(status.bluetooth);
       const hid = status.usb.includes("keyboard") && status.usb.includes("mouse");
-      text("hint", !hid ? "keyboard and mouse are off, see USB…"
-                   : mouseMode === "relative" ? "click the picture to take the mouse, Esc to let go"
-                   : "click the picture to send keyboard and mouse");
+      text("hint", !hid ? "Keyboard and mouse are off: turn them on in USB devices"
+                   : mouseMode === "relative" ? "Click the picture to take the mouse, Esc lets go"
+                   : "Click the picture to send keyboard and mouse");
     } catch (_) {}
   }
   setInterval(pollStatus, 2000);
@@ -228,15 +401,18 @@
 
   // The input's target: USB, or the Bluetooth keyboard and mouse once a
   // device paired with them listens.
-  const targetButton = document.getElementById("target");
+  const targetGroup = document.getElementById("target");
   let lastBluetooth = null;
   function showTarget(bluetooth) {
     const host = bluetooth && bluetooth.host;
-    targetButton.textContent = target === "bluetooth" ? (host ? "Input: Bluetooth" : "Input: Bluetooth (none connected)")
-                                                       : "Input: USB";
+    for (const b of targetGroup.children) b.setAttribute("aria-pressed", String(b.dataset.target === target));
+    document.getElementById("btbadge").hidden = target !== "bluetooth";
+    text("targetnote", target !== "bluetooth" ? "The computer on USB"
+      : host ? "The paired device that is connected"
+      : "No paired device is connected: pair one on the device page");
   }
   function showBluetooth(bluetooth) {
-    targetButton.hidden = !bluetooth;
+    document.getElementById("targetfield").hidden = !bluetooth;
     if (!bluetooth && target === "bluetooth") chooseTarget("usb");
     showTarget(bluetooth);
     lastBluetooth = bluetooth;
@@ -246,7 +422,10 @@
     send({ type: "target", target });
     showTarget(lastBluetooth);
   }
-  targetButton.onclick = () => chooseTarget(target === "usb" ? "bluetooth" : "usb");
+  targetGroup.onclick = (e) => {
+    const b = e.target.closest("button");
+    if (b && b.dataset.target !== target) chooseTarget(b.dataset.target);
+  };
 
   // The stream's codec, as its messages say: "h264" or "h265".
   let streamCodec = null;
@@ -395,17 +574,23 @@
   // Absolute: the pointer goes where the mouse points. Relative: the pointer
   // is locked to the picture and the mouse moves by steps.
   let mouseMode = "absolute";
-  const mouseModeButton = document.getElementById("mousemode");
+  const mouseModeGroup = document.getElementById("mousemode");
   function showMouseMode() {
-    mouseModeButton.textContent = `Mouse: ${mouseMode}`;
-    mouseModeButton.classList.toggle("on", mouseMode === "relative");
+    for (const b of mouseModeGroup.children) b.setAttribute("aria-pressed", String(b.dataset.mode === mouseMode));
   }
-  mouseModeButton.onclick = () => {
-    mouseMode = mouseMode === "relative" ? "absolute" : "relative";
+  mouseModeGroup.onclick = (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    mouseMode = b.dataset.mode;
     prefs.set("mouseMode", mouseMode);
     if (document.pointerLockElement) document.exitPointerLock();
     showMouseMode();
   };
+
+  for (const el of [canvas, img]) {
+    el.addEventListener("focus", () => document.body.classList.add("controlling"));
+    el.addEventListener("blur", () => document.body.classList.remove("controlling"));
+  }
 
   // Wheel deltas, pixels or lines, in steps of about a notch.
   let wheelY = 0, wheelX = 0;
@@ -678,8 +863,7 @@
           if (!message.format) return;
           s.format = message.format;
           s.player.reset();
-          soundButton.textContent = `Sound: ${message.format.source.toUpperCase()}`;
-          soundButton.title = `${describe(message.format)} from ${message.format.source.toUpperCase()}`;
+          text("sounddetail", `${describe(message.format)} from ${message.format.source.toUpperCase()}`);
           matchRate(s, message.format.rate);
           return;
         }
@@ -687,8 +871,8 @@
       };
       ws.onclose = () => setTimeout(open, 1000);
     };
-    soundButton.classList.add("on");
-    soundButton.textContent = "Sound: on";
+    switchOn(soundButton, true);
+    text("sounddetail", "Starting…");
     open();
   }
 
@@ -698,9 +882,8 @@
     sound = null;
     if (s.ws) s.ws.close();
     if (s.player) s.player.ctx.close();
-    soundButton.classList.remove("on");
-    soundButton.textContent = "Sound";
-    soundButton.title = "Play the target's sound here";
+    switchOn(soundButton, false);
+    text("sounddetail", "In this browser");
   }
 
   soundButton.onclick = async () => {
@@ -827,8 +1010,7 @@
       stopMic();
       if (e.reason) alert(`Microphone: ${e.reason}`);
     };
-    micButton.classList.add("on");
-    micButton.textContent = "Mic: on";
+    switchOn(micButton, true);
   }
 
   // The first format builds the recording, in an AudioContext at the
@@ -850,7 +1032,7 @@
       }
     }
     m.node.port.postMessage(f);
-    micButton.title = `The target hears ${describe(f)}`;
+    text("micdetail", `The target hears ${describe(f)}`);
   }
 
   async function record(m, ctx) {
@@ -875,8 +1057,7 @@
     if (m.stream) m.stream.getTracks().forEach((track) => track.stop());
     if (m.ws) m.ws.close();
     m.ctx.close();
-    micButton.classList.remove("on");
-    micButton.textContent = "Mic";
+    switchOn(micButton, false);
   }
 
   function updateMicButton() {
@@ -885,6 +1066,7 @@
     micButton.title = !usable ? "Turn the USB microphone on first"
       : window.isSecureContext ? "Talk into the target's USB microphone"
       : "The microphone needs the HTTPS page";
+    if (!mic) text("micdetail", micButton.title);
   }
 
   micButton.onclick = async () => {
@@ -950,17 +1132,13 @@
   document.getElementById("usb").onclick = () => openDevice("usb");
 
   // The browser's own processing of the microphone, kept in this browser.
-  const voiceOption = document.getElementById("voice");
-  const showVoice = () => {
-    voiceOption.textContent = `Mic echo cancellation: ${prefs.get("voice", true) ? "on" : "off"}`;
-  };
+  const voiceSwitch = document.getElementById("voice");
+  const showVoice = () => voiceSwitch.setAttribute("aria-checked", String(prefs.get("voice", true)));
+  voiceSwitch.onclick = () => { prefs.set("voice", !prefs.get("voice", true)); showVoice(); };
   showVoice();
 
   // Keys the browser does not let the page take, typed text, Wake-on-LAN.
-  const actions = document.getElementById("actions");
-  actions.onchange = async () => {
-    const value = actions.value;
-    actions.value = "";
+  async function runAction(value) {
     if (value === "type") {
       const typed = prompt("Text to type on the target, as a US keyboard would:");
       if (typed) send({ type: "text", text: typed });
@@ -972,9 +1150,6 @@
         headers: { "content-type": "application/json" }, body: JSON.stringify({ mac }) });
       const body = await reply.json().catch(() => ({}));
       alert(reply.ok ? `Sent the magic packet to ${mac}.` : `Wake on LAN: ${body.error || reply.status}`);
-    } else if (value === "voice") {
-      prefs.set("voice", !prefs.get("voice", true));
-      showVoice();
     } else if (value === "screen" || value === "device") {
       return openDevice(value === "screen" ? "screen" : "");
     } else if (value === "settings") {
@@ -1001,7 +1176,10 @@
       for (const code of codes.reverse()) send({ type: "key", code, down: false });
     }
     view.focus();
-  };
+  }
+  for (const b of document.querySelectorAll("[data-keys], [data-action]")) {
+    b.onclick = () => { closePop(); runAction(b.dataset.keys || b.dataset.action); };
+  }
 
   // ---- The video stream's quality: a preset, or the device page's own settings ----
   const quality = document.getElementById("quality");
