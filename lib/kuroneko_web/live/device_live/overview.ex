@@ -37,6 +37,7 @@ defmodule KuronekoWeb.DeviceLive.Overview do
           >Settings</a>
         </nav>
         <div class="flex-1" />
+        <Layouts.theme_toggle />
         <span
           class="hidden items-center gap-1.5 text-xs text-base-content/60 phx-connected:inline-flex"
           title="Live"
