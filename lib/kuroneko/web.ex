@@ -198,10 +198,9 @@ defmodule Kuroneko.Web do
   get "/video" do
     conn = fetch_query_params(conn)
 
-    websocket(
-      conn,
-      Kuroneko.VideoSocket,
-      Kuroneko.VideoSocket.codecs(conn.query_params["codecs"])
+    websocket(conn, Kuroneko.VideoSocket,
+      codecs: Kuroneko.VideoSocket.codecs(conn.query_params["codecs"]),
+      timestamps: conn.query_params["timestamps"] == "1"
     )
   end
 
@@ -984,7 +983,10 @@ defmodule Kuroneko.VideoSocket do
 
   Binary messages are a type, then the Annex B access unit: 1 an H.264
   delta, 2 an H.264 keyframe, 3 an H.265 delta, 4 an H.265 keyframe. After
-  a codec change the first is a keyframe. Text messages, `{"input": ...}`,
+  a codec change the first is a keyframe. With `&timestamps=1` the type is
+  followed by the time the access unit came from the encoder, a big-endian
+  signed 64-bit count of microseconds on the device's monotonic clock, so
+  that the page can show the frames at the pace they were made. Text messages, `{"input": ...}`,
   come when the video input changes, and `{"stats": ...}` once a second
   with what the capture and the encoder did (`t:NanoKVMGo.Video.stats/0`).
   The socket closes, with 1011, when the video process stops: the page
@@ -1008,10 +1010,10 @@ defmodule Kuroneko.VideoSocket do
   end
 
   @impl WebSock
-  def init(codecs) do
+  def init(opts) do
     case Kuroneko.Subscription.subscribe(
            NanoKVMGo.Video,
-           &NanoKVMGo.Video.subscribe(&1, codecs: codecs)
+           &NanoKVMGo.Video.subscribe(&1, opts)
          ) do
       {:ok, monitor, :ok} -> {:ok, %{video: monitor}}
       {:ok, _monitor, {:error, reason}} -> {:stop, :normal, {1011, "no video (#{reason})"}, %{}}
@@ -1025,6 +1027,10 @@ defmodule Kuroneko.VideoSocket do
   @impl WebSock
   def handle_info({NanoKVMGo.Video, {codec, kind, au}}, state) do
     {:push, {:binary, [type(codec, kind), au]}, state}
+  end
+
+  def handle_info({NanoKVMGo.Video, {codec, kind, au, at}}, state) do
+    {:push, {:binary, [type(codec, kind), <<at::signed-64>>, au]}, state}
   end
 
   def handle_info({NanoKVMGo.Video, {:input, input}}, state) do

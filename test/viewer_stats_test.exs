@@ -22,8 +22,21 @@ defmodule Kuroneko.ViewerStatsTest do
     refute Map.has_key?(kept, :note)
   end
 
+  test "an access unit with the time it came from the encoder, when the page asks" do
+    assert VideoSocket.handle_info({NanoKVMGo.Video, {:h265, :delta, "AU", -5}}, %{}) ==
+             {:push, {:binary, [3, <<-5::signed-64>>, "AU"]}, %{}}
+
+    assert VideoSocket.handle_info({NanoKVMGo.Video, {:h264, :key, "AU"}}, %{}) ==
+             {:push, {:binary, [2, "AU"]}, %{}}
+  end
+
   test "the device's second of video goes to the page" do
-    assert VideoSocket.handle_info({NanoKVMGo.Video, {:stats, %{captured: 30, skipped: 0}}}, %{}) ==
-             {:push, {:text, ~s({"captured":30,"skipped":0}) |> then(&~s({"stats":#{&1}}))}, %{}}
+    assert {:push, {:text, json}, %{}} =
+             VideoSocket.handle_info(
+               {NanoKVMGo.Video, {:stats, %{captured: 30, skipped: 0}}},
+               %{}
+             )
+
+    assert Jason.decode!(json) == %{"stats" => %{"captured" => 30, "skipped" => 0}}
   end
 end
